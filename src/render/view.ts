@@ -230,6 +230,10 @@ export class TreeView {
         .replace('#include <normal_fragment_maps>', THREE.ShaderChunk.normal_fragment_maps.replace('dHdxy_fwd(), faceDirection', 'dHdxy_fwd() * vBark, faceDirection'));
     };
     this.bark = new THREE.Mesh(new THREE.BufferGeometry(), barkMat);
+    this.addWind(barkMat, 'bark', false, false);
+    this.addWind(this.wood.material as THREE.Material, 'wood', false, false);
+    this.addWind(this.needles.material as THREE.Material, 'needles', true, true);
+    this.sun.shadow.autoUpdate = false; // stín se přepočítá jen při změně stromu, ne při každém snímku s větrem
     for (const m of [this.wood, this.bark, this.needles]) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; }
     this.table = new THREE.Mesh(new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2),
       new THREE.MeshStandardMaterial({ color: 0xa39f94, roughness: 1, envMapIntensity: 0.25, transparent: true, alphaMap: fadeTexture(), depthWrite: false }));
@@ -314,12 +318,35 @@ export class TreeView {
     this.updateCamera();
     // šířka jehlic se přizpůsobuje vzdálenosti, při větším přiblížení/oddálení je třeba přestavět
     if (this.state && Math.abs(Math.log(this.dist / this.builtDist)) > 0.25) this.build();
+    if (this.windOn) { this.windU.uTime.value = performance.now() / 1000; this.needsRender = true; }
     if (!this.needsRender) return;
     this.needsRender = false;
     this.renderer.render(this.scene, this.camera);
   }
 
   // ------------------------------------------------------------ nádoba
+
+  private windU = { uTime: { value: 0 }, uAmp: { value: 0 }, uH: { value: 10 } };
+  private windOn = false;
+  /** Vítr: kolébání koruny a chvění jehlic (jen ve vertex shaderu, simulace se nemění). */
+  setWind(on: boolean) { this.windOn = on; this.windU.uAmp.value = on ? 0.006 : 0; this.needsRender = true; }
+
+  private addWind(mat: THREE.Material, key: string, flutter: boolean, declareAttr: boolean) {
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = (sh, r) => {
+      prev.call(mat, sh, r);
+      Object.assign(sh.uniforms, this.windU);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', `uniform float uTime, uAmp, uH;\n${declareAttr ? 'attribute float aBark;\n' : ''}#include <common>`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+          float wh = clamp(transformed.y / uH, 0.0, 1.2);
+          float wp = transformed.x * 0.05 + transformed.z * 0.04;
+          float gust = 0.55 + 0.45 * sin(uTime * 0.6);
+          transformed.xz += vec2(sin(uTime * 1.3 + wp) + 0.4 * sin(uTime * 2.7 + wp * 2.1), 0.6 * cos(uTime * 1.1 + wp * 1.4)) * uAmp * uH * wh * wh * gust;
+          ${flutter ? 'transformed.xyz += aBark * (uAmp / 0.006) * 0.05 * gust * vec3(sin(uTime * 5.0 + transformed.x * 2.3 + transformed.y * 1.7), sin(uTime * 4.3 + transformed.z * 2.9), cos(uTime * 4.7 + transformed.z * 2.1));' : ''}`);
+    };
+    mat.customProgramCacheKey = () => key;
+  }
 
   private potOverride: string | null = null;
   /** Náhled jiné nádoby v dialogu přesazení (null = skutečná nádoba stromu). */
@@ -354,7 +381,7 @@ export class TreeView {
     };
     this.table.visible = spec.shape !== 'ground';
     if (spec.shape === 'ground') {
-      add(new THREE.CircleGeometry(900, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x6f7a4a, roughness: 1 }), 0, -0.02).castShadow = false;
+      add(new THREE.CircleGeometry(900, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x6f7a4a, roughness: 1 }), 0, -0.25).castShadow = false;
       add(new THREE.CircleGeometry(groundR, 40).rotateX(-Math.PI / 2), soil);
       return;
     }
@@ -632,8 +659,8 @@ export class TreeView {
       if (sh.dead) continue;
 
       // pupeny: vejčité, červenohnědé, se světlou zasmolenou špičkou
-      const drawBud = (dir: Vec3, bl: number, off: number) => {
-        const br = bl * 0.3;
+      const drawBud = (dir: Vec3, bl: number, off: number, fat = 0.3, tint: number[] | null = null) => {
+        const br = bl * fat;
         const ox = cx + dir[0] * off, oy = cy + dir[1] * off, oz = cz + dir[2] * off;
         const [bu, bw] = basis(dir);
         wb.reserve(3 * RAD + 1, 3 * RAD * 6);
@@ -643,7 +670,8 @@ export class TreeView {
           for (let k = 0; k < RAD; k++) {
             const a = (k / RAD) * 6.2832;
             const nx = bu[0] * Math.cos(a) + bw[0] * Math.sin(a), ny = bu[1] * Math.cos(a) + bw[1] * Math.sin(a), nz = bu[2] * Math.cos(a) + bw[2] * Math.sin(a);
-            wb.v(ox + dir[0] * bl * t + nx * br * r, oy + dir[1] * bl * t + ny * br * r, oz + dir[2] * bl * t + nz * br * r, nx, ny, nz, cr, cg, cb);
+            const sh2 = tint ? 0.75 + 0.3 * t : 1;
+            wb.v(ox + dir[0] * bl * t + nx * br * r, oy + dir[1] * bl * t + ny * br * r, oz + dir[2] * bl * t + nz * br * r, nx, ny, nz, tint ? tint[0] * sh2 : cr, tint ? tint[1] * sh2 : cg, tint ? tint[2] * sh2 : cb);
           }
           if (prev >= 0) for (let k = 0; k < RAD; k++) {
             const k2 = (k + 1) % RAD;
@@ -651,9 +679,30 @@ export class TreeView {
           }
           prev = first;
         }
-        const c = wb.v(ox + dir[0] * bl, oy + dir[1] * bl, oz + dir[2] * bl, dir[0], dir[1], dir[2], 0.82, 0.7, 0.55);
+        const c = wb.v(ox + dir[0] * bl, oy + dir[1] * bl, oz + dir[2] * bl, dir[0], dir[1], dir[2], tint ? tint[0] : 0.82, tint ? tint[1] : 0.7, tint ? tint[2] : 0.55);
         for (let k = 0; k < RAD; k++) wb.tri(prev + k, prev + (k + 1) % RAD, c);
       };
+      // samčí šištice: žluté shluky na holé bázi letorostu, v květnu–červnu práší, pak zhnědnou a opadají
+      if (sh.male && age === 0 && s.gdd > 150 && doy < P.shedStartDoy && len > 0.3) {
+        const fresh = s.gdd < 750;
+        const size = (fresh ? 0.5 : 0.36) * smooth((s.gdd - 150) / 200);
+        for (let k = 0; k < 9; k++) {
+          const t = 0.01 + 0.085 * (k / 9), a = k * 2.4 + sh.id;
+          at(t);
+          const dir = nrm(u[0] * Math.cos(a) + w[0] * Math.sin(a) + d[0] * 0.4, u[1] * Math.cos(a) + w[1] * Math.sin(a) + d[1] * 0.4, u[2] * Math.cos(a) + w[2] * Math.sin(a) + d[2] * 0.4);
+          drawBud(dir, size, rb * 0.7, 0.42, fresh ? [0.86, 0.74, 0.3] : [0.5, 0.36, 0.22]);
+        }
+      }
+      // samičí šiška: 1. rok drobná načervenalá u vrcholu, 2. rok zelená a roste, 3. rok hnědá a otevřená, pak opadne
+      if (sh.cone && age <= 2 && !sh.elong && (age > 0 || s.gdd > 500)) {
+        at(0.93);
+        const a = sh.id * 1.7;
+        const side: Vec3 = [u[0] * Math.cos(a) + w[0] * Math.sin(a), u[1] * Math.cos(a) + w[1] * Math.sin(a), u[2] * Math.cos(a) + w[2] * Math.sin(a)];
+        const season = smooth(s.gdd / 1400);
+        if (age === 0) drawBud(nrm(side[0] + d[0], side[1] + d[1], side[2] + d[2]), 0.7, rb * 0.6, 0.4, [0.62, 0.3, 0.34]);
+        else if (age === 1) drawBud(nrm(side[0], side[1] - 0.5 * season, side[2]), 1 + 3 * season, rb * 0.6, 0.36, [0.36, 0.5, 0.28]);
+        else drawBud(nrm(side[0], side[1] - 0.8, side[2]), 4.3, rb * 0.6, 0.46, [0.47, 0.34, 0.22]);
+      }
       for (const b of sh.buds) {
         at(b.t);
         drawBud(b.dir, Math.min(1.5, 0.28 + 0.045 * b.len) * budG, b.kind === 'terminal' || b.t < 0.98 ? 0 : rt * 0.5);
@@ -717,7 +766,9 @@ export class TreeView {
           const ring = (f: number, wd: number, cr2: number, cg2: number, cb2: number) => {
             const qx = px + nx * L * f, qy = py + ny * L * f, qz = pz + nz * L * f;
             const i0 = nb.v(qx - tx * hw * wd, qy - ty * hw * wd, qz - tz * hw * wd, M[0], M[1], M[2], cr2, cg2, cb2);
+            nb.t(0, 0, f);
             nb.v(qx + tx * hw * wd, qy + ty * hw * wd, qz + tz * hw * wd, M[0], M[1], M[2], cr2, cg2, cb2);
+            nb.t(0, 0, f);
             return i0;
           };
           const sheath = fs > 0 && !yellow;
@@ -725,6 +776,7 @@ export class TreeView {
           const r1 = ring(fs || 0.12, 1, r * 0.72, gg * 0.72, b * 0.72);
           const r2 = ring(0.74, 0.85, r * 1.05, gg * 1.05, b * 1.05);
           const tp = nb.v(px + nx * L, py + ny * L, pz + nz * L, M[0], M[1], M[2], r * 1.2, gg * 1.2, b * 1.12);
+          nb.t(0, 0, 1);
           for (const [p0, p1] of [[r0, r1], [r1, r2]]) {
             nb.tri(p0, p0 + 1, p1 + 1); nb.tri(p0, p1 + 1, p1);
             nb.tri(p0, p1 + 1, p0 + 1); nb.tri(p0, p1, p1 + 1);
@@ -741,12 +793,12 @@ export class TreeView {
       woodColor(s, root0, col);
       const rootAge = year - root0.bornYear;
       const rootBark = root0.dead ? 0 : smooth((rootAge - 1.5) / 5) * (0.6 + 0.4 * smooth(R0 / 1.2));
-      const count = 5 + Math.floor(rnd(s.seed, 501, 1) * 3);
       const SEG = 8, RN = 8;
-      for (let k = 0; k < count; k++) {
-        let az = (k / count) * 6.2832 + (rnd(s.seed, 502, k) - 0.5) * 0.7;
-        const Lr = R0 * (2.4 + 2.8 * rnd(s.seed, 503, k)) * (0.5 + 0.5 * grow);
-        const thick = R0 * (0.34 + 0.22 * rnd(s.seed, 504, k)) * (0.55 + 0.45 * grow);
+      for (const root of s.nebari) {
+        const k = root.id;
+        let az = root.az;
+        const Lr = R0 * root.len * (0.5 + 0.5 * grow);
+        const thick = R0 * root.thick * (0.55 + 0.45 * grow);
         const pts: number[][] = [], rad: number[] = [];
         for (let j = 0; j <= SEG; j++) {
           const f = j / SEG;
@@ -798,6 +850,8 @@ export class TreeView {
     sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = R * 0.3; sc.far = R * 7;
     sc.updateProjectionMatrix();
     this.sun.shadow.normalBias = R * 0.004;
+    this.sun.shadow.needsUpdate = true;
+    this.windU.uH.value = Math.max(5, H);
     this.needsRender = true;
   }
 

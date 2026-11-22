@@ -12,7 +12,7 @@ export function createState(seed: number): State {
   return {
     seed, day: START_DOY, gdd: 0, nextId: 1, pot: 'training', stage: 'seed', shoots: [],
     flushedYear: 0, budSetYear: -1, budSetGdd: 0, production: 0, budget: 0,
-    roots: 0, potCap: potCapFor(START_POT), potId: START_POT, stress: 0, repotDay: START_DOY,
+    roots: 0, potCap: potCapFor(START_POT), potId: START_POT, nebari: [], stress: 0, repotDay: START_DOY,
   };
 }
 
@@ -21,7 +21,7 @@ function newShoot(s: State, o: Partial<Shoot>): Shoot {
     id: s.nextId++, parent: -1, attachT: 1, dir: [0, 1, 0], order: 0, isMain: true, kind: 'shoot',
     bornYear: yearOf(s.day), bornDay: s.day, targetLen: 1, len: 0, elong: true, delay: 0, gdd0: s.gdd,
     needleCount: 0, needleLen: 0, needleLive: 1, shedding: false, area: 0, dead: false, deadYear: -1,
-    tipCut: false, stimulus: 0, light: 1, fol: 0, wire: null, arc: null, scar: false, buds: [], ...o,
+    tipCut: false, stimulus: 0, light: 1, fol: 0, wire: null, arc: null, scar: false, male: false, cone: false, buds: [], ...o,
   };
   s.shoots.push(sh);
   return sh;
@@ -36,6 +36,12 @@ const r0Area = (len: number) => {
 
 function germinate(s: State) {
   s.stage = 'growing';
+  // povrchové kořeny: 5–7 směrů, nestejně dlouhé a silné (pěstitel je může při přesazení rozprostřít)
+  const cnt = 5 + Math.floor(rnd(s.seed, 501, 1) * 3);
+  for (let k = 0; k < cnt; k++) s.nebari.push({
+    az: (k / cnt) * 6.2832 + (rnd(s.seed, 502, k) - 0.5) * 0.9,
+    len: 2.4 + 2.8 * rnd(s.seed, 503, k), thick: 0.34 + 0.22 * rnd(s.seed, 504, k), id: k,
+  });
   const lean = (rnd(s.seed, 1, 1) - 0.5) * 0.12;
   newShoot(s, {
     kind: 'hypocotyl', dir: norm([lean, 1, (rnd(s.seed, 1, 2) - 0.5) * 0.12]),
@@ -214,6 +220,8 @@ function flush(s: State) {
         parent: sh.id, attachT: b.t, dir: b.order === 0 && b.isMain ? norm(add(b.dir, [0, 1.5, 0])) : b.dir, order: b.order, isMain: b.isMain,
         targetLen: l, needleCount: Math.round(8 + 5 * l), needleLen: nl, area: r0Area(l),
         delay: (b.isMain ? 0 : 15) + rnd(s.seed, b.id, 3) * 25 + b.order * 5,
+        male: year >= P.coneMinAge && b.order >= 1 && l < 7 && rnd(s.seed, b.id, 8) < P.maleChance,
+        cone: year >= P.coneMinAge && l >= 7 && rnd(s.seed, b.id, 9) < P.femaleChance,
       });
     }
     sh.buds = [];
@@ -255,6 +263,48 @@ function dropDeadTwigs(s: State) {
     keep.push(sh);
   }
   s.shoots = keep.reverse();
+}
+
+/** Prověšování: boční větve se každý rok o něco skloní pod vahou jehličí. Tenká větev s velkou zátěží
+ *  klesá nejvíc, zesílená už drží; nadrátovaná větev drží tvar daný drátem. Jeden průchod od kořene:
+ *  každý výhon nese složené otočení svých předků. */
+function sag(s: State) {
+  const n = s.shoots.length;
+  const idx = indexMap(s);
+  const year = yearOf(s.day);
+  // matice 3×3 po řádcích; null = beze změny
+  const M: (number[] | null)[] = new Array(n).fill(null);
+  const mul = (m: number[] | null, v: Vec3): Vec3 => (m ? [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]] : v);
+  for (let i = 0; i < n; i++) {
+    const sh = s.shoots[i];
+    const pm = sh.parent >= 0 ? M[idx.get(sh.parent)!] : null;
+    let m = pm;
+    const d = mul(pm, sh.dir);
+    const lateralAxis = sh.order >= 1;
+    if (!sh.dead && lateralAxis && year > sh.bornYear && !sh.wire && d[1] > P.sagFloor && sh.area > 0) {
+      const horiz = Math.sqrt(Math.max(0, 1 - d[1] * d[1]));
+      const deg = Math.min(P.sagMaxPerYear, (P.sagK * sh.fol * horiz) / sh.area);
+      if (deg > 0.02 && horiz > 0.05) {
+        const a = (deg * Math.PI) / 180;
+        // osa vodorovná, kolmá na větev; otočení skloní špičku dolů
+        const ax = norm([d[2], 0, -d[0]]);
+        const c = Math.cos(a), si = Math.sin(a), t = 1 - c;
+        const r = [
+          t * ax[0] * ax[0] + c, t * ax[0] * ax[1] - si * ax[2], t * ax[0] * ax[2] + si * ax[1],
+          t * ax[0] * ax[1] + si * ax[2], t * ax[1] * ax[1] + c, t * ax[1] * ax[2] - si * ax[0],
+          t * ax[0] * ax[2] - si * ax[1], t * ax[1] * ax[2] + si * ax[0], t * ax[2] * ax[2] + c,
+        ];
+        const p = pm ?? [1, 0, 0, 0, 1, 0, 0, 0, 1];
+        m = [0, 1, 2].flatMap((row) => [0, 1, 2].map((colI) => r[row * 3] * p[colI] + r[row * 3 + 1] * p[3 + colI] + r[row * 3 + 2] * p[6 + colI]));
+      }
+    }
+    M[i] = m;
+    if (!m) continue;
+    sh.dir = norm(mul(m, sh.dir));
+    for (const b of sh.buds) b.dir = norm(mul(m, b.dir));
+    if (sh.wire) sh.wire.axis = norm(mul(m, sh.wire.axis));
+    if (sh.arc) sh.arc.axis = norm(mul(m, sh.arc.axis));
+  }
 }
 
 function updateFoliage(s: State) {
@@ -331,6 +381,7 @@ export function step(s: State) {
   if (doy === P.shedEndDoy) {
     for (const sh of s.shoots) sh.shedding = false;
     updateDeath(s);
+    sag(s);
     dropDeadTwigs(s);
   }
 }

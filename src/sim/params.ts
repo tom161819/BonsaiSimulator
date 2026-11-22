@@ -84,6 +84,16 @@ export const P = {
   bendStrain: 0.05, // oblouk: největší poměr poloměru větve k poloměru ohybu
   bendSpringFactor: 0.6, // v době jarního růstu se kůra snadno odlupuje – menší bezpečný ohyb
 
+  // --- prověšování větví vahou ---
+  sagK: 0.02, // stupně za rok ≈ sagK · olistění větve · vodorovnost / průřez
+  sagMaxPerYear: 2.5,
+  sagFloor: 0.02, // větev se neprověsí pod tento sklon (složka y směru)
+
+  // --- šištice ---
+  coneMinAge: 8, // strom začíná plodit kolem 8.–15. roku
+  maleChance: 0.3, // slabší boční letorosty nesou samčí šištice
+  femaleChance: 0.07, // silné letorosty nesou šišky
+
   maxShoots: 7000,
 };
 

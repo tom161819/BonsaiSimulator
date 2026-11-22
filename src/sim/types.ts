@@ -65,8 +65,13 @@ export interface Shoot {
   /** oblouk: výhon se od paty plynule stáčí kolem osy o úhel angle na prvních z své délky */
   arc: { axis: Vec3; angle: number; z: number } | null;
   scar: boolean; // drát zarostl do kůry – trvalá jizva
+  male: boolean; // samčí šištice na bázi letorostu (jen v roce vzniku)
+  cone: boolean; // samičí šiška u vrcholu (zraje do 3. roku)
   buds: Bud[];
 }
+
+/** Povrchový kořen (nebari): směr, relativní délka a síla. */
+export interface SurfaceRoot { az: number; len: number; thick: number; id: number }
 
 export type Stage = 'seed' | 'growing' | 'dead';
 
@@ -88,6 +93,7 @@ export interface State {
   roots: number;
   potCap: number;
   potId: string; // nádoba z katalogu POTS
+  nebari: SurfaceRoot[];
   /** stres z přesazení 0..1+ (>= 1 strom nepřežije) */
   stress: number;
   repotDay: number;
@@ -96,13 +102,13 @@ export interface State {
 export type Action =
   | { day: number; type: 'cut'; shoot: number; t: number; label?: string }
   | { day: number; type: 'bud'; shoot: number; bud: number; label?: string }
-  | { day: number; type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; label?: string }
+  | { day: number; type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; spread?: number; label?: string }
   | { day: number; type: 'wire'; shoot: number; axis: Vec3; angle: number; z?: number; label?: string }
   | { day: number; type: 'unwire'; shoot: number; label?: string };
 
 export type ActionInput =
   | { type: 'cut'; shoot: number; t: number; label?: string }
   | { type: 'bud'; shoot: number; bud: number; label?: string }
-  | { type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; label?: string }
+  | { type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; spread?: number; label?: string }
   | { type: 'wire'; shoot: number; axis: Vec3; angle: number; z?: number; label?: string }
   | { type: 'unwire'; shoot: number; label?: string };

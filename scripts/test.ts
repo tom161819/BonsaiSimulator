@@ -159,4 +159,30 @@ test('oblouk: špička se stočí o celý úhel, větev se nezkrátí a plynulý
   assert.equal(tl.state.shoots.find((s) => s.id === br.id)!.arc, null, 'hned po sundání se oblouk narovná');
 });
 
+test('větve se vahou jehličí prověšují: starší boční větve míří níž než mladé', () => {
+  const tl = new Timeline(3); tl.act({ type: 'repot', pot: 'ground' }); tl.seek(at(9, 320));
+  const avg = (born: number) => { const b = tl.state.shoots.filter((s) => s.order === 1 && !s.isMain && s.bornYear === born && !s.dead); return b.reduce((t, s) => t + s.dir[1], 0) / b.length; };
+  assert.ok(avg(4) < avg(9) - 0.02, `větve z roku 4 (${avg(4).toFixed(2)}) jsou níž než z roku 9 (${avg(9).toFixed(2)})`);
+});
+
+test('povrchové kořeny se při přesazení otočí se stromem a dají se rozprostřít', () => {
+  const tl = new Timeline(3); tl.seek(at(4, 75));
+  const before = tl.state.nebari.map((r) => r.az);
+  assert.ok(before.length >= 5);
+  tl.act({ type: 'repot', pot: 'training', potId: 't5', prune: 0.2, yaw: 90 });
+  tl.state.nebari.forEach((r, i) => assert.ok(Math.abs(r.az - (before[i] - Math.PI / 2)) < 1e-9));
+  tl.seek(at(6, 75));
+  tl.act({ type: 'repot', pot: 'training', potId: 't5', prune: 0.2, spread: 1 });
+  const az = tl.state.nebari.map((r) => r.az).sort((a, b) => a - b);
+  const gaps = az.slice(1).map((a, i) => a - az[i]);
+  assert.ok(Math.max(...gaps) - Math.min(...gaps) < 1e-6, 'kořeny jsou rovnoměrně kolem kmene');
+});
+
+test('dospělý strom nese šištice, mladý ne', () => {
+  const tl = new Timeline(3); tl.act({ type: 'repot', pot: 'ground' }); tl.seek(at(5, 200));
+  assert.ok(!tl.state.shoots.some((s) => s.male || s.cone));
+  tl.seek(at(10, 200));
+  assert.ok(tl.state.shoots.some((s) => s.male) && tl.state.shoots.some((s) => s.cone));
+});
+
 console.log(`\n${n} testů prošlo`);

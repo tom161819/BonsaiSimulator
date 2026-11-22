@@ -90,6 +90,17 @@ oblouk přes zvolený podíl délky výhonu. Vše, co na výhonu roste, se stoč
 z úryvků ve výsledcích vyhledávání a z abstraktů. Číselné hodnoty modelu (meze ohybu, násobky stresu, rychlost
 fixace) jsou odhady zvolené tak, aby chování odpovídalo popsané praxi.
 
+## 3c. Prověšování, kořeny, šištice, vítr
+
+| Jev | V modelu |
+| --- | --- |
+| Prověšování větví | Na konci sezóny se každá boční větev skloní o úhel úměrný olistění, které nese, a nepřímo úměrný průřezu (nejvýš 2,5° za rok, vlastním sklonem ne pod vodorovnou). Tenká zatížená větev klesá, zesílená drží. Nadrátovaná větev se neprověšuje |
+| Povrchové kořeny | Při vyklíčení vznikne 5–7 kořenů s různým směrem, délkou a silou. Otáčejí se se stromem a při přesazení je lze rozprostřít rovnoměrně do stran (tvorba nebari) |
+| Šištice | Od 8. roku: slabší boční letorosty nesou samčí šištice (žluté, v červnu práší, pak zhnědnou), silné letorosty šišku, která zraje do třetího roku |
+| Vítr | Jen vykreslení: kolébání koruny a chvění jehlic; simulaci neovlivňuje a jde vypnout |
+
+Číselné hodnoty těchto čtyř jevů jsou odhady modelu, bez opory v rešerši.
+
 ## 4. Architektura
 
 ```
@@ -121,8 +132,7 @@ Náhoda je hash z id výhonu, takže zásah na jedné větvi nezmění zbytek st
 | Zalévání a substrát | Prokořenění zatím jen brzdí růst; chybí voda a propustnost substrátu |
 | Vyštipování jehlic | Zásah snižující `needleCount`; sníží sílu větve a pustí světlo dovnitř |
 | Zalévání, hnojení, zdraví | Další násobitele rozpočtu; délka jehlic podle dusíku |
-| Převěšování větví vahou | Směr se počítá při vykreslení z hmotnosti podstromu |
-| Samčí šištice, borka, jin a shari | Vizuální vrstva a práce s mrtvým dřevem |
+| Jin a shari | Práce s mrtvým dřevem |
 | Další druhy | Nový soubor parametrů; druhy s více růstovými vlnami potřebují jinou fenologii |
 | Ověření modelu | Dohledat plné texty a porovnat křivky přírůstu s měřenými daty |
 

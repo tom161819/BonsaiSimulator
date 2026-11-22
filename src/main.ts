@@ -449,7 +449,7 @@ let rPot = 't05';
   sel.onchange = () => { rPot = sel.value; updateRepot(); };
 }
 const rIn = (id: string) => $<HTMLInputElement>(id);
-const rVals = () => ({ prune: Number(rIn('rPrune').value) / 100, yaw: Number(rIn('rYaw').value), side: Number(rIn('rSide').value), fwd: Number(rIn('rFwd').value) });
+const rVals = () => ({ prune: Number(rIn('rPrune').value) / 100, yaw: Number(rIn('rYaw').value), side: Number(rIn('rSide').value), fwd: Number(rIn('rFwd').value), spread: Number(rIn('rSpread').value) / 100 });
 
 function updateRepot() {
   const s = tl.state, v = rVals();
@@ -459,6 +459,7 @@ function updateRepot() {
   $('rPruneV').textContent = `${Math.round(v.prune * 100)} %`;
   $('rYawV').textContent = `${v.yaw}°`;
   $('rSideV').textContent = v.side ? `${Math.abs(v.side)}° ${v.side < 0 ? 'vlevo' : 'vpravo'}` : '0°';
+  $('rSpreadV').textContent = `${Math.round(v.spread * 100)} %`;
   $('rFwdV').textContent = v.fwd ? `${Math.abs(v.fwd)}° ${v.fwd < 0 ? 'dozadu' : 'dopředu'}` : '0°';
   view.previewRotation(v.yaw, v.fwd, -v.side);
   const info = $('rInfo');
@@ -494,13 +495,13 @@ $('repotBtn').onclick = () => {
   repotOpen = true; playing = false;
   rPot = tl.state.potId;
   rIn('rPrune').value = tl.state.pot === 'ground' || tl.state.stage === 'seed' ? '0' : '30';
-  rIn('rYaw').value = '0'; rIn('rSide').value = '0'; rIn('rFwd').value = '0';
+  rIn('rYaw').value = '0'; rIn('rSide').value = '0'; rIn('rFwd').value = '0'; rIn('rSpread').value = '0';
   $('repot').hidden = false;
   view.front();
   setHover(null);
   refresh();
 };
-for (const id of ['rPrune', 'rYaw', 'rSide', 'rFwd']) rIn(id).oninput = updateRepot;
+for (const id of ['rPrune', 'rYaw', 'rSide', 'rFwd', 'rSpread']) rIn(id).oninput = updateRepot;
 $('rCancel').onclick = closeRepot;
 $('rOk').onclick = () => {
   const v = rVals();
@@ -509,13 +510,18 @@ $('rOk').onclick = () => {
   if (v.prune) parts.push(`kořeny −${Math.round(v.prune * 100)} %`);
   if (v.yaw) parts.push(`otočení ${v.yaw}°`);
   if (v.side || v.fwd) parts.push(`náklon ${Math.round(Math.hypot(v.side, v.fwd))}°`);
-  tl.act({ type: 'repot', pot: spec.type, potId: spec.id, prune: v.prune, yaw: v.yaw, tiltX: v.fwd, tiltZ: -v.side, label: `Přesazeno: ${parts.join(', ')}` });
+  if (v.spread) parts.push('kořeny rozprostřeny');
+  tl.act({ type: 'repot', pot: spec.type, potId: spec.id, prune: v.prune, yaw: v.yaw, tiltX: v.fwd, tiltZ: -v.side, spread: v.spread, label: `Přesazeno: ${parts.join(', ')}` });
   lastLogKey = '';
   persist();
   closeRepot();
 };
 $('undo').onclick = () => { tl.undo(); lastLogKey = ''; persist(); refresh(); };
 $('center').onclick = () => view.recenter();
+let windOn = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const syncWind = () => { view.setWind(windOn); $('wind').setAttribute('aria-pressed', String(windOn)); };
+$('wind').onclick = () => { windOn = !windOn; syncWind(); };
+syncWind();
 $('moreBtn').onclick = () => document.body.classList.toggle('more');
 let resetArmed = 0;
 $('reset').onclick = () => {
