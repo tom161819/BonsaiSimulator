@@ -165,4 +165,5 @@ export function applyAction(s: State, a: Action) {
   } else if (a.type === 'repot') repot(s, a);
   else if (a.type === 'wire') wire(s, a.shoot, a.axis, a.angle, a.z ?? 0);
   else if (a.type === 'unwire') unwire(s, a.shoot);
+  else if (a.type === 'unwireAll') for (const id of s.shoots.filter((x) => x.wire).map((x) => x.id)) unwire(s, id);
 }

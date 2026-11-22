@@ -185,4 +185,15 @@ test('dospělý strom nese šištice, mladý ne', () => {
   assert.ok(tl.state.shoots.some((s) => s.male) && tl.state.shoots.some((s) => s.cone));
 });
 
+test('sundání všech drátů je jeden zásah a jde vrátit', () => {
+  const tl = new Timeline(3); tl.seek(at(5, 320));
+  const brs = tl.state.shoots.filter((s) => s.order === 1 && !s.dead && !s.elong).slice(0, 3);
+  for (const b of brs) tl.act({ type: 'wire', shoot: b.id, axis: [0, 0, 1], angle: 0.2 });
+  assert.equal(tl.state.shoots.filter((s) => s.wire).length, 3);
+  tl.act({ type: 'unwireAll' });
+  assert.equal(tl.state.shoots.filter((s) => s.wire).length, 0);
+  tl.undo();
+  assert.equal(tl.state.shoots.filter((s) => s.wire).length, 3);
+});
+
 console.log(`\n${n} testů prošlo`);

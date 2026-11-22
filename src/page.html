@@ -8,6 +8,7 @@
     --panel: rgba(248, 251, 248, 0.86); --panel-solid: #f8fbf8;
     --fg: #17231d; --muted: #55655c; --line: rgba(23, 35, 29, 0.14);
     --accent: #2c6a48; --accent-fg: #ffffff; --bark: #a9562a; --danger: #b8321c;
+    --hl: #e8912a; --hl-bg: rgba(232, 145, 42, 0.14);
     --spring: #9ccf6a; --summer: #f1c453; --autumn: #d9773a; --winter: #9db7d6;
     --display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
     --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -17,7 +18,7 @@
       --sky-a: #0f1917; --sky-b: #22322c;
       --panel: rgba(20, 30, 26, 0.84); --panel-solid: #141e1a;
       --fg: #e6efe9; --muted: #9db0a5; --line: rgba(230, 239, 233, 0.16);
-      --accent: #74c79a; --accent-fg: #0d1a14; --bark: #e39a66; --danger: #ff8a70;
+      --accent: #74c79a; --accent-fg: #0d1a14; --bark: #e39a66; --danger: #ff8a70; --hl: #f0a445; --hl-bg: rgba(240, 164, 69, 0.16);
       color-scheme: dark;
     }
   }
@@ -25,7 +26,7 @@
     --sky-a: #0f1917; --sky-b: #22322c;
     --panel: rgba(20, 30, 26, 0.84); --panel-solid: #141e1a;
     --fg: #e6efe9; --muted: #9db0a5; --line: rgba(230, 239, 233, 0.16);
-    --accent: #74c79a; --accent-fg: #0d1a14; --bark: #e39a66; --danger: #ff8a70;
+    --accent: #74c79a; --accent-fg: #0d1a14; --bark: #e39a66; --danger: #ff8a70; --hl: #f0a445; --hl-bg: rgba(240, 164, 69, 0.16);
     color-scheme: dark;
   }
   html, body { height: 100%; }
@@ -37,7 +38,7 @@
   #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
   #ui {
     position: absolute; inset: 0; pointer-events: none; display: grid; gap: 10px;
-    grid-template: "left . right" 1fr "bottom bottom bottom" auto / minmax(0, 300px) 1fr minmax(0, 270px);
+    grid-template: "left phases right" 1fr "bottom bottom bottom" auto / minmax(0, 300px) 1fr minmax(0, 270px);
     padding-block: 12px;
     padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   }
@@ -45,6 +46,12 @@
     pointer-events: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 12px 14px; min-width: 0;
   }
+  #phases { grid-area: phases; justify-self: end; align-self: start; width: 190px; }
+  #phaseList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  #phaseList li { padding: 4px 8px; border: 2px solid transparent; border-radius: 7px; color: var(--muted); font-size: 12.5px; line-height: 1.25; }
+  #phaseList li span { display: block; font-size: 11px; }
+  #phaseList li.on { border-color: var(--hl); background: var(--hl-bg); color: var(--fg); font-weight: 600; }
+  #phaseList li.on span { font-weight: 400; color: var(--muted); }
   #left { grid-area: left; align-self: start; display: flex; flex-direction: column; gap: 10px; }
   #right { grid-area: right; align-self: start; display: flex; flex-direction: column; gap: 10px; max-height: 100%; min-height: 0; }
   #bottom { grid-area: bottom; display: flex; flex-direction: column; gap: 8px; }
@@ -107,7 +114,7 @@
     #ui { grid-template: "left" auto "right" 1fr "bottom" auto / 1fr; gap: 8px; }
     #right { align-self: end; justify-self: end; max-width: 100%; }
     #left .panel { padding: 8px 10px; } #date { font-size: 16px; }
-    #stats, #diary, #hint, h1 i { display: none; }
+    #stats, #diary, #hint, #phases, h1 i { display: none; }
     #right { overflow-y: auto; }
     body.more #stats, body.more #diary, body.more #hint { display: grid; } body.more #diary { display: flex; max-height: 30vh; }
     #banner { grid-area: 2 / 1; }
@@ -141,6 +148,10 @@
       </dl>
     </div>
   </div>
+  <div class="panel" id="phases">
+    <h2>Období roku</h2>
+    <ol id="phaseList"></ol>
+  </div>
   <div id="right">
     <div class="panel">
       <h2>Nástroj</h2>
@@ -151,6 +162,7 @@
       <div id="wireOpts" hidden>
         <label for="wArc">Tvar ohybu <output id="wArcV"></output></label>
         <input type="range" id="wArc" min="0" max="100" step="10" value="70">
+        <button id="unwireAll" style="margin-top:8px;width:100%">Sundat všechny dráty</button>
       </div>
       <div class="row" style="margin-top:8px">
         <button id="repotBtn">Přesadit…</button>

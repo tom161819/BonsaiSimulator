@@ -69,6 +69,34 @@ function phase(s: State): { name: string; hint: string; season: string } {
   return { name: 'Vegetační klid', hint: 'Strom odpočívá. Vhodná doba na výběr pupenů a hrubý řez.', season: doy > 330 ? 'winter' : 'autumn' };
 }
 
+/** Sloupec období: v prvním roce vývoj semenáčku, pak roční cyklus stromu. Názvy odpovídají phase(). */
+const PHASES_SEEDLING: [string, string][] = [
+  ['Semínko v zemi', 'duben'], ['Klíčení', 'duben–květen'], ['Růst epikotylu', 'červen–srpen'],
+  ['Zakládání pupenů', 'srpen–září'], ['Opad starých jehlic', 'září–říjen'], ['Vegetační klid', 'listopad–duben'],
+];
+const PHASES_TREE: [string, string][] = [
+  ['Vegetační klid', 'listopad–duben'], ['Prodlužování svíček', 'duben–červen'], ['Vyzrávání letorostů', 'červen–červenec'],
+  ['Zakládání pupenů', 'červenec–září'], ['Opad starých jehlic', 'září–říjen'],
+];
+let phaseKey = '';
+function refreshPhases(s: State, active: string) {
+  const list = yearOf(s.day) === 0 ? PHASES_SEEDLING : PHASES_TREE;
+  const key = `${list === PHASES_SEEDLING ? 's' : 't'}:${active}`;
+  if (key === phaseKey) return;
+  phaseKey = key;
+  const ol = $('phaseList');
+  ol.innerHTML = '';
+  for (const [name, months] of list) {
+    const li = document.createElement('li');
+    li.textContent = name;
+    const sp = document.createElement('span');
+    sp.textContent = months;
+    li.appendChild(sp);
+    if (name === active) { li.className = 'on'; li.setAttribute('aria-current', 'step'); }
+    ol.appendChild(li);
+  }
+}
+
 interface Described { title: string; detail: string; danger: string; action: ActionInput | null; pick: Pick }
 
 const deg = (rad: number) => Math.round((rad * 180) / Math.PI);
@@ -207,6 +235,7 @@ function refresh() {
   const ph = phase(s);
   $('date').textContent = fmtDate(s.day);
   $('phaseName').textContent = ph.name;
+  refreshPhases(s, ph.name);
   const fut = tl.futureActions();
   const fill = rootFill(s);
   const wires = s.shoots.filter((x) => x.wire);
@@ -239,6 +268,7 @@ function refresh() {
   for (const b of $('toolSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.tool === tool));
   if (repotOpen) updateRepot();
   $('wireOpts').hidden = tool !== 'wire';
+  $<HTMLButtonElement>('unwireAll').disabled = !s.shoots.some((x) => x.wire);
   $('play').textContent = playing ? '❚❚' : '▶';
   $('play').setAttribute('aria-label', playing ? 'Pozastavit čas' : 'Spustit čas');
   const banner = $('banner');
@@ -424,6 +454,14 @@ for (const el of [$('tool-wire'), $('sWires'), $('sWires').previousElementSiblin
   el.addEventListener('focus', () => view.showWires(true));
   el.addEventListener('blur', () => view.showWires(false));
 }
+$('unwireAll').onclick = () => {
+  const cnt = tl.state.shoots.filter((x) => x.wire).length;
+  if (!cnt) return;
+  tl.act({ type: 'unwireAll', label: `Sundány všechny dráty (${cnt})` });
+  lastLogKey = '';
+  persist();
+  refresh();
+};
 let flashTimer = 0;
 function flash(text: string) {
   const el = $('banner');
