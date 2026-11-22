@@ -67,6 +67,7 @@ export interface Shoot {
   scar: boolean; // drát zarostl do kůry – trvalá jizva
   male: boolean; // samčí šištice na bázi letorostu (jen v roce vzniku)
   cone: boolean; // samičí šiška u vrcholu (zraje do 3. roku)
+  heir?: boolean; // větev, která převzala roli vrcholu (pravidla v3): postupně se napřimuje i stávající dřevo
   buds: Bud[];
 }
 

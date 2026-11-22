@@ -34,9 +34,14 @@ function rotateSubtree(s: State, id: number, axis: Vec3, angle: number, skipOwnW
  *  Stane se pokračováním osy (o řád níž i s celým svým větvením), takže se začne napřimovat jako vrchol. */
 function promoteSuccessor(s: State, parentId: number) {
   if (s.rules < 2) return; // v původních pravidlech vrchol nikdo nepřevzal
-  const tip = s.shoots.filter((x) => x.parent === parentId && x.attachT > 0.98 && !x.dead);
-  if (!tip.length || tip.some((x) => x.isMain)) return;
-  const best = tip.reduce((a, b) => (b.area * (1.2 + b.dir[1]) > a.area * (1.2 + a.dir[1]) ? b : a));
+  const parent = s.shoots.find((x) => x.id === parentId);
+  const kids = s.shoots.filter((x) => x.parent === parentId && !x.dead);
+  let cand = kids.filter((x) => x.attachT > 0.98);
+  if (cand.some((x) => x.isMain) || kids.some((x) => x.isMain)) return;
+  // v3: zbyl-li jen pahýl bez jehlic a pupenů, převezme osu i větev nasazená níž na něm
+  if (!cand.length && s.rules >= 3 && parent && !parent.buds.length && !(parent.needleCount > 0 && parent.needleLive > 0.3)) cand = kids;
+  if (!cand.length) return;
+  const best = cand.reduce((a, b) => (b.area * (1.2 + b.dir[1]) > a.area * (1.2 + a.dir[1]) ? b : a));
   best.isMain = true;
   const sub = new Set<number>();
   for (const x of s.shoots) {
@@ -44,6 +49,11 @@ function promoteSuccessor(s: State, parentId: number) {
     sub.add(x.id);
     x.order = Math.max(0, x.order - 1);
     for (const b of x.buds) b.order = Math.max(0, b.order - 1);
+  }
+  // v3: nový vrchol kmene se bude napřimovat i ve stávajícím dřevě (celá jeho osa)
+  if (s.rules >= 3 && best.order === 0) {
+    let cur: Shoot | undefined = best;
+    while (cur) { cur.heir = true; const id: number = cur.id; cur = s.shoots.find((x) => x.parent === id && x.isMain && !x.dead); }
   }
 }
 
@@ -86,6 +96,8 @@ function cut(s: State, id: number, t: number) {
   updateDeath(s);
   // pahýl bez jehlic odumřel – osu převezme větev pod ním
   if (sh.dead && sh.isMain && sh.parent >= 0 && s.shoots.includes(sh)) promoteSuccessor(s, sh.parent);
+  // v3: zkrácený výhon bez jehlic už vrchol nevytvoří – osu převezme větev, která na něm zbyla
+  else if (s.rules >= 3 && !sh.dead && sh.tipCut && s.shoots.includes(sh)) promoteSuccessor(s, sh.id);
 }
 
 /** Stočí vše, co na výhonu roste, o podíl úhlu podle místa nasazení na oblouku. */

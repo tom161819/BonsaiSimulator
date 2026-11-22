@@ -218,4 +218,19 @@ test('vzorová sbírka se přehraje do stejného stromu (po změně modelu růst
   }
 });
 
+test('v3: větev, která převzala vrchol, se zvedá i ve starém dřevě; ve v2 zůstává ležet', () => {
+  const run = (rules: number) => {
+    const tl = new Timeline(3, [], rules); tl.seek(at(6, 75));
+    const top = tl.state.shoots.filter((s) => s.order === 0 && s.isMain && !s.dead && s.bornYear === 4).pop()!;
+    tl.act({ type: 'cut', shoot: top.id, t: 0 });
+    const heir = tl.state.shoots.find((s) => s.parent === top.parent && s.isMain && !s.dead)!;
+    const before = heir.dir[1];
+    tl.seek(at(12, 320));
+    return { before, after: tl.state.shoots.find((s) => s.id === heir.id)!.dir[1] };
+  };
+  const v3 = run(3), v2 = run(2);
+  assert.ok(v3.after > v3.before + 0.15 && v3.after > 0.8, `v3: ${v3.before.toFixed(2)} -> ${v3.after.toFixed(2)}`);
+  assert.ok(Math.abs(v2.after - v2.before) < 0.02, `v2 beze změny: ${v2.before.toFixed(2)} -> ${v2.after.toFixed(2)}`);
+});
+
 console.log(`\n${n} testů prošlo`);

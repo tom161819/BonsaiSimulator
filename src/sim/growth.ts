@@ -310,22 +310,26 @@ function sag(s: State) {
     let m = pm;
     const d = mul(pm, sh.dir);
     const lateralAxis = sh.order >= 1;
+    const horiz = Math.sqrt(Math.max(0, 1 - d[1] * d[1]));
+    // úhel > 0 sklání špičku dolů (prověšení), < 0 ji zvedá (napřimování náhradního vrcholu)
+    let deg = 0;
     if (!sh.dead && lateralAxis && year > sh.bornYear && !sh.wire && d[1] > P.sagFloor && sh.area > 0) {
-      const horiz = Math.sqrt(Math.max(0, 1 - d[1] * d[1]));
-      const deg = Math.min(P.sagMaxPerYear, (P.sagK * sh.fol * horiz) / sh.area);
-      if (deg > 0.02 && horiz > 0.05) {
-        const a = (deg * Math.PI) / 180;
-        // osa vodorovná, kolmá na větev; otočení skloní špičku dolů
-        const ax = norm([d[2], 0, -d[0]]);
-        const c = Math.cos(a), si = Math.sin(a), t = 1 - c;
-        const r = [
-          t * ax[0] * ax[0] + c, t * ax[0] * ax[1] - si * ax[2], t * ax[0] * ax[2] + si * ax[1],
-          t * ax[0] * ax[1] + si * ax[2], t * ax[1] * ax[1] + c, t * ax[1] * ax[2] - si * ax[0],
-          t * ax[0] * ax[2] - si * ax[1], t * ax[1] * ax[2] + si * ax[0], t * ax[2] * ax[2] + c,
-        ];
-        const p = pm ?? [1, 0, 0, 0, 1, 0, 0, 0, 1];
-        m = [0, 1, 2].flatMap((row) => [0, 1, 2].map((colI) => r[row * 3] * p[colI] + r[row * 3 + 1] * p[3 + colI] + r[row * 3 + 2] * p[6 + colI]));
-      }
+      deg = Math.min(P.sagMaxPerYear, (P.sagK * sh.fol * horiz) / sh.area);
+    } else if (s.rules >= 3 && sh.heir && !sh.dead && !sh.wire && d[1] < P.heirUpDone) {
+      // větev, která převzala vrchol, se tlakovým dřevem rok od roku zvedá ke svislici
+      deg = -clamp(P.heirUpK / (1 + 6 * Math.sqrt(sh.area / Math.PI)), P.heirUpMin, P.heirUpMax);
+    }
+    if (Math.abs(deg) > 0.02 && horiz > 0.05) {
+      const a = (deg * Math.PI) / 180;
+      const ax = norm([d[2], 0, -d[0]]); // osa vodorovná, kolmá na větev
+      const c = Math.cos(a), si = Math.sin(a), t = 1 - c;
+      const r = [
+        t * ax[0] * ax[0] + c, t * ax[0] * ax[1] - si * ax[2], t * ax[0] * ax[2] + si * ax[1],
+        t * ax[0] * ax[1] + si * ax[2], t * ax[1] * ax[1] + c, t * ax[1] * ax[2] - si * ax[0],
+        t * ax[0] * ax[2] - si * ax[1], t * ax[1] * ax[2] + si * ax[0], t * ax[2] * ax[2] + c,
+      ];
+      const p = pm ?? [1, 0, 0, 0, 1, 0, 0, 0, 1];
+      m = [0, 1, 2].flatMap((row) => [0, 1, 2].map((colI) => r[row * 3] * p[colI] + r[row * 3 + 1] * p[3 + colI] + r[row * 3 + 2] * p[6 + colI]));
     }
     M[i] = m;
     if (!m) continue;

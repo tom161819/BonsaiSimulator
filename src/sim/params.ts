@@ -90,6 +90,12 @@ export const P = {
   sagMaxPerYear: 2.5,
   sagFloor: 0.02, // větev se neprověsí pod tento sklon (složka y směru)
 
+  // --- napřimování náhradního vrcholu (pravidla v3) ---
+  heirUpK: 14, // stupně za rok ≈ heirUpK / (1 + 6 · poloměr cm): tenká větev se zvedne rychle, silná pomalu
+  heirUpMin: 1.5,
+  heirUpMax: 10,
+  heirUpDone: 0.88, // až sem (složka y směru) se dřevo zvedá; zbytek ohybu zůstane jako pohyb kmene
+
   // --- šištice ---
   coneMinAge: 8, // strom začíná plodit kolem 8.–15. roku
   maleChance: 0.3, // slabší boční letorosty nesou samčí šištice

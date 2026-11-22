@@ -131,6 +131,8 @@ Ověřeno jen z úryvků ve výsledcích vyhledávání (stránky nebyly dostupn
 **Pravidla v3 – soběstačnost větví.** Při stavbě podle pravidel spodní větve stále slábly: rozpočet se dělil
 jen shora podle síly vrcholů. Ve v3 zůstává polovina rozpočtu ve větvi, která ji svým jehličím vyrobila
 (princip uhlíkové autonomie větví), zbytek se dělí jako dřív. Hodnota 0,5 je odhad.
+Ve v3 se také větev, která převzala vrchol, postupně zvedá ke svislici i ve stávajícím dřevě (tenká rychle,
+silná pomalu), a osu může převzít i větev nasazená níž na pahýlu bez jehlic.
 
 **Verze pravidel.** Protože strom je `f(semínko, zásahy, den)`, každá změna modelu růstu mění i už uložené
 stromy. Tři z výše uvedených oprav a náhrada vrcholu jsou proto vázané na verzi pravidel uloženou se hrou:
