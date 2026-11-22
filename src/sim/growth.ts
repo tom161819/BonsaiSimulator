@@ -1,18 +1,18 @@
 // Růstové jádro: jeden krok = jeden den. Čistá funkce nad stavem, bez vazby na vykreslování.
 
 import type { Bud, BudKind, Shoot, State, Vec3 } from './types';
-import { P, POT, START_DOY } from './params';
+import { P, POT, START_DOY, START_POT } from './params';
 import { temperature } from './climate';
 import { computeLight } from './light';
 import {
-  UP, YEAR, add, clamp, computeFrames, rootBoundFactor, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
+  UP, YEAR, add, clamp, computeFrames, potCapFor, rootBoundFactor, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
 } from './util';
 
 export function createState(seed: number): State {
   return {
     seed, day: START_DOY, gdd: 0, nextId: 1, pot: 'training', stage: 'seed', shoots: [],
     flushedYear: 0, budSetYear: -1, budSetGdd: 0, production: 0, budget: 0,
-    roots: 0, potCap: POT.training.minCap, stress: 0, repotDay: START_DOY,
+    roots: 0, potCap: potCapFor(START_POT), potId: START_POT, stress: 0, repotDay: START_DOY,
   };
 }
 

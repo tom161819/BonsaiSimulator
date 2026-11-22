@@ -1,5 +1,5 @@
-import type { PotType, Shoot, State, Vec3 } from './types';
-import { P, POT } from './params';
+import type { Shoot, State, Vec3 } from './types';
+import { P, potById } from './params';
 
 export const YEAR = 365;
 export const yearOf = (day: number) => Math.floor(day / YEAR);
@@ -130,11 +130,8 @@ export function computeFrames(s: State): Frames {
   return { base, tip, index };
 }
 
-/** Kolik kořenů pojme čerstvá nádoba daného typu – dimenzuje se podle velikosti stromu. */
-export function potCapFor(s: State, pot: PotType): number {
-  const fol = s.shoots.length ? Math.max(s.shoots[0].fol, s.production) : 0;
-  return Math.max(POT[pot].minCap, fol * POT[pot].rootRoom);
-}
+/** Kolik kořenů pojme nádoba z katalogu (podle objemu v litrech). */
+export const potCapFor = (potId: string) => Math.max(1, potById(potId).liters * P.rootPerLiter);
 
 /** Zaplnění nádoby kořeny (1 = plná). */
 export const rootFill = (s: State) => (s.pot === 'ground' ? 0 : s.roots / Math.max(1, s.potCap));

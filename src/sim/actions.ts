@@ -1,7 +1,7 @@
 // Zásahy pěstitele. Každý zásah je malý záznam {den, typ, cíl}; strom = f(semínko, seznam zásahů, datum).
 
 import type { Action, Shoot, State, Vec3 } from './types';
-import { P } from './params';
+import { P, defaultPotId, potById } from './params';
 import { updateDeath } from './growth';
 import { breakRisk, norm, potCapFor, repotStress, rnd, rotate, yearOf } from './util';
 
@@ -128,9 +128,11 @@ function repot(s: State, a: Extract<Action, { type: 'repot' }>) {
   const prune = Math.min(0.9, Math.max(0, a.prune ?? 0));
   const first = s.day === s.repotDay; // volba nádoby při výsevu nic nestojí
   if (!first && s.stage !== 'seed') s.stress += repotStress(s, prune);
-  s.pot = a.pot;
+  const spec = potById(a.potId ?? defaultPotId(a.pot));
+  s.pot = spec.type;
+  s.potId = spec.id;
   s.roots *= 1 - prune;
-  s.potCap = potCapFor(s, a.pot);
+  s.potCap = potCapFor(spec.id);
   s.repotDay = s.day;
   const rad = Math.PI / 180;
   rotateSubtree(s, -1, [0, 1, 0], (a.yaw ?? 0) * rad);

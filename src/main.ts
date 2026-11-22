@@ -2,7 +2,7 @@
 
 import { Timeline } from './sim/timeline';
 import { TreeView, Pick } from './render/view';
-import { P, POT, MAX_YEARS } from './sim/params';
+import { P, POT, POTS, MAX_YEARS, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
 import { YEAR, bendLimit, breakRisk, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
@@ -222,7 +222,8 @@ function refresh() {
   }
   $('hint').textContent = fut ? `Jste v minulosti: nový zásah přepíše ${fut} pozdějších zásahů v deníku.` : hint;
   const sr = $('sRoots');
-  sr.textContent = s.pot === 'ground' ? 'volná půda' : `${POT[s.pot].name.split(' ')[1]} · ${Math.round(fill * 100)} %`;
+  sr.textContent = s.pot === 'ground' ? 'volná půda' : `${String(potById(s.potId).liters).replace('.', ',')} l · ${Math.round(fill * 100)} %`;
+  sr.title = potById(s.potId).name;
   sr.className = fill > 1.2 ? 'bad' : '';
   const sw = $('sWires');
   sw.textContent = wires.length ? `${wires.length}${biting ? ` · ${biting} zarůstá` : ''}` : '–';
@@ -431,13 +432,30 @@ function flash(text: string) {
   flashTimer = window.setTimeout(() => { flashTimer = 0; if (tl.state.stage !== 'dead') el.hidden = true; }, 4500);
 }
 
-let rPot: PotType = 'training';
+let rPot = 't05';
+{
+  // nabídka nádob po skupinách
+  const sel = $<HTMLSelectElement>('rPotSel');
+  for (const type of ['ground', 'training', 'bonsai'] as PotType[]) {
+    const grp = document.createElement('optgroup');
+    grp.label = POT[type].name;
+    for (const p of POTS.filter((x) => x.type === type)) {
+      const o = document.createElement('option');
+      o.value = p.id; o.textContent = p.name;
+      grp.appendChild(o);
+    }
+    sel.appendChild(grp);
+  }
+  sel.onchange = () => { rPot = sel.value; updateRepot(); };
+}
 const rIn = (id: string) => $<HTMLInputElement>(id);
 const rVals = () => ({ prune: Number(rIn('rPrune').value) / 100, yaw: Number(rIn('rYaw').value), side: Number(rIn('rSide').value), fwd: Number(rIn('rFwd').value) });
 
 function updateRepot() {
   const s = tl.state, v = rVals();
-  for (const b of $('pots').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.pot === rPot));
+  const spec = potById(rPot);
+  $<HTMLSelectElement>('rPotSel').value = rPot;
+  view.previewPot(rPot);
   $('rPruneV').textContent = `${Math.round(v.prune * 100)} %`;
   $('rYawV').textContent = `${v.yaw}°`;
   $('rSideV').textContent = v.side ? `${Math.abs(v.side)}° ${v.side < 0 ? 'vlevo' : 'vpravo'}` : '0°';
@@ -449,9 +467,13 @@ function updateRepot() {
   if (s.stage === 'seed') { line('Semínko zatím nevyklíčilo – nádobu lze zvolit bez rizika.'); $<HTMLButtonElement>('rOk').disabled = false; return; }
   const season = repotSeason(s);
   const total = s.stress + repotStress(s, v.prune);
-  const after = rPot === 'ground' ? 0 : (s.roots * (1 - v.prune)) / Math.max(1, potCapFor(s, rPot));
-  line(`Kořeny teď zaplňují nádobu z ${Math.round(rootFill(s) * 100)} %, po přesazení z ${Math.round(after * 100)} %.`);
-  if (after > P.rootBoundStart) line('Nová nádoba bude hned těsná – zakraťte kořeny víc.', true);
+  const after = spec.type === 'ground' ? 0 : (s.roots * (1 - v.prune)) / potCapFor(rPot);
+  if (spec.type === 'ground') line('Ve volné půdě kořeny nic neomezuje – strom sílí nejrychleji, ale roste do výšky a jehlice má dlouhé.');
+  else {
+    line(`Kořeny teď zaplňují nádobu z ${Math.round(rootFill(s) * 100)} %, v nové (${String(spec.liters).replace('.', ',')} l) zaplní ${Math.round(after * 100)} %.`);
+    if (after > 1.2) line('Kořeny se do této nádoby nevejdou – zakraťte je víc nebo zvolte větší.', true);
+    else if (after > P.rootBoundStart) line('Nádoba bude hned těsná – zakraťte kořeny víc nebo zvolte větší.', true);
+  }
   line(`Termín: ${season.name}.`, season.k > 1.5);
   if (total >= 1) line('Takový zásah strom nepřežije.', true);
   else if (total > 0.7) line('Stres vysoký: příští rok skoro neporoste.', true);
@@ -464,12 +486,13 @@ function closeRepot() {
   repotOpen = false;
   $('repot').hidden = true;
   view.previewRotation(0, 0, 0);
+  view.previewPot(null);
   refresh();
 }
 $('repotBtn').onclick = () => {
   if (repotOpen) { closeRepot(); return; }
   repotOpen = true; playing = false;
-  rPot = tl.state.pot;
+  rPot = tl.state.potId;
   rIn('rPrune').value = tl.state.pot === 'ground' || tl.state.stage === 'seed' ? '0' : '30';
   rIn('rYaw').value = '0'; rIn('rSide').value = '0'; rIn('rFwd').value = '0';
   $('repot').hidden = false;
@@ -477,16 +500,16 @@ $('repotBtn').onclick = () => {
   setHover(null);
   refresh();
 };
-for (const b of $('pots').querySelectorAll('button')) b.onclick = () => { rPot = b.dataset.pot as PotType; updateRepot(); };
 for (const id of ['rPrune', 'rYaw', 'rSide', 'rFwd']) rIn(id).oninput = updateRepot;
 $('rCancel').onclick = closeRepot;
 $('rOk').onclick = () => {
   const v = rVals();
-  const parts = [POT[rPot].name.toLowerCase()];
+  const spec = potById(rPot);
+  const parts = [spec.name.toLowerCase()];
   if (v.prune) parts.push(`kořeny −${Math.round(v.prune * 100)} %`);
   if (v.yaw) parts.push(`otočení ${v.yaw}°`);
   if (v.side || v.fwd) parts.push(`náklon ${Math.round(Math.hypot(v.side, v.fwd))}°`);
-  tl.act({ type: 'repot', pot: rPot, prune: v.prune, yaw: v.yaw, tiltX: v.fwd, tiltZ: -v.side, label: `Přesazeno: ${parts.join(', ')}` });
+  tl.act({ type: 'repot', pot: spec.type, potId: spec.id, prune: v.prune, yaw: v.yaw, tiltX: v.fwd, tiltZ: -v.side, label: `Přesazeno: ${parts.join(', ')}` });
   lastLogKey = '';
   persist();
   closeRepot();

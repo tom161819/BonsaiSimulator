@@ -66,7 +66,7 @@ Stav nese množství kořenů a kapacitu nádoby. Kořeny přirůstají úměrn�
 | Pravidlo v modelu | Opora ve zdrojích (viz poznámka o ověření níže) |
 | --- | --- |
 | Od 75 % zaplnění nádoby růst slábne, při 160 % klesá na 30 % – strom v misce bez přesazení během let chřadne | Příznaky prokořenění: kořeny krouží, voda neprotéká, růst slábne [P2, P8]. Větší nádoba = víc biomasy (+43 % na zdvojnásobení objemu) [28] |
-| Miska je těsná (pojme 1,5násobek současného olistění), pěstební nádoba volná (3násobek) | Interval přesazování borovic 2–5 let, mladé častěji [P1, P2] |
+| Nádoba se volí z katalogu s objemem v litrech a sama se nezvětšuje; litr substrátu pojme pevné množství kořenů. Malá miska se proto zaplní rychle, velký kontejner pomalu | Interval přesazování borovic 2–5 let, mladé častěji [P1, P2] |
 | Při přesazení se volí, kolik kořenů zakrátit; stres = (0,1 + podíl zakrácení) × sezónní násobek | Silně zakrácené stromy přirostly první rok o 65 % méně na výšku; u borovice lesní přežívaly stromy s polovinou kořenů jako nezakrácené, při úplném zakrácení nejhůř [P10–P12] |
 | Nejšetrnější termín je předjaří při nalévání pupenů (×1), náhradní pozdní léto (×1,3), podzim–zima ×1,6, léto ×2, doba rašení ×2,5 | Předjaří před prodlužováním svíček; u borovice lesní se v Evropě přesazuje i koncem léta [P3, P4] |
 | Stres ≥ 1 strom nepřežije; nižší stres snižuje růstový rozpočet a během sezóny odeznívá | Úplné obnažení kořenů jehličnany silně oslabí a může je zabít; část balu má zůstat netknutá kvůli mykorhize [P5–P7] |

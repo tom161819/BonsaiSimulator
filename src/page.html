@@ -76,6 +76,7 @@
   #repot label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-top: 4px; }
   #repot output { color: var(--fg); font-variant-numeric: tabular-nums; }
   #repot input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
+  #rPotSel { width: 100%; }
   #rInfo { margin: 6px 0; font-size: 12.5px; }
   #rInfo b { display: block; }
   #rInfo .bad { color: var(--danger); }
@@ -161,11 +162,8 @@
     </div>
     <div class="panel" id="repot" hidden>
       <h2>Přesazení</h2>
-      <div class="seg" id="pots">
-        <button id="pot-ground" data-pot="ground">Půda</button>
-        <button id="pot-training" data-pot="training">Nádoba</button>
-        <button id="pot-bonsai" data-pot="bonsai">Miska</button>
-      </div>
+      <label for="rPotSel">Nádoba</label>
+      <select id="rPotSel"></select>
       <label for="rPrune">Zakrátit kořeny <output id="rPruneV"></output></label>
       <input type="range" id="rPrune" min="0" max="70" step="5" value="30">
       <label for="rYaw">Otočit strom <output id="rYawV"></output></label>

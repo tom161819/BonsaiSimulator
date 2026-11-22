@@ -62,6 +62,7 @@ export const P = {
   shootRadiusPerLen: 0.006,
 
   // --- kořeny a přesazování ---
+  rootPerLiter: 40, // kolik kořenů (v jednotkách olistění, které uživí) se vejde do litru substrátu
   rootGrowth: 0.35, // přírůst kořenů za rok na jednotku olistění (zpomaluje, jak se nádoba plní)
   rootBoundStart: 0.75, // od tohoto zaplnění nádoby růst slábne
   rootBoundFull: 1.6, // při tomto zaplnění je růst na minimu
@@ -86,15 +87,39 @@ export const P = {
   maxShoots: 7000,
 };
 
-/** growth = jak dobře substrát strom živí (mělká miska hůř než hluboká nádoba).
- *  rootRoom = kolikanásobek současného olistění uživí kořeny v čerstvě přesazené nádobě;
- *  miska je těsná, proto se v ní kořeny při přesazení musí zakracovat.
- *  Jak se nádoba plní kořeny, růst slábne (viz rootBound*). */
-export const POT: Record<PotType, { name: string; growth: number; needle: number; rootRoom: number; minCap: number }> = {
-  ground: { name: 'Volná půda', growth: 1.0, needle: 1.0, rootRoom: 1e6, minCap: 1e9 },
-  training: { name: 'Pěstební nádoba', growth: 0.85, needle: 0.9, rootRoom: 3, minCap: 40 },
-  bonsai: { name: 'Bonsajová miska', growth: 0.5, needle: 0.72, rootRoom: 1.5, minCap: 15 },
+/** Typ stanoviště: growth = jak dobře substrát strom živí (mělká miska hůř než hluboký kontejner),
+ *  needle = vliv na délku jehlic. */
+export const POT: Record<PotType, { name: string; growth: number; needle: number }> = {
+  ground: { name: 'Volná půda', growth: 1.0, needle: 1.0 },
+  training: { name: 'Pěstební nádoba', growth: 0.85, needle: 0.9 },
+  bonsai: { name: 'Bonsajová miska', growth: 0.5, needle: 0.72 },
 };
+
+/** Katalog nádob. Velikost se sama nemění – nádobu volí pěstitel při přesazení.
+ *  Objem v litrech určuje, kolik kořenů se vejde (P.rootPerLiter); rozměry v cm slouží vykreslení:
+ *  kulatá = průměr a × výška h, oválná a obdélníková = šířka a × hloubka b × výška h. */
+export interface PotSpec {
+  id: string; type: PotType; name: string; liters: number;
+  shape: 'ground' | 'round' | 'oval' | 'rect'; a: number; b: number; h: number; color: number; glaze: boolean;
+}
+export const POTS: PotSpec[] = [
+  { id: 'ground', type: 'ground', name: 'Volná půda (záhon)', liters: 0, shape: 'ground', a: 0, b: 0, h: 0, color: 0, glaze: false },
+  { id: 't05', type: 'training', name: 'Sadbovací kelímek 0,5 l', liters: 0.5, shape: 'round', a: 10, b: 10, h: 9, color: 0x2b2b2d, glaze: false },
+  { id: 't2', type: 'training', name: 'Květináč terakota 2 l', liters: 2, shape: 'round', a: 17, b: 17, h: 13, color: 0xa5583a, glaze: false },
+  { id: 't5', type: 'training', name: 'Květináč terakota 5 l', liters: 5, shape: 'round', a: 23, b: 23, h: 18, color: 0xa5583a, glaze: false },
+  { id: 't10', type: 'training', name: 'Kontejner 10 l', liters: 10, shape: 'round', a: 29, b: 29, h: 22, color: 0x2b2b2d, glaze: false },
+  { id: 't25', type: 'training', name: 'Kontejner 25 l', liters: 25, shape: 'round', a: 39, b: 39, h: 29, color: 0x2b2b2d, glaze: false },
+  { id: 'b02', type: 'bonsai', name: 'Kulatá miska mame 0,2 l', liters: 0.2, shape: 'round', a: 11, b: 11, h: 3.5, color: 0x6b4634, glaze: false },
+  { id: 'b07', type: 'bonsai', name: 'Oválná miska 0,7 l, modrá glazura', liters: 0.7, shape: 'oval', a: 20, b: 15, h: 4, color: 0x3d5266, glaze: true },
+  { id: 'b15', type: 'bonsai', name: 'Obdélníková miska 1,5 l, neglazovaná', liters: 1.5, shape: 'rect', a: 27, b: 19, h: 5, color: 0x4f3a30, glaze: false },
+  { id: 'b3', type: 'bonsai', name: 'Oválná miska 3 l, zelená glazura', liters: 3, shape: 'oval', a: 36, b: 27, h: 6, color: 0x5d7262, glaze: true },
+  { id: 'b6', type: 'bonsai', name: 'Obdélníková miska 6 l, neglazovaná', liters: 6, shape: 'rect', a: 46, b: 33, h: 7.5, color: 0x7a4a36, glaze: false },
+  { id: 'b12', type: 'bonsai', name: 'Hluboká obdélníková miska 12 l', liters: 12, shape: 'rect', a: 52, b: 38, h: 11, color: 0x3c3f44, glaze: true },
+];
+export const potById = (id: string | undefined): PotSpec => POTS.find((p) => p.id === id) ?? POTS[1];
+/** Výchozí nádoba pro daný typ (starší uložené hry znají jen typ). */
+export const defaultPotId = (type: PotType) => (type === 'ground' ? 'ground' : type === 'training' ? 't5' : 'b15');
+export const START_POT = 't05';
 
 export const START_DOY = 90; // výsev 1. dubna
 export const MAX_YEARS = 30;
