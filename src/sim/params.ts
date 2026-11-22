@@ -79,6 +79,8 @@ export const P = {
   bendK: 28, // bezpečný ohyb ve stupních ≈ bendK / (poloměr cm + 0,25)
   bendMin: 8,
   bendMax: 80,
+  bendArcMax: 150,
+  bendStrain: 0.05, // oblouk: největší poměr poloměru větve k poloměru ohybu
   bendSpringFactor: 0.6, // v době jarního růstu se kůra snadno odlupuje – menší bezpečný ohyb
 
   maxShoots: 7000,

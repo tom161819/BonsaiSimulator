@@ -28,7 +28,7 @@ Vývojový server běží na http://localhost:5173. `npm run build` vytvoří st
 ## Ovládání
 
 - **Najetí myší** na výhon nebo pupen ukáže, co zásah udělá; **kliknutí** ho provede. Na dotykovém displeji ťuknutí vybere a tlačítko *Provést* potvrdí.
-- **Nástroj Drát:** tažením za větev ji ohnete (zelený náhled = bezpečné, červený = hrozí prasknutí); kliknutí na nadrátovanou větev drát sundá.
+- **Nástroj Drát:** posuvník *Tvar ohybu* volí ostrý zlom nebo plynulý oblouk; tažením za větev ji ohnete (zelený náhled = bezpečné, červený = hrozí prasknutí); kliknutí na nadrátovanou větev drát sundá.
 - **Přesadit…** otevře volbu nádoby, zakrácení kořenů, otočení a náklonu s živým náhledem.
 - Tažení mimo strom otáčí pohled, kolečko přibližuje, pravé tlačítko (nebo Shift + tažení) posouvá.
 - Mezerník spouští a zastavuje čas, Ctrl+Z vrací poslední zásah.

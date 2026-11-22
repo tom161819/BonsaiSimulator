@@ -29,6 +29,7 @@ export interface Wire {
   day: number;
   axis: Vec3;
   angle: number; // rad
+  z: number; // 0 = ostrý ohyb v nasazení, jinak podíl délky, přes který jde oblouk
   set: number; // 0..1 jak moc už dřevo nový tvar drží
   area0: number; // průřez při nasazení (pro zarůstání drátu)
 }
@@ -61,6 +62,8 @@ export interface Shoot {
   light: number; // 0..1 oslunění
   fol: number; // olistění celého podstromu (cache pro tloušťkový růst)
   wire: Wire | null;
+  /** oblouk: výhon se od paty plynule stáčí kolem osy o úhel angle na prvních z své délky */
+  arc: { axis: Vec3; angle: number; z: number } | null;
   scar: boolean; // drát zarostl do kůry – trvalá jizva
   buds: Bud[];
 }
@@ -93,12 +96,12 @@ export type Action =
   | { day: number; type: 'cut'; shoot: number; t: number; label?: string }
   | { day: number; type: 'bud'; shoot: number; bud: number; label?: string }
   | { day: number; type: 'repot'; pot: PotType; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; label?: string }
-  | { day: number; type: 'wire'; shoot: number; axis: Vec3; angle: number; label?: string }
+  | { day: number; type: 'wire'; shoot: number; axis: Vec3; angle: number; z?: number; label?: string }
   | { day: number; type: 'unwire'; shoot: number; label?: string };
 
 export type ActionInput =
   | { type: 'cut'; shoot: number; t: number; label?: string }
   | { type: 'bud'; shoot: number; bud: number; label?: string }
   | { type: 'repot'; pot: PotType; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; label?: string }
-  | { type: 'wire'; shoot: number; axis: Vec3; angle: number; label?: string }
+  | { type: 'wire'; shoot: number; axis: Vec3; angle: number; z?: number; label?: string }
   | { type: 'unwire'; shoot: number; label?: string };

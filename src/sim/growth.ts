@@ -21,7 +21,7 @@ function newShoot(s: State, o: Partial<Shoot>): Shoot {
     id: s.nextId++, parent: -1, attachT: 1, dir: [0, 1, 0], order: 0, isMain: true, kind: 'shoot',
     bornYear: yearOf(s.day), bornDay: s.day, targetLen: 1, len: 0, elong: true, delay: 0, gdd0: s.gdd,
     needleCount: 0, needleLen: 0, needleLive: 1, shedding: false, area: 0, dead: false, deadYear: -1,
-    tipCut: false, stimulus: 0, light: 1, fol: 0, wire: null, scar: false, buds: [], ...o,
+    tipCut: false, stimulus: 0, light: 1, fol: 0, wire: null, arc: null, scar: false, buds: [], ...o,
   };
   s.shoots.push(sh);
   return sh;

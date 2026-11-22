@@ -1,8 +1,8 @@
 // Testy simulačního jádra (bez grafiky): node scripts/run.mjs scripts/test.ts
 import assert from 'node:assert/strict';
 import { Timeline } from '../src/sim/timeline';
-import { YEAR, bendLimit, rootFill, stats } from '../src/sim/util';
-import type { State } from '../src/sim/types';
+import { YEAR, bendLimit, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
+import type { State, Vec3 } from '../src/sim/types';
 
 const sig = (s: State) => JSON.stringify(s.shoots.map((x) => [x.id, x.parent, +x.len.toFixed(4), x.buds.length, x.dead]));
 const at = (y: number, doy: number) => y * YEAR + doy;
@@ -138,6 +138,25 @@ test('strom přesazený nakřivo zůstane dole šikmý, ale nový vrchol roste v
   tl.seek(at(7, 300));
   const top = tl.state.shoots.filter((s) => s.order === 0 && s.bornYear === 7 && !s.dead).pop()!;
   assert.ok(top.dir[1] > 0.93, `vrchol míří vzhůru (${top.dir[1].toFixed(2)})`);
+});
+
+test('oblouk: špička se stočí o celý úhel, větev se nezkrátí a plynulý ohyb snese víc než zlom', () => {
+  const tl = new Timeline(3); tl.seek(at(5, 320));
+  const br = tl.state.shoots.find((s) => s.order === 1 && s.bornYear === 3 && !s.dead)!;
+  const kid = tl.state.shoots.find((s) => s.parent === br.id && s.attachT > 0.98)!;
+  const k0 = [...kid.dir];
+  assert.ok(bendLimit(tl.state, br, 1) >= bendLimit(tl.state, br, 0));
+  const ang = Math.min(1.0, bendLimit(tl.state, br, 1) * 0.9);
+  const axis = norm(cross(br.dir as Vec3, [0, 1, 0]));
+  tl.act({ type: 'wire', shoot: br.id, axis, angle: ang, z: 1 });
+  const b2 = tl.state.shoots.find((s) => s.id === br.id)!, k2 = tl.state.shoots.find((s) => s.id === kid.id)!;
+  assert.ok(b2.arc && !b2.dead);
+  const want = rotate(k0 as Vec3, axis, ang);
+  assert.ok(Math.hypot(want[0] - k2.dir[0], want[1] - k2.dir[1], want[2] - k2.dir[2]) < 1e-6, 'potomek na špičce se stočil o celý úhel');
+  const chord = Math.hypot(...shootPoint(b2, 1));
+  assert.ok(chord < b2.len && chord > b2.len * 0.8, 'tětiva oblouku je kratší než délka výhonu');
+  tl.act({ type: 'unwire', shoot: br.id });
+  assert.equal(tl.state.shoots.find((s) => s.id === br.id)!.arc, null, 'hned po sundání se oblouk narovná');
 });
 
 console.log(`\n${n} testů prošlo`);

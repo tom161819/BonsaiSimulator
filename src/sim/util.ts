@@ -64,6 +64,22 @@ export function tilt(p: Vec3, theta: number, phi: number): Vec3 {
   ]);
 }
 
+/** Bod na výhonu v podílu t jeho délky, relativně k patě (rovný úsek nebo oblouk od drátu). */
+export function shootPoint(sh: Shoot, t: number): Vec3 {
+  const L = sh.len, a = sh.arc;
+  if (!a || Math.abs(a.angle) < 1e-4) return [sh.dir[0] * L * t, sh.dir[1] * L * t, sh.dir[2] * L * t];
+  const z = Math.max(a.z, 1e-3), tt = Math.min(t, z);
+  const th = (a.angle * tt) / z, R = (z * L) / a.angle;
+  const n = cross(a.axis, sh.dir);
+  const s = R * Math.sin(th), c = R * (1 - Math.cos(th));
+  const p: Vec3 = [sh.dir[0] * s + n[0] * c, sh.dir[1] * s + n[1] * c, sh.dir[2] * s + n[2] * c];
+  if (t > z) {
+    const e = rotate(sh.dir, a.axis, a.angle), k = (t - z) * L;
+    p[0] += e[0] * k; p[1] += e[1] * k; p[2] += e[2] * k;
+  }
+  return p;
+}
+
 export const radiusOf = (sh: Shoot) => Math.sqrt(sh.area / Math.PI);
 
 export function indexMap(s: State): Map<number, number> {
@@ -104,9 +120,12 @@ export function computeFrames(s: State): Frames {
     const sh = s.shoots[i];
     const pi = sh.parent < 0 ? -1 : index.get(sh.parent)!;
     if (pi >= 0) {
-      for (let k = 0; k < 3; k++) base[i * 3 + k] = base[pi * 3 + k] + (tip[pi * 3 + k] - base[pi * 3 + k]) * sh.attachT;
+      const par = s.shoots[pi];
+      if (par.arc) { const p = shootPoint(par, sh.attachT); for (let k = 0; k < 3; k++) base[i * 3 + k] = base[pi * 3 + k] + p[k]; }
+      else for (let k = 0; k < 3; k++) base[i * 3 + k] = base[pi * 3 + k] + (tip[pi * 3 + k] - base[pi * 3 + k]) * sh.attachT;
     }
-    for (let k = 0; k < 3; k++) tip[i * 3 + k] = base[i * 3 + k] + sh.dir[k] * sh.len;
+    if (sh.arc) { const p = shootPoint(sh, 1); for (let k = 0; k < 3; k++) tip[i * 3 + k] = base[i * 3 + k] + p[k]; }
+    else for (let k = 0; k < 3; k++) tip[i * 3 + k] = base[i * 3 + k] + sh.dir[k] * sh.len;
   }
   return { base, tip, index };
 }
@@ -128,15 +147,18 @@ export function rootBoundFactor(s: State): number {
 }
 
 /** Bezpečný úhel ohybu výhonu drátem (rad): tenké dřevo se ohne hodně, silné málo. */
-export function bendLimit(s: State, sh: Shoot): number {
-  let deg = clamp(P.bendK / (radiusOf(sh) + 0.25), P.bendMin, P.bendMax);
+export function bendLimit(s: State, sh: Shoot, z = 0): number {
+  const r = radiusOf(sh);
+  let deg = clamp(P.bendK / (r + 0.25), P.bendMin, P.bendMax);
+  // plynulý oblouk namáhá dřevo méně než zlom: mez určuje poloměr ohybu vůči síle větve
+  if (z > 0) deg = clamp(Math.max(deg, ((z * sh.len * P.bendStrain) / Math.max(r, 0.03)) * (180 / Math.PI)), P.bendMin, P.bendArcMax);
   if (s.gdd >= P.flushGdd && s.gdd < P.budSetGdd) deg *= P.bendSpringFactor;
   return (deg * Math.PI) / 180;
 }
 
 /** Pravděpodobnost prasknutí při ohybu o daný úhel. */
-export const breakRisk = (s: State, sh: Shoot, angle: number) => {
-  const safe = bendLimit(s, sh);
+export const breakRisk = (s: State, sh: Shoot, angle: number, z = 0) => {
+  const safe = bendLimit(s, sh, z);
   return clamp((angle - safe) / (0.5 * safe), 0, 1);
 };
 

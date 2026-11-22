@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import type { PotType, Shoot, State } from '../sim/types';
 import { P } from '../sim/params';
 import type { Vec3 } from '../sim/types';
-import { Frames, basis, clamp, computeFrames, doyOf, needleGrowth, radiusOf, rnd, smooth, yearOf } from '../sim/util';
+import { Frames, basis, clamp, computeFrames, doyOf, needleGrowth, radiusOf, rnd, rotate, shootPoint, smooth, yearOf } from '../sim/util';
 
 export type Pick =
   | { type: 'bud'; shoot: number; bud: number }
@@ -260,9 +260,40 @@ export class TreeView {
     for (let i = 0; i < n; i++) {
       const sh = s.shoots[i];
       const bx = base[i * 3], by = base[i * 3 + 1], bz = base[i * 3 + 2];
-      const d = sh.dir;
-      const [u, w] = basis(d);
+      const d0 = sh.dir;
+      const [u0, w0] = basis(d0);
       const len = sh.len;
+      const arc = sh.arc;
+      // místní soustava v bodě t výhonu: střed c a osy d (podél), u, w (napříč); u oblouku se stáčí
+      let d = d0, u = u0, w = w0, cx = bx, cy = by, cz = bz;
+      const at = (t: number) => {
+        if (!arc) { cx = bx + d0[0] * len * t; cy = by + d0[1] * len * t; cz = bz + d0[2] * len * t; return; }
+        const p = shootPoint(sh, t), a = arc.angle * Math.min(1, t / Math.max(arc.z, 1e-3));
+        cx = bx + p[0]; cy = by + p[1]; cz = bz + p[2];
+        d = rotate(d0, arc.axis, a); u = rotate(u0, arc.axis, a); w = rotate(w0, arc.axis, a);
+      };
+      const drawBud = (dir: Vec3, bl: number, off: number) => {
+        const br = bl * 0.3;
+        const ox = cx + dir[0] * off, oy = cy + dir[1] * off, oz = cz + dir[2] * off;
+        const [bu, bw] = basis(dir);
+        wb.reserve(3 * RAD + 1, 3 * RAD * 6);
+        let prev = -1;
+        for (const [t, r, cr, cg, cb] of [[0, 0.7, 0.5, 0.3, 0.2], [0.4, 1, 0.62, 0.36, 0.24], [0.78, 0.55, 0.7, 0.5, 0.36]] as number[][]) {
+          const first = wb.nv;
+          for (let k = 0; k < RAD; k++) {
+            const a = (k / RAD) * 6.2832;
+            const nx = bu[0] * Math.cos(a) + bw[0] * Math.sin(a), ny = bu[1] * Math.cos(a) + bw[1] * Math.sin(a), nz = bu[2] * Math.cos(a) + bw[2] * Math.sin(a);
+            wb.v(ox + dir[0] * bl * t + nx * br * r, oy + dir[1] * bl * t + ny * br * r, oz + dir[2] * bl * t + nz * br * r, nx, ny, nz, cr, cg, cb);
+          }
+          if (prev >= 0) for (let k = 0; k < RAD; k++) {
+            const k2 = (k + 1) % RAD;
+            wb.tri(prev + k, prev + k2, first + k); wb.tri(prev + k2, first + k2, first + k);
+          }
+          prev = first;
+        }
+        const c = wb.v(ox + dir[0] * bl, oy + dir[1] * bl, oz + dir[2] * bl, dir[0], dir[1], dir[2], 0.82, 0.7, 0.55);
+        for (let k = 0; k < RAD; k++) wb.tri(prev + k, prev + (k + 1) % RAD, c);
+      };
       let rb = radiusOf(sh);
       if (sh.elong && sh.targetLen > 0) rb *= 0.55 + 0.45 * (len / sh.targetLen);
       const rt = sh.dead ? rb * 0.6 : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
@@ -271,15 +302,21 @@ export class TreeView {
       if (len > 0.01) {
         // válec: kroužky pata -> vrchol, kořenový výhon má u země náběh
         const rings: [number, number][] = i === 0 ? [[0, rb * 1.45], [Math.min(0.3, 1.2 * rb / len), rb], [1, rt]] : [[0, rb], [1, rt]];
+        if (arc) {
+          rings.length = 0;
+          const seg = Math.max(4, Math.min(16, Math.round(Math.abs(arc.angle) * 10)));
+          for (let k = 0; k <= seg; k++) rings.push([k / seg, rb + (rt - rb) * (k / seg)]);
+        }
         wb.reserve(rings.length * RAD + 1, rings.length * RAD * 6);
         let prev = -1;
         for (const [t, r] of rings) {
           const first = wb.nv;
           const shade = 0.88 + 0.24 * rnd(sh.id, 5, Math.round(t * 10));
+          at(t);
           for (let k = 0; k < RAD; k++) {
             const a = (k / RAD) * 6.2832;
             const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
-            wb.v(bx + d[0] * len * t + nx * r, by + d[1] * len * t + ny * r, bz + d[2] * len * t + nz * r, nx, ny, nz, col[0] * shade, col[1] * shade, col[2] * shade);
+            wb.v(cx + nx * r, cy + ny * r, cz + nz * r, nx, ny, nz, col[0] * shade, col[1] * shade, col[2] * shade);
           }
           if (prev >= 0) for (let k = 0; k < RAD; k++) {
             const k2 = (k + 1) % RAD;
@@ -288,7 +325,8 @@ export class TreeView {
           prev = first;
         }
         const cut = sh.tipCut && !sh.elong ? 0.2 : 0.8;
-        const c = wb.v(bx + d[0] * (len + rt * cut), by + d[1] * (len + rt * cut), bz + d[2] * (len + rt * cut), d[0], d[1], d[2],
+        at(1);
+        const c = wb.v(cx + d[0] * rt * cut, cy + d[1] * rt * cut, cz + d[2] * rt * cut, d[0], d[1], d[2],
           sh.tipCut ? 0.8 : col[0], sh.tipCut ? 0.7 : col[1], sh.tipCut ? 0.5 : col[2]);
         for (let k = 0; k < RAD; k++) wb.tri(prev + k, prev + (k + 1) % RAD, c);
       }
@@ -304,8 +342,9 @@ export class TreeView {
         for (let k = 0; k <= steps; k++) {
           const t = k / steps, a = (k / 8) * 6.2832 + sh.id;
           const rr = rb + (rt - rb) * t + (sh.wire && !sh.scar ? wr * 0.7 : 0.012);
+          at(t);
           const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
-          const px = bx + d[0] * len * t + nx * rr, py = by + d[1] * len * t + ny * rr, pz = bz + d[2] * len * t + nz * rr;
+          const px = cx + nx * rr, py = cy + ny * rr, pz = cz + nz * rr;
           const v0 = wb.v(px - d[0] * wr, py - d[1] * wr, pz - d[2] * wr, nx, ny, nz, cr, cg, cb);
           wb.v(px + d[0] * wr, py + d[1] * wr, pz + d[2] * wr, nx, ny, nz, cr, cg, cb);
           if (prev >= 0) {
@@ -320,27 +359,14 @@ export class TreeView {
 
       // pupeny: vejčité, červenohnědé, se světlou zasmolenou špičkou
       for (const b of sh.buds) {
-        const bl = Math.min(1.5, 0.28 + 0.045 * b.len) * budG, br = bl * 0.3;
-        const off = b.kind === 'terminal' || b.t < 0.98 ? 0 : rt * 0.5;
-        const ox = bx + d[0] * len * b.t + b.dir[0] * off, oy = by + d[1] * len * b.t + b.dir[1] * off, oz = bz + d[2] * len * b.t + b.dir[2] * off;
-        const [bu, bw] = basis(b.dir);
-        wb.reserve(3 * RAD + 1, 3 * RAD * 6);
-        let prev = -1;
-        for (const [t, r, cr, cg, cb] of [[0, 0.7, 0.5, 0.3, 0.2], [0.4, 1, 0.62, 0.36, 0.24], [0.78, 0.55, 0.7, 0.5, 0.36]] as number[][]) {
-          const first = wb.nv;
-          for (let k = 0; k < RAD; k++) {
-            const a = (k / RAD) * 6.2832;
-            const nx = bu[0] * Math.cos(a) + bw[0] * Math.sin(a), ny = bu[1] * Math.cos(a) + bw[1] * Math.sin(a), nz = bu[2] * Math.cos(a) + bw[2] * Math.sin(a);
-            wb.v(ox + b.dir[0] * bl * t + nx * br * r, oy + b.dir[1] * bl * t + ny * br * r, oz + b.dir[2] * bl * t + nz * br * r, nx, ny, nz, cr, cg, cb);
-          }
-          if (prev >= 0) for (let k = 0; k < RAD; k++) {
-            const k2 = (k + 1) % RAD;
-            wb.tri(prev + k, prev + k2, first + k); wb.tri(prev + k2, first + k2, first + k);
-          }
-          prev = first;
-        }
-        const c = wb.v(ox + b.dir[0] * bl, oy + b.dir[1] * bl, oz + b.dir[2] * bl, b.dir[0], b.dir[1], b.dir[2], 0.82, 0.7, 0.55);
-        for (let k = 0; k < RAD; k++) wb.tri(prev + k, prev + (k + 1) % RAD, c);
+        at(b.t);
+        drawBud(b.dir, Math.min(1.5, 0.28 + 0.045 * b.len) * budG, b.kind === 'terminal' || b.t < 0.98 ? 0 : rt * 0.5);
+      }
+      // rašící svíčka: pupen nezmizí, ale protahuje se – na špičce svíčky zůstává, dokud nedoroste
+      if (sh.elong && sh.kind === 'shoot' && !sh.tipCut) {
+        const e = sh.targetLen > 0 ? len / sh.targetLen : 1;
+        at(1);
+        drawBud(d, Math.min(1.5, 0.28 + 0.045 * sh.targetLen) * (1.1 - 0.75 * e), 0);
       }
 
       // jehlice
@@ -368,11 +394,12 @@ export class TreeView {
         const h = rnd(sh.id, k, 11);
         if (h >= sh.needleLive) continue;
         const t = bare + (1 - bare) * ((k + 0.5) / cnt);
+        at(t);
         const phi = sh.kind === 'hypocotyl' ? (k / cnt) * 6.2832 + sh.id : k * 2.39996 + sh.id;
         const al = alpha + (h - 0.5) * 0.3;
         const sa = Math.sin(al), ca = Math.cos(al), cp = Math.cos(phi), sp = Math.sin(phi);
         const rx = u[0] * cp + w[0] * sp, ry = u[1] * cp + w[1] * sp, rz = u[2] * cp + w[2] * sp;
-        const px = bx + d[0] * len * t, py = by + d[1] * len * t, pz = bz + d[2] * len * t;
+        const px = cx, py = cy, pz = cz;
         // tečna (kolmo na jehlici) pro šířku a rozevření páru
         const tx = -u[0] * sp + w[0] * cp, ty = -u[1] * sp + w[1] * cp, tz = -u[2] * sp + w[2] * cp;
         let r = cr, gg = cg, b = cb;
@@ -457,28 +484,28 @@ export class TreeView {
     return { axis: [axis.x, axis.y, axis.z], angle: d.angleTo(nd) };
   }
 
-  /** Náhled ohybu: kostra větve otočená kolem paty; barva podle rizika. */
-  previewBend(id: number, axis: Vec3, angle: number, risky: boolean) {
-    const s = this.state, fr = this.frames;
-    const i = fr?.index.get(id);
-    if (!s || !fr || i === undefined) return;
-    const B = new THREE.Vector3(fr.base[i * 3], fr.base[i * 3 + 1], fr.base[i * 3 + 2]);
-    const ax = new THREE.Vector3(...axis);
+  /** Náhled ohybu: kostra větve z pokusného stavu (po ohybu); barva podle rizika. */
+  previewState(tmp: State, id: number, risky: boolean) {
+    const fr = computeFrames(tmp);
+    const i = fr.index.get(id);
+    if (i === undefined) return;
     const pts: number[] = [];
-    const v = new THREE.Vector3();
-    const push = (j: number, arr: Float32Array) => {
-      v.set(arr[j * 3], arr[j * 3 + 1], arr[j * 3 + 2]).sub(B).applyAxisAngle(ax, angle).add(B);
-      pts.push(v.x, v.y, v.z);
-    };
     const sub = new Set<number>([id]);
-    for (let j = i; j < s.shoots.length; j++) {
-      const c = s.shoots[j];
+    for (let j = i; j < tmp.shoots.length; j++) {
+      const c = tmp.shoots[j];
       if (j !== i && !sub.has(c.parent)) continue;
       sub.add(c.id);
-      push(j, fr.base); push(j, fr.tip);
+      const seg = c.arc ? 10 : 1;
+      let p = [fr.base[j * 3], fr.base[j * 3 + 1], fr.base[j * 3 + 2]];
+      for (let k = 1; k <= seg; k++) {
+        const q = shootPoint(c, k / seg);
+        const n = [fr.base[j * 3] + q[0], fr.base[j * 3 + 1] + q[1], fr.base[j * 3 + 2] + q[2]];
+        pts.push(...p, ...n);
+        p = n;
+      }
     }
     this.setLines(pts, risky ? 0xff3b1f : 0x1f9d55);
-    this.marker.position.copy(B);
+    this.marker.position.set(fr.base[i * 3], fr.base[i * 3 + 1], fr.base[i * 3 + 2]);
     this.marker.scale.setScalar(this.dist * 0.006);
     this.marker.visible = true;
   }

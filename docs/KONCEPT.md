@@ -74,11 +74,13 @@ Stav nese množství kořenů a kapacitu nádoby. Kořeny přirůstají úměrn�
 
 ## 3b. Drátování
 
-Drát se nasazuje na vyzrálý výhon a ohyb je otočení výhonu i s celým podstromem kolem jeho paty.
+Drát se nasazuje na vyzrálý výhon. Tvar ohybu se volí posuvníkem: ostrý zlom v místě nasazení, nebo plynulý
+oblouk přes zvolený podíl délky výhonu. Vše, co na výhonu roste, se stočí podle svého místa na oblouku.
 
 | Pravidlo v modelu | Opora ve zdrojích |
 | --- | --- |
 | Bezpečný ohyb ≈ 28° / (poloměr v cm + 0,25), nejvýš 80°; přes mez roste riziko prasknutí až na 100 % při 1,5násobku. Prasklá větev odumře | Jen zkušenostní pravidla – tenké větve se ohýbají drátem, silné potřebují rafii a kotvicí dráty [P24]. Číselná mez je odhad modelu |
+| Plynulý oblouk snese víc než zlom: mez je dána poměrem síly větve k poloměru ohybu (nejvýš 5 %), až do 150° | Odhad modelu; v praxi se silné ohyby rozkládají do delšího oblouku [P24] |
 | V době jarního růstu je bezpečný ohyb o 40 % menší | Při aktivním růstu se kůra odděluje od dřeva; borovice se drátují od podzimu do předjaří [P19, P20] |
 | Tvar fixuje tloušťkový přírůst: tenká větvička drží po jedné sezóně, každý cm poloměru přidá další. Dřív sundaný drát = větev se úměrně vrátí | Tvar drží až nové dřevo narostlé v ohnuté poloze; borovice fixují pomalu; po předčasném sundání se větve vracejí [P17, P18, P23] |
 | Když průřez větve naroste o 45 %, drát zarůstá a zůstane trvalá jizva | Drát se nejrychleji zařezává na jaře u mladých vitálních borovic [P21, P22] |
@@ -115,7 +117,7 @@ Náhoda je hash z id výhonu, takže zásah na jedné větvi nezmění zbytek st
 
 | Krok | Co je potřeba |
 | --- | --- |
-| Ohyb uprostřed výhonu, rafie, kotvicí dráty | Dnes se ohýbá jen v místě nasazení výhonu; silné větve by potřebovaly rozdělit úsek |
+| Rafie, kotvicí dráty, více oblouků na jednom výhonu | Nový oblouk dnes nahradí předchozí oblouk téhož výhonu |
 | Zalévání a substrát | Prokořenění zatím jen brzdí růst; chybí voda a propustnost substrátu |
 | Vyštipování jehlic | Zásah snižující `needleCount`; sníží sílu větve a pustí světlo dovnitř |
 | Zalévání, hnojení, zdraví | Další násobitele rozpočtu; délka jehlic podle dusíku |

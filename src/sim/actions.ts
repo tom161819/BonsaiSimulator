@@ -26,6 +26,7 @@ function rotateSubtree(s: State, id: number, axis: Vec3, angle: number, skipOwnW
     sh.dir = norm(rotate(sh.dir, axis, angle));
     for (const b of sh.buds) b.dir = norm(rotate(b.dir, axis, angle));
     if (sh.wire && !(skipOwnWire && sh.id === id)) sh.wire.axis = norm(rotate(sh.wire.axis, axis, angle));
+    if (sh.arc) sh.arc.axis = norm(rotate(sh.arc.axis, axis, angle));
   }
 }
 
@@ -52,6 +53,11 @@ function cut(s: State, id: number, t: number) {
       const bare = sh.kind === 'shoot' ? P.bareBase : 0;
       sh.needleCount = Math.round((sh.needleCount * Math.max(0, t - bare)) / (1 - bare));
     }
+    for (const a of [sh.arc, sh.wire && sh.wire.z > 0 ? sh.wire : null]) {
+      // řez v oblouku: zbude jen jeho začátek
+      if (!a) continue;
+      if (t < a.z) { a.angle *= t / a.z; a.z = 1; } else a.z = Math.min(1, a.z / t);
+    }
     sh.targetLen *= t;
     sh.len *= t;
     for (const c of s.shoots) if (c.parent === id) c.attachT /= t;
@@ -62,12 +68,31 @@ function cut(s: State, id: number, t: number) {
   updateDeath(s);
 }
 
+/** Stočí vše, co na výhonu roste, o podíl úhlu podle místa nasazení na oblouku. */
+function turnAlongArc(s: State, sh: Shoot, axis: Vec3, angle: number, z: number) {
+  const f = (t: number) => angle * Math.min(1, t / Math.max(z, 1e-3));
+  for (const c of s.shoots.filter((x) => x.parent === sh.id)) rotateSubtree(s, c.id, axis, f(c.attachT));
+  for (const b of sh.buds) b.dir = norm(rotate(b.dir, axis, f(b.t)));
+}
+
+/** Samotná geometrie ohybu (bez drátu a bez rizika) – používá ji i náhled při tažení.
+ *  z = 0: zlom v místě nasazení; z > 0: oblouk přes podíl z délky výhonu (nahradí dřívější oblouk). */
+export function bendShoot(s: State, id: number, axis: Vec3, angle: number, z: number) {
+  const sh = s.shoots.find((x) => x.id === id);
+  if (!sh) return;
+  axis = norm(axis);
+  if (z <= 0) { rotateSubtree(s, id, axis, angle, true); return; }
+  if (sh.arc) { turnAlongArc(s, sh, sh.arc.axis, -sh.arc.angle, sh.arc.z); sh.arc = null; }
+  sh.arc = { axis, angle, z };
+  turnAlongArc(s, sh, axis, angle, z);
+}
+
 /** Nasazení drátu a ohyb. Přes bezpečnou mez hrozí prasknutí – prasklá větev odumře. */
-function wire(s: State, id: number, axis: Vec3, angle: number) {
+function wire(s: State, id: number, axis: Vec3, angle: number, z: number) {
   const sh = s.shoots.find((x) => x.id === id);
   if (!sh || sh.dead || sh.elong) return;
   axis = norm(axis);
-  if (rnd(s.seed, id, s.day) < breakRisk(s, sh, angle)) {
+  if (rnd(s.seed, id, s.day) < breakRisk(s, sh, angle, z)) {
     rotateSubtree(s, id, axis, angle * 0.5);
     const year = yearOf(s.day);
     const dead = new Set<number>();
@@ -79,11 +104,9 @@ function wire(s: State, id: number, axis: Vec3, angle: number) {
     updateDeath(s);
     return;
   }
-  rotateSubtree(s, id, axis, angle, true);
-  if (sh.wire) {
-    // doohnutí už nadrátované větve: skládání dvou otočení nahradíme novým, tvar se fixuje znovu
-    sh.wire = { day: s.day, axis, angle, set: sh.wire.set * 0.5, area0: sh.wire.area0 };
-  } else sh.wire = { day: s.day, axis, angle, set: 0, area0: sh.area };
+  bendShoot(s, id, axis, angle, z);
+  // doohnutí už nadrátované větve: tvar se fixuje znovu
+  sh.wire = { day: s.day, axis, angle, z, set: sh.wire ? sh.wire.set * 0.5 : 0, area0: sh.wire ? sh.wire.area0 : sh.area };
 }
 
 /** Sundání drátu: co dřevo ještě nedrží, to se vrátí zpět. */
@@ -92,7 +115,12 @@ function unwire(s: State, id: number) {
   if (!sh || !sh.wire) return;
   const w = sh.wire;
   sh.wire = null;
-  rotateSubtree(s, id, w.axis, -w.angle * (1 - w.set));
+  const back = -w.angle * (1 - w.set);
+  if (w.z > 0 && sh.arc) {
+    turnAlongArc(s, sh, sh.arc.axis, back, sh.arc.z);
+    sh.arc.angle += back;
+    if (Math.abs(sh.arc.angle) < 1e-3) sh.arc = null;
+  } else rotateSubtree(s, id, w.axis, back);
 }
 
 /** Přesazení: nová nádoba dimenzovaná na strom, zakrácení kořenů, natočení a náklon. */
@@ -123,6 +151,6 @@ export function applyAction(s: State, a: Action) {
     sh.buds = sh.buds.filter((b) => b.id !== a.bud);
     updateDeath(s);
   } else if (a.type === 'repot') repot(s, a);
-  else if (a.type === 'wire') wire(s, a.shoot, a.axis, a.angle);
+  else if (a.type === 'wire') wire(s, a.shoot, a.axis, a.angle, a.z ?? 0);
   else if (a.type === 'unwire') unwire(s, a.shoot);
 }

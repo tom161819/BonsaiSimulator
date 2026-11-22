@@ -6,6 +6,7 @@ import { P, POT, MAX_YEARS } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
 import { YEAR, bendLimit, breakRisk, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
+import { bendShoot } from './sim/actions';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const SAVE = 'bonsai-simulator-v1';
@@ -92,7 +93,7 @@ function describeWire(p: Pick): Described | null {
   const spring = s.gdd >= P.flushGdd && s.gdd < P.budSetGdd;
   return {
     title: 'Nadrátovat a ohnout', pick,
-    detail: `Táhněte větev tam, kam ji chcete ohnout. Bezpečný ohyb do ${deg(bendLimit(s, sh))}°, měděný drát ø ${(radiusOf(sh) * 20 / 3).toFixed(1).replace('.', ',')} mm.`,
+    detail: `Táhněte větev tam, kam ji chcete ohnout. Bezpečný ohyb do ${deg(bendLimit(s, sh, arcZ()))}°, měděný drát ø ${(radiusOf(sh) * 20 / 3).toFixed(1).replace('.', ',')} mm.`,
     danger: spring ? 'Strom je v růstu a kůra se snadno odlupuje – větve teď praskají dřív. Lepší je podzim až předjaří.' : '',
     action: null,
   };
@@ -236,6 +237,7 @@ function refresh() {
   slider.value = String(s.day);
   for (const b of $('toolSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.tool === tool));
   if (repotOpen) updateRepot();
+  $('wireOpts').hidden = tool !== 'wire';
   $('play').textContent = playing ? '❚❚' : '▶';
   $('play').setAttribute('aria-label', playing ? 'Pozastavit čas' : 'Spustit čas');
   const banner = $('banner');
@@ -287,7 +289,14 @@ let moved = 0;
 let pinch = 0;
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-let bend: { id: number; axis: [number, number, number]; angle: number } | null = null;
+let bend: { id: number; axis: [number, number, number]; angle: number; z: number } | null = null;
+const arcZ = () => Number($<HTMLInputElement>('wArc').value) / 100;
+function syncArc() {
+  const z = arcZ();
+  $('wArcV').textContent = z === 0 ? 'ostrý zlom v nasazení' : z === 1 ? 'oblouk po celé délce' : `oblouk přes ${Math.round(z * 100)} % délky`;
+}
+$<HTMLInputElement>('wArc').oninput = syncArc;
+syncArc();
 
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
@@ -300,7 +309,7 @@ canvas.addEventListener('pointerdown', (e) => {
     // tažení za větev = ohyb drátem; tažení mimo strom otáčí pohled
     const p = view.pick(e.offsetX, e.offsetY);
     const sh = p && tl.state.shoots.find((x) => x.id === p.shoot);
-    if (sh && !sh.dead && !sh.elong && sh.parent >= 0) bend = { id: sh.id, axis: [0, 1, 0], angle: 0 };
+    if (sh && !sh.dead && !sh.elong && sh.parent >= 0) bend = { id: sh.id, axis: [0, 1, 0], angle: 0, z: arcZ() };
   }
 });
 canvas.addEventListener('pointermove', (e) => {
@@ -322,16 +331,21 @@ canvas.addEventListener('pointermove', (e) => {
       const sh = tl.state.shoots.find((x) => x.id === bend!.id)!;
       const tgt = view.bendTarget(bend.id, e.offsetX, e.offsetY);
       if (tgt) {
-        const safe = bendLimit(tl.state, sh);
+        const z = bend.z;
+        const safe = bendLimit(tl.state, sh, z);
         bend.axis = tgt.axis;
-        bend.angle = Math.min(tgt.angle, safe * 1.5);
-        const risk = breakRisk(tl.state, sh, bend.angle);
-        view.previewBend(bend.id, bend.axis, bend.angle, risk > 0);
+        // kurzor určuje směr špičky; u oblouku je celkové stočení větší než úhel tětivy
+        bend.angle = Math.min(tgt.angle / (1 - z / 2), safe * 1.5);
+        const risk = breakRisk(tl.state, sh, bend.angle, z);
+        const tmp = structuredClone(tl.state);
+        bendShoot(tmp, bend.id, bend.axis, bend.angle, z);
+        view.previewState(tmp, bend.id, risk > 0);
+        const radius = z > 0 && bend.angle > 0.01 ? ` · poloměr ${cm((z * sh.len) / bend.angle)}` : '';
         tip.hidden = false;
         tip.className = risk > 0 ? 'danger' : '';
         tip.textContent = risk > 0
-          ? `Ohyb ${deg(bend.angle)}° · riziko prasknutí ${Math.round(risk * 100)} % (bezpečně do ${deg(safe)}°)`
-          : `Ohyb ${deg(bend.angle)}° · bezpečně do ${deg(safe)}°`;
+          ? `Ohyb ${deg(bend.angle)}°${radius} · riziko prasknutí ${Math.round(risk * 100)} % (bezpečně do ${deg(safe)}°)`
+          : `Ohyb ${deg(bend.angle)}°${radius} · bezpečně do ${deg(safe)}°`;
         tip.style.left = `${Math.min(window.innerWidth - 270, e.clientX + 16)}px`;
         tip.style.top = `${Math.max(8, e.clientY - 44)}px`;
       }
@@ -356,9 +370,9 @@ const up = (e: PointerEvent) => {
     bend = null;
     setHover(null);
     if (b.angle > 0.05) {
-      tl.act({ type: 'wire', shoot: b.id, axis: b.axis, angle: b.angle });
+      tl.act({ type: 'wire', shoot: b.id, axis: b.axis, angle: b.angle, z: b.z });
       const broke = tl.state.shoots.find((x) => x.id === b.id)?.dead;
-      tl.actions[tl.actions.length - 1].label = broke ? `Větev při ohybu o ${deg(b.angle)}° praskla` : `Nadrátováno, ohyb o ${deg(b.angle)}°`;
+      tl.actions[tl.actions.length - 1].label = broke ? `Větev při ohybu o ${deg(b.angle)}° praskla` : `Nadrátováno, ${b.z > 0 ? 'oblouk' : 'ohyb'} o ${deg(b.angle)}°`;
       lastLogKey = '';
       persist();
       refresh();
