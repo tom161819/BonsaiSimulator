@@ -110,10 +110,17 @@
   #years span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
   #marks { position: absolute; left: 8px; right: 8px; top: -3px; height: 4px; pointer-events: none; }
   #marks i { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: var(--bark); transform: translateX(-50%); }
-  #shelf {
+  #shelf, #chooser {
     position: absolute; inset: 0; z-index: 8; overflow-y: auto; background: linear-gradient(var(--sky-a), var(--sky-b));
     padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   }
+  #speciesList { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; max-width: 1100px; margin: 0 auto; }
+  .spCard { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .spCard b { font: 600 15px var(--display); } .spCard i { color: var(--muted); font-size: 12px; }
+  .spCard p { margin: 0; font-size: 12.5px; line-height: 1.4; } .spCard p.care { color: var(--muted); }
+  .spCard button { align-self: flex-start; margin-top: auto; }
+  #chooser header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto 12px; }
+  #chooser header h1 { font-size: 22px; } #chooser header h1 i { display: inline; margin-left: 8px; }
   #shelf header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto 8px; }
   #shelf header h1 { font-size: 22px; } #shelf header h1 i { display: inline; margin-left: 8px; }
   #shelfEmpty { max-width: 1100px; margin: 24px auto; color: var(--muted); }
@@ -160,7 +167,7 @@
 <div id="ui">
   <div id="left">
     <div class="panel">
-      <h1>Borovice lesní <i>Pinus sylvestris · ze semínka</i></h1>
+      <h1><span id="spName">Borovice lesní</span> <i id="spLatin">Pinus sylvestris · ze semínka</i></h1>
     </div>
     <div class="panel">
       <div id="date">–</div>
@@ -173,7 +180,7 @@
         <dt>Průměr kmene u země</dt><dd id="sDia">–</dd>
         <dt>Živé výhony</dt><dd id="sShoots">–</dd>
         <dt>Pupeny</dt><dd id="sBuds">–</dd>
-        <dt>Jehlice</dt><dd id="sNeedles">–</dd>
+        <dt id="sNeedlesLabel">Jehlice</dt><dd id="sNeedles">–</dd>
         <dt>Kořeny v nádobě</dt><dd id="sRoots">–</dd>
         <dt title="Najetím se dráty zvýrazní: zelená = nový, oranžová = tvar drží nad 90 %, červená = zarůstá">Dráty</dt><dd id="sWires">–</dd>
         <dt>Teplotní suma</dt><dd id="sGdd">–</dd>
@@ -261,6 +268,13 @@
       <div id="years"></div>
     </div>
   </div>
+</div>
+<div id="chooser" hidden>
+  <header>
+    <h1>Nové semínko <i>vyberte druh</i></h1>
+    <button id="chooserClose">Zpět ke stromu</button>
+  </header>
+  <div id="speciesList"></div>
 </div>
 <div id="shelf" hidden>
   <header>

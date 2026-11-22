@@ -7,13 +7,14 @@ import { MONTHS, dateOf } from './sim/climate';
 import { YEAR, bendLimit, breakRisk, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
 import { bendShoot } from './sim/actions';
+import { SPECIES, SPECIES_ORDER, speciesOf } from './sim/species';
 import samplesJson from './samples.json';
 import sampleThumbs from './sampleThumbs.json';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const SAVE = 'bonsai-simulator-v1';
 /** rules = verze pravidel růstu; hry uložené před zavedením verzí ji nemají a rostly podle v1 */
-interface Save { seed: number; actions: Action[]; day: number; rules?: number }
+interface Save { seed: number; actions: Action[]; day: number; rules?: number; species?: string }
 
 function loadSave(): Save | null {
   const hot = (window as any).claude?.hot?.data;
@@ -37,7 +38,7 @@ let repotOpen = false;
 const view = new TreeView($<HTMLCanvasElement>('scene'));
 
 function start(save: Save | null) {
-  tl = new Timeline(save?.seed ?? Math.floor(Math.random() * 1e9), save?.actions ?? [], save ? save.rules ?? 1 : RULES_LATEST);
+  tl = new Timeline(save?.seed ?? Math.floor(Math.random() * 1e9), save?.actions ?? [], save ? save.rules ?? 1 : RULES_LATEST, save?.species ?? 'pine');
   $<HTMLSelectElement>('rules').value = String(tl.rules);
   if (save) tl.seek(save.day);
   view.recenter();
@@ -45,7 +46,7 @@ function start(save: Save | null) {
 }
 
 function persist() {
-  try { localStorage.setItem(SAVE, JSON.stringify({ seed: tl.seed, actions: tl.actions, day: tl.day, rules: tl.rules })); } catch { /* bez uložení */ }
+  try { localStorage.setItem(SAVE, JSON.stringify({ seed: tl.seed, actions: tl.actions, day: tl.day, rules: tl.rules, species: tl.species })); } catch { /* bez uložení */ }
 }
 
 // ---------------------------------------------------------------- texty
@@ -58,19 +59,26 @@ const cm = (x: number) => (x >= 100 ? `${(x / 100).toFixed(2).replace('.', ',')}
 
 function phase(s: State): { name: string; hint: string; season: string } {
   const doy = doyOf(s.day), year = yearOf(s.day);
+  const sp = speciesOf(s), leafy = sp.kind === 'leafy';
   if (s.stage === 'seed') return { name: 'Semínko v zemi', hint: 'Vyseto 1. dubna. Vyklíčí, až se půda prohřeje – pusťte čas.', season: 'spring' };
-  if (s.stage === 'dead') return { name: 'Strom odumřel', hint: 'Bez jehlic nebo po příliš tvrdém přesazení borovice nepřežije. Vraťte poslední zásah nebo se posuňte v čase zpět.', season: 'winter' };
+  if (s.stage === 'dead') return { name: 'Strom odumřel', hint: 'Strom nepřežil – přišel o všechno živé nebo nevydržel příliš tvrdé přesazení. Vraťte poslední zásah nebo se posuňte v čase zpět.', season: 'winter' };
   if (year === 0) {
-    if (doy < 150) return { name: 'Klíčení', hint: 'Hypokotyl vynáší dělohy nad zem. První rok se nic nestříhá.', season: 'spring' };
-    if (doy < P.seedlingBudSetDoy) return { name: 'Růst epikotylu', hint: 'Semenáček roste volně a nese jednotlivé primární jehlice.', season: 'summer' };
+    if (doy < 150) return { name: 'Klíčení', hint: sp.hypogeal ? 'Žalud klíčí pod zemí, dělohy zůstávají v něm. První rok se nic nestříhá.' : 'Hypokotyl vynáší dělohy nad zem. První rok se nic nestříhá.', season: 'spring' };
+    if (doy < P.seedlingBudSetDoy) return { name: 'Růst epikotylu', hint: leafy ? 'Semenáček roste volně a rozvíjí první pravé listy.' : 'Semenáček roste volně a nese jednotlivé primární jehlice.', season: 'summer' };
   }
-  if (s.gdd < P.flushGdd && doy < 180) return { name: 'Vegetační klid', hint: 'Pupeny čekají na teplo. Vhodná doba na výběr pupenů a hrubý řez.', season: doy < 60 ? 'winter' : 'spring' };
-  if (s.gdd < P.flushGdd + P.elongSpanGdd + 40 && doy < 200 && year > 0)
-    return { name: 'Prodlužování svíček', hint: 'Teď se zaštipují svíčky: kliknutím na svíčku ji zkrátíte. Zkrácený výhon doroste jen ze zbylé části.', season: 'spring' };
-  if (s.gdd < P.budSetGdd && doy < 220) return { name: 'Vyzrávání letorostů', hint: 'Jehlice ještě dorůstají. Řez letorostu teď vyvolá nové pupeny ještě letos.', season: 'summer' };
-  if (doy < P.shedStartDoy) return { name: 'Zakládání pupenů', hint: 'V pupenech se rozhoduje o délce příštích výhonů. Řez po tomto termínu už letos pupeny nevytvoří.', season: 'summer' };
-  if (doy < P.shedEndDoy) return { name: 'Opad starých jehlic', hint: 'Nejstarší ročník jehlic žloutne a opadává. Doba na výběr pupenů – vylomte přebytečné.', season: 'autumn' };
-  return { name: 'Vegetační klid', hint: 'Strom odpočívá. Vhodná doba na výběr pupenů a hrubý řez.', season: doy > 330 ? 'winter' : 'autumn' };
+  const flushGdd = leafy ? sp.flushGdd : P.flushGdd, span = leafy ? sp.elongSpanGdd : P.elongSpanGdd, budSet = leafy ? sp.budSetGdd : P.budSetGdd;
+  const fallStart = leafy ? sp.colorDoy - 8 : P.shedStartDoy, fallEnd = leafy ? sp.fallDoy : P.shedEndDoy;
+  if (s.gdd < flushGdd && doy < 180) return { name: 'Vegetační klid', hint: 'Pupeny čekají na teplo. Vhodná doba na výběr pupenů a hrubý řez.', season: doy < 60 ? 'winter' : 'spring' };
+  if (s.gdd < Math.min(flushGdd + span + 40, budSet) && doy < 200 && year > 0)
+    return leafy
+      ? { name: 'Rašení a růst výhonů', hint: 'Nové výhony se prodlužují. Kliknutím na výhon ho zaštípnete; u většiny druhů pak ještě letos vyraší znovu.', season: 'spring' }
+      : { name: 'Prodlužování svíček', hint: 'Teď se zaštipují svíčky: kliknutím na svíčku ji zkrátíte. Zkrácený výhon doroste jen ze zbylé části.', season: 'spring' };
+  if (s.gdd < budSet && doy < 220) return { name: 'Vyzrávání letorostů', hint: leafy ? 'Výhony dřevnatí. Řez teď ještě vyvolá nový růst nebo pupeny na příští rok.' : 'Jehlice ještě dorůstají. Řez letorostu teď vyvolá nové pupeny ještě letos.', season: 'summer' };
+  if (doy < fallStart) return { name: 'Zakládání pupenů', hint: 'V pupenech se rozhoduje o délce příštích výhonů. Řez po tomto termínu už letos pupeny nevytvoří.', season: 'summer' };
+  if (doy < fallEnd) return leafy
+    ? { name: 'Barvení a opad listí', hint: sp.marcescent > 0 ? 'Listí se barví; část suchých listů zůstane na stromě do jara.' : 'Listí se barví a opadává. Po opadu je dobře vidět stavba koruny.', season: 'autumn' }
+    : { name: 'Opad starých jehlic', hint: 'Nejstarší ročník jehlic žloutne a opadává. Doba na výběr pupenů – vylomte přebytečné.', season: 'autumn' };
+  return { name: 'Vegetační klid', hint: leafy ? 'Strom je bez listí a odpočívá. Vhodná doba na drátování a řez podle stavby koruny.' : 'Strom odpočívá. Vhodná doba na výběr pupenů a hrubý řez.', season: doy > 330 ? 'winter' : 'autumn' };
 }
 
 /** Sloupec období: v prvním roce vývoj semenáčku, pak roční cyklus stromu. Názvy odpovídají phase(). */
@@ -94,15 +102,24 @@ const PHASES_TREE: [string, string, string][] = [
   ['Opad starých jehlic', 'září–říjen',
     'Výběr pupenů – vylomte přebytečné. Začíná vhodná doba na drátování. Sundejte dráty, u kterých tvar už drží.'],
 ];
+const PHASES_LEAFY: [string, string, string][] = [
+  ['Vegetační klid', 'listopad–duben', 'Bez listí je vidět celá stavba: hrubý řez, výběr větví a drátování. Koncem období, když pupeny nalévají, je čas na přesazení.'],
+  ['Rašení a růst výhonů', 'duben–červen', 'Zaštipování nových výhonů na 1–3 listy. Po zaštípnutí většina druhů vyraší podruhé – tak vzniká jemné větvení. Nedrátovat, kůra se snadno odlupuje.'],
+  ['Vyzrávání letorostů', 'červen–červenec', 'Zkracování vyzrálých výhonů. Kontrolujte dráty – listnáče tloustnou rychle a tenká kůra se snadno poznamená.'],
+  ['Zakládání pupenů', 'červenec–září', 'Nechte strom nabrat sílu. Řez teď už nový růst nevyvolá, jen pupeny na příští rok.'],
+  ['Barvení a opad listí', 'září–listopad', 'Listí se barví a opadává. Začíná doba na drátování a úpravu stavby.'],
+];
 let phaseKey = '';
 function refreshPhases(s: State, active: string) {
-  const list = yearOf(s.day) === 0 ? PHASES_SEEDLING : PHASES_TREE;
-  const key = `${list === PHASES_SEEDLING ? 's' : 't'}:${active}`;
+  const spc = speciesOf(s);
+  const list = yearOf(s.day) === 0 ? PHASES_SEEDLING : spc.kind === 'leafy' ? PHASES_LEAFY : PHASES_TREE;
+  const key = `${spc.id}:${list === PHASES_SEEDLING ? 's' : 't'}:${active}`;
   if (key === phaseKey) return;
   phaseKey = key;
   const ol = $('phaseList');
   ol.innerHTML = '';
-  for (const [name, months, advice] of list) {
+  for (const [name, months, advice0] of list) {
+    const advice = list === PHASES_SEEDLING ? advice0 : `${advice0} ${spc.name}: ${spc.care}`;
     const li = document.createElement('li');
     li.textContent = name;
     li.tabIndex = 0;
@@ -178,6 +195,26 @@ function describe(p: Pick): Described | null {
     return {
       title: sh.dead ? 'Odstranit suchou větev' : sub ? 'Odstranit celou větev' : 'Odstranit celý výhon', detail: `Řez u báze.${plus}`,
       danger: '', action: { type: 'cut', shoot: sh.id, t: 0, label: sh.dead ? 'Odstraněna suchá větev' : 'Odstraněna větev' }, pick,
+    };
+  }
+  const sp = speciesOf(s);
+  if (sp.kind === 'leafy') {
+    const pctL = Math.round((1 - t) * 100);
+    const leavesLeft = sh.kind !== 'hypocotyl' && sh.needleLive > 0.02 && Math.round(sh.needleCount * t) > 0;
+    const budsLeft = Math.round((sh.dormant ?? (sh.bornYear === yearOf(s.day) ? sh.needleCount : 0)) * t) > 0;
+    const kidsL = s.shoots.some((c) => c.parent === sh.id && c.attachT <= t && !c.dead) || sh.buds.some((b) => b.t <= t);
+    const inLeaf = s.gdd >= sp.flushGdd && doyOf(s.day) < 230;
+    let dangerL = '';
+    if (!leavesLeft && !budsLeft && !kidsL) dangerL = 'Pod řezem nezůstane list ani živý pupen – tento úsek odumře.';
+    else if (sp.dieback > 0 && yearOf(s.day) > sh.bornYear) dangerL = inLeaf ? `${sp.name}: řezaná větvička může zaschnout až k větvení.` : `${sp.name} se má řezat jen v listu. Teď řezaná větvička nejspíš zaschne až k větvení.`;
+    else if (!leavesLeft && !kidsL && sp.epicormic < 0.5) dangerL = `${sp.name} obráží ze starého dřeva neochotně – nový výhon tu vyrůst nemusí.`;
+    const again = sp.reflush > 0 && inLeaf && s.gdd < 1150 ? ' Za pár týdnů z nejvyšších pupenů vyraší znovu.' : ' Nové výhony vyrostou z nejvyšších zbylých pupenů příští jaro.';
+    const young = sh.elong && sh.kind === 'shoot';
+    return {
+      title: young ? 'Zaštípnout letorost' : sub ? 'Zkrátit větev' : 'Zkrátit výhon',
+      detail: `${young ? `Odstraní ${pctL} %. Zbytek doroste na ${cm(sh.targetLen * t)}.` : `Zůstane ${cm(sh.len * t)} z ${cm(sh.len)}.`}${plus}${leavesLeft || budsLeft ? again : ''}`,
+      danger: dangerL, pick,
+      action: { type: 'cut', shoot: sh.id, t, label: young ? `Zaštípnut letorost o ${pctL} %` : sub ? `Zkrácena větev o ${pctL} %` : `Zkrácen výhon o ${pctL} %` },
     };
   }
   const bare = sh.kind === 'shoot' ? P.bareBase : 0;
@@ -282,6 +319,9 @@ function refresh() {
   $('sShoots').textContent = String(st.shoots);
   $('sBuds').textContent = String(st.buds);
   $('sNeedles').textContent = st.needles.toLocaleString('cs-CZ');
+  $('sNeedlesLabel').textContent = speciesOf(s).foliageWord[0];
+  $('spName').textContent = speciesOf(s).name;
+  $('spLatin').textContent = `${speciesOf(s).latin} · ze semínka`;
   $('sGdd').textContent = `${Math.round(s.gdd)} d.d.`;
   slider.value = String(s.day);
   for (const b of $('toolSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.tool === tool));
@@ -483,7 +523,7 @@ $('unwireAll').onclick = () => {
 };
 // --- sbírka: stromy uložené ve stavu, v jakém byly při přidání (semínko + deník zásahů do toho dne + portrét)
 const SHELF = 'bonsai-collection-v1';
-interface Kept { id: string; name: string; seed: number; actions: Action[]; day: number; thumb: string; height: number; savedAt: string; rules?: number }
+interface Kept { id: string; name: string; seed: number; actions: Action[]; day: number; thumb: string; height: number; savedAt: string; rules?: number; species?: string }
 function loadShelf(): Kept[] {
   try { return JSON.parse(localStorage.getItem(SHELF) || '[]') as Kept[]; } catch { return []; }
 }
@@ -498,7 +538,7 @@ $('keep').onclick = () => {
   const list = loadShelf();
   const st = stats(s);
   list.push({
-    id: `${Date.now()}`, name: `Borovice lesní · ${yearOf(s.day) + 1}. rok`, seed: tl.seed, rules: tl.rules,
+    id: `${Date.now()}`, name: `${speciesOf(s).name} · ${yearOf(s.day) + 1}. rok`, seed: tl.seed, rules: tl.rules, species: tl.species,
     actions: tl.actions.filter((a) => a.day <= s.day), day: s.day, thumb: view.capture(), height: st.height, savedAt: new Date().toISOString(),
   });
   if (!saveShelf(list)) { flash('Sbírku se nepodařilo uložit – úložiště prohlížeče je plné nebo nedostupné.'); return; }
@@ -583,7 +623,7 @@ function renderShelf() {
     open.onclick = () => {
       if (Date.now() - armedOpen > 10000) { armedOpen = Date.now(); open.textContent = 'Nahradit rozpracovaný strom?'; return; }
       lastLogKey = '';
-      start({ seed: k.seed, actions: k.actions, day: k.day, rules: k.rules ?? 1 });
+      start({ seed: k.seed, actions: k.actions, day: k.day, rules: k.rules ?? 1, species: k.species ?? 'pine' });
       buildTrack(); persist();
       $('shelf').hidden = true;
     };
@@ -606,7 +646,7 @@ $('shelfBtn').onclick = () => { playing = false; renderShelf(); $('shelf').hidde
 $<HTMLSelectElement>('rules').onchange = () => {
   const rules = Number($<HTMLSelectElement>('rules').value);
   lastLogKey = '';
-  start({ seed: tl.seed, actions: tl.actions, day: tl.day, rules });
+  start({ seed: tl.seed, actions: tl.actions, day: tl.day, rules, species: tl.species });
   buildTrack(); persist();
   flash(`Strom přepočítán podle pravidel v${rules}. Zásahy, které v nich nenajdou svůj cíl, se neprovedou.`);
 };
@@ -718,18 +758,37 @@ const syncWind = () => { view.setWind(windOn); $('wind').setAttribute('aria-pres
 $('wind').onclick = () => { windOn = !windOn; syncWind(); };
 syncWind();
 $('moreBtn').onclick = () => document.body.classList.toggle('more');
-let resetArmed = 0;
-$('reset').onclick = () => {
-  if (Date.now() - resetArmed < 4000) {
-    $('reset').textContent = 'Nové semínko';
-    resetArmed = 0; lastLogKey = '';
-    start(null); buildTrack(); persist();
-  } else {
-    resetArmed = Date.now();
-    $('reset').textContent = 'Opravdu? Smaže deník';
-    setTimeout(() => { $('reset').textContent = 'Nové semínko'; }, 4000);
+// nové semínko: výběr druhu
+function renderChooser() {
+  const list = $('speciesList');
+  list.innerHTML = '';
+  for (const id of SPECIES_ORDER) {
+    const sp = SPECIES[id];
+    const card = document.createElement('div');
+    card.className = 'spCard';
+    const name = document.createElement('b'); name.textContent = sp.name;
+    const latin = document.createElement('i'); latin.textContent = sp.latin;
+    const about = document.createElement('p'); about.textContent = sp.about;
+    const care = document.createElement('p'); care.className = 'care'; care.textContent = sp.care;
+    const btn = document.createElement('button');
+    btn.className = 'primary'; btn.textContent = 'Zasadit semínko'; btn.id = `plant-${id}`;
+    let armed = 0;
+    const fresh = tl.state.stage === 'seed' && !tl.actions.length;
+    btn.onclick = () => {
+      if (!fresh && Date.now() - armed > 10000) { armed = Date.now(); btn.textContent = 'Nahradit rozpracovaný strom?'; return; }
+      lastLogKey = '';
+      tl = new Timeline(Math.floor(Math.random() * 1e9), [], RULES_LATEST, id);
+      $<HTMLSelectElement>('rules').value = String(tl.rules);
+      view.recenter();
+      buildTrack(); persist(); refresh();
+      $('chooser').hidden = true;
+    };
+    card.append(name, latin, about, care, btn);
+    list.appendChild(card);
   }
-};
+}
+$('reset').onclick = () => { playing = false; renderChooser(); $('chooser').hidden = false; refresh(); };
+$('chooserClose').onclick = () => { $('chooser').hidden = true; };
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.code === 'Space') { e.preventDefault(); $('play').click(); }
@@ -754,12 +813,12 @@ function loop(now: number) {
       if (now - lastSave > 3000) { lastSave = now; persist(); }
     }
   }
-  if ($('shelf').hidden) view.frame(); // při prohlížení sbírky scéna stojí
+  if ($('shelf').hidden && $('chooser').hidden) view.frame(); // při prohlížení sbírky a výběru druhu scéna stojí
   requestAnimationFrame(loop);
 }
 
 const hot = (window as any).claude?.hot;
-hot?.snapshot?.(() => ({ seed: tl.seed, actions: tl.actions, day: tl.day, rules: tl.rules }));
+hot?.snapshot?.(() => ({ seed: tl.seed, actions: tl.actions, day: tl.day, rules: tl.rules, species: tl.species }));
 start(loadSave());
 buildTrack();
 syncSpeed();

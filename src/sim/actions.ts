@@ -3,7 +3,8 @@
 import type { Action, Shoot, State, Vec3 } from './types';
 import { P, defaultPotId, potById } from './params';
 import { updateDeath } from './growth';
-import { breakRisk, norm, potCapFor, repotStress, rnd, rotate, yearOf } from './util';
+import { breakRisk, doyOf, norm, potCapFor, repotStress, rnd, rotate, tilt as tiltDir, yearOf } from './util';
+import { speciesOf } from './species';
 
 function removeSubtrees(s: State, roots: Set<number>) {
   if (!roots.size) return;
@@ -76,8 +77,27 @@ function cut(s: State, id: number, t: number) {
     for (const c of s.shoots) if (c.parent === id && c.attachT > t) gone.add(c.id);
     removeSubtrees(s, gone);
     sh.buds = sh.buds.filter((b) => b.t <= t);
+    const sp = speciesOf(s);
+    const removed = sh.len * (1 - t);
     if (sh.kind === 'hypocotyl') sh.needleCount = 0; // dělohy sedí na vrcholu
-    else {
+    else if (sp.kind === 'leafy') {
+      sh.needleCount = Math.round(sh.needleCount * t);
+      // ochotně obrážející druhy mají spící pupeny po celém dřevě – na pahýlu vždy aspoň jeden zůstane
+      if (sh.dormant !== undefined) sh.dormant = Math.max(sp.epicormic >= 0.5 ? 1 : 0, Math.round(sh.dormant * t));
+      const inLeaf = s.gdd >= sp.flushGdd && doyOf(s.day) < 230;
+      // bříza: řezaná větvička často zaschne, mimo dobu olistění skoro jistě
+      if (sp.dieback > 0 && yearOf(s.day) > sh.bornYear && rnd(s.seed, id, s.day) < sp.dieback * (inLeaf ? 1 : 3)) { sh.dormant = 0; sh.needleCount = 0; }
+      // druhý růst: po zaštípnutí v době růstu vyraší nejvyšší zbylé pupeny ještě téhož léta
+      else if (sp.reflush > 0 && inLeaf && s.gdd < 1150 && (sh.needleCount > 0 || (sh.dormant ?? 0) > 0) && rnd(s.seed, id, s.day + 7) < sp.reflush + 0.3) {
+        const len = Math.min(8, Math.max(0.6, removed * sp.reflush * 0.6));
+        const nb = len > 2.5 && sh.needleCount >= 2 ? 2 : 1;
+        for (let j = 0; j < nb; j++) {
+          const side = tiltDir(sh.dir, sp.branchAngle * 0.8, j * Math.PI + id);
+          sh.buds.push({ id: s.nextId++, kind: 'pinch', t: j === 0 ? 1 : 0.8, dir: j === 0 && nb === 1 ? sh.dir : side, len: len / nb, order: j === 0 ? sh.order : sh.order + 1, isMain: j === 0, flushDay: s.day + 18 + j * 3 });
+        }
+        s.pendingFlush = (s.pendingFlush ?? 0) + nb;
+      }
+    } else {
       const bare = sh.kind === 'shoot' ? P.bareBase : 0;
       sh.needleCount = Math.round((sh.needleCount * Math.max(0, t - bare)) / (1 - bare));
     }
@@ -159,7 +179,7 @@ function unwire(s: State, id: number) {
 function repot(s: State, a: Extract<Action, { type: 'repot' }>) {
   const prune = Math.min(0.9, Math.max(0, a.prune ?? 0));
   const first = s.day === s.repotDay; // volba nádoby při výsevu nic nestojí
-  if (!first && s.stage !== 'seed') s.stress += repotStress(s, prune);
+  if (!first && s.stage !== 'seed') s.stress += repotStress(s, prune) * (speciesOf(s).kind === 'leafy' ? speciesOf(s).repotStress : 1);
   const spec = potById(a.potId ?? defaultPotId(a.pot));
   s.pot = spec.type;
   s.potId = spec.id;

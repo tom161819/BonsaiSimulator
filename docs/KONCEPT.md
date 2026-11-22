@@ -140,6 +140,35 @@ v1 = původní chování, v2 = opravy misek, větvení a náhrady vrcholu, v3 = 
 (ověřeno shodou s původním kódem), nová semínka podle nejnovější verze; verzi lze u rozpracovaného stromu přepnout.
 Další změny modelu, které mají zachovat staré stromy, patří do nové verze pravidel.
 
+## 3e. Další druhy
+
+Vedle borovice lesní lze zasadit modřín opadavý, habr obecný, buk lesní, dub letní, břízu bělokorou a javor babyku
+(`src/sim/species.ts`). Borovice používá původní model beze změny (ověřeno shodou s předchozím kódem ve všech
+verzích pravidel); ostatní druhy sdílejí „olistěný“ model:
+
+- **Pupeny v úžlabí listů podél výhonu**, ne přeslen na vrcholu. Postavení dvouřadé (habr, buk – ploché vějíře větví),
+  šroubovité (dub s pupeny natěsnanými u konce výhonu, bříza, modřín) nebo vstřícné (babyka).
+- **Listy jen na jednu sezónu.** Každé jaro olistí letorosty i krátké výhony na starším dřevě (u modřínu svazečky jehlic),
+  na podzim se listí barví a opadá; u buku, habru a dubu část suchých listů zůstává do jara.
+- **Spící pupeny.** Strom žije i bez listí, dokud má živé pupeny. Po řezu z nich obráží – podle druhu ochotně i z holého
+  pahýlu (habr, dub, babyka), neochotně (buk, modřín) nebo špatně a s rizikem zaschnutí větvičky (bříza).
+- **Druhý růst.** Po zaštípnutí v době růstu vyraší nejvyšší zbylé pupeny za pár týdnů znovu (silně habr, dub, babyka; slabě buk).
+
+| Druh | Rašení (d.d. > 5 °C) | Růst | List (cm) | Snáší stín | Obrážení ze starého dřeva | Zvláštnosti v modelu |
+| --- | --- | --- | --- | --- | --- | --- |
+| Modřín | 45 (konec března–duben) | volný, do srpna | jehlice 2,6; svazečky na krátkých výhonech až 15 let | ne | slabé | špatně snáší zásah do kořenů (stres ×1,5) |
+| Habr | 115 (polovina dubna) | delší, ochotný druhý růst | 7 × 3,6 | velmi | silné | suché listí přes zimu; drát zarůstá dřív |
+| Buk | 175 (konec dubna–květen) | jedna rychlá vlna | 8 × 5 | nejvíc | slabé | suché listí přes zimu; krátké výhony 8 let; drát zarůstá nejdřív |
+| Dub | 200 (květen) | jedna vlna + jánské výhony | 10 × 5,5 laločnatý | středně | silné | klíčí podzemně; hrubá borka od ~12 let |
+| Bříza | 70 (začátek dubna) | volný, celé léto; nejrychlejší | 5 × 3,9 | ne | špatné | řezaná větvička zasychá (22 %, mimo olistění 66 %); větve převisají; bílá kůra od ~7 let |
+| Babyka | 120 | delší, druhý růst | 6 × 6 dlanitý | středně | silné | vstřícné pupeny; nejlépe snáší přesazení (stres ×0,7) |
+
+Zdroje (z obou rešerší se podařilo získat jen úryvky a údaje z paměti, žádná stránka nebyla přečtena celá):
+JRC European Atlas of Forest Tree Species; EUFORGEN; LWF Wissen 69 (modřín), 77 (babyka), 86 (buk); Niinemets & Valladares 2006
+(snášení stínu); Gymnosperm Database (*Larix decidua*); druhové průvodce bonsai4me (Harry Harrington) pro *Carpinus*, *Fagus*,
+*Quercus*, *Betula*, *Larix*, *Acer campestre*. Číselné hodnoty modelu (účinnost růstu, podíly, pravděpodobnosti) jsou odhady
+zkalibrované tak, aby výška ve volné půdě v 10 letech vyšla 2–4,5 m; skutečné stromy rostou zhruba o třetinu až polovinu rychleji.
+
 ## 4. Architektura
 
 ```
@@ -172,7 +201,7 @@ Náhoda je hash z id výhonu, takže zásah na jedné větvi nezmění zbytek st
 | Vyštipování jehlic | Zásah snižující `needleCount`; sníží sílu větve a pustí světlo dovnitř |
 | Zalévání, hnojení, zdraví | Další násobitele rozpočtu; délka jehlic podle dusíku |
 | Jin a shari | Práce s mrtvým dřevem |
-| Další druhy | Nový soubor parametrů; druhy s více růstovými vlnami potřebují jinou fenologii |
+| Další druhy | Stálezelené jehličnany (smrk, jalovec) potřebují třetí model: jehlice podél výhonu držící více let |
 | Ověření modelu | Dohledat plné texty a porovnat křivky přírůstu s měřenými daty |
 
 ## 6. Zdroje

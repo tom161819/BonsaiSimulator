@@ -22,6 +22,8 @@ export interface Bud {
   len: number;
   order: number;
   isMain: boolean;
+  /** druhý růst po zaštípnutí: den, kdy pupen vyraší ještě v téže sezóně */
+  flushDay?: number;
 }
 
 /** Drát na výhonu: ohyb = otočení výhonu i s podstromem kolem jeho paty. */
@@ -67,6 +69,8 @@ export interface Shoot {
   scar: boolean; // drát zarostl do kůry – trvalá jizva
   male: boolean; // samčí šištice na bázi letorostu (jen v roce vzniku)
   cone: boolean; // samičí šiška u vrcholu (zraje do 3. roku)
+  /** olistěné druhy: počet živých úžlabních pupenů / krátkých výhonů na tomto úseku */
+  dormant?: number;
   heir?: boolean; // větev, která převzala roli vrcholu (pravidla v3): postupně se napřimuje i stávající dřevo
   buds: Bud[];
 }
@@ -78,6 +82,10 @@ export type Stage = 'seed' | 'growing' | 'dead';
 
 export interface State {
   seed: number;
+  /** druh stromu (viz species.ts); hry bez údaje jsou borovice */
+  species?: string;
+  /** počet pupenů čekajících na druhý růst téže sezóny */
+  pendingFlush?: number;
   /** verze pravidel růstu: 1 = původní, 2 = po úpravě misek, větvení a náhrady vrcholu, 3 = navíc soběstačnost větví */
   rules: number;
   day: number; // absolutní den od 1. ledna roku 0

@@ -18,11 +18,14 @@ export class Timeline {
 
   readonly rules: number;
 
-  constructor(seed: number, actions: Action[] = [], rules = RULES_LATEST) {
+  readonly species: string;
+
+  constructor(seed: number, actions: Action[] = [], rules = RULES_LATEST, species = 'pine') {
     this.rules = rules;
+    this.species = species;
     this.seed = seed;
     this.actions = actions.slice().sort((a, b) => a.day - b.day);
-    this.state = createState(seed, rules);
+    this.state = createState(seed, rules, species);
     this.snaps.set(this.state.day, structuredClone(this.state));
     this.applyAt(this.state.day);
   }

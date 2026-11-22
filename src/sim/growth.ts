@@ -3,6 +3,7 @@
 import type { Bud, BudKind, Shoot, State, Vec3 } from './types';
 import { P, POT, POT_GROWTH_V1, RULES_LATEST, START_DOY, START_POT } from './params';
 import { temperature } from './climate';
+import { Species, speciesOf } from './species';
 import { computeLight } from './light';
 import {
   UP, YEAR, add, clamp, computeFrames, potCapFor, rootBoundFactor, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
@@ -10,9 +11,9 @@ import {
 
 const potGrowth = (s: State) => (s.rules >= 2 ? POT[s.pot].growth : POT_GROWTH_V1[s.pot]);
 
-export function createState(seed: number, rules = RULES_LATEST): State {
+export function createState(seed: number, rules = RULES_LATEST, species = 'pine'): State {
   return {
-    seed, rules, day: START_DOY, gdd: 0, nextId: 1, pot: 'training', stage: 'seed', shoots: [],
+    seed, rules, species, day: START_DOY, gdd: 0, nextId: 1, pot: 'training', stage: 'seed', shoots: [],
     flushedYear: 0, budSetYear: -1, budSetGdd: 0, production: 0, budget: 0,
     roots: 0, potCap: potCapFor(START_POT), potId: START_POT, nebari: [], stress: 0, repotDay: START_DOY,
   };
@@ -44,6 +45,16 @@ function germinate(s: State) {
     az: (k / cnt) * 6.2832 + (rnd(s.seed, 502, k) - 0.5) * 0.9,
     len: 2.4 + 2.8 * rnd(s.seed, 503, k), thick: 0.34 + 0.22 * rnd(s.seed, 504, k), id: k,
   });
+  const sp = speciesOf(s);
+  if (sp.kind === 'leafy') {
+    // dělohy: u většiny listnáčů dvě (nadzemní klíčení); dub klíčí podzemně a dělohy zůstávají v žaludu
+    newShoot(s, {
+      kind: 'hypocotyl', dir: norm([(rnd(s.seed, 1, 1) - 0.5) * 0.12, 1, (rnd(s.seed, 1, 2) - 0.5) * 0.12]),
+      targetLen: sp.hypocotylLen * (0.85 + 0.3 * rnd(s.seed, 1, 3)), needleCount: sp.cotyledons, needleLen: sp.cotyledonLen,
+      area: Math.PI * 0.05 * 0.05,
+    });
+    return;
+  }
   const lean = (rnd(s.seed, 1, 1) - 0.5) * 0.12;
   newShoot(s, {
     kind: 'hypocotyl', dir: norm([lean, 1, (rnd(s.seed, 1, 2) - 0.5) * 0.12]),
@@ -54,6 +65,16 @@ function germinate(s: State) {
 }
 
 function startEpicotyl(s: State, hyp: Shoot) {
+  const sp = speciesOf(s);
+  if (sp.kind === 'leafy') {
+    const len = sp.epicotylLen * (0.8 + 0.4 * rnd(s.seed, 2, 1)) * (0.6 + 0.4 * potGrowth(s));
+    const per = sp.phyllotaxis === 'opposite' ? 2 : 1;
+    newShoot(s, {
+      kind: 'epicotyl', parent: hyp.id, dir: norm(add(hyp.dir, [0, 0.4, 0])), targetLen: len,
+      needleCount: Math.max(2, Math.round(len / sp.internode) + 1) * per, needleLen: sp.leafLen * 0.6, area: Math.PI * 0.04 * 0.04,
+    });
+    return;
+  }
   newShoot(s, {
     kind: 'epicotyl', parent: hyp.id, dir: norm(add(hyp.dir, [0, 0.4, 0])),
     targetLen: (P.epicotylLen + rnd(s.seed, 2, 1)) * (0.6 + 0.4 * potGrowth(s)),
@@ -90,7 +111,7 @@ function lateralDir(s: State, sh: Shoot, i: number, n: number, theta: number, sa
 
 // ---------------------------------------------------------------- pupeny
 
-interface Sink { i: number; kind: 'apex' | 'pinch' | 'back'; w: number; v: number; }
+interface Sink { i: number; kind: 'apex' | 'pinch' | 'back'; w: number; v: number; min?: number; }
 
 /** Zakládání pupenů (červenec): rozdělí růstový rozpočet stromu mezi růstové vrcholy
  *  a uloží do pupenů předurčenou délku příštích výhonů. */
@@ -119,15 +140,18 @@ function runBudSet(s: State) {
   }
   const auto = s.rules >= 3 ? P.branchAutonomy : 0;
   s.production = prod;
-  const G = prod * P.growthPerFoliage * potGrowth(s)
+  const sp = speciesOf(s), leafy = sp.kind === 'leafy';
+  const G = prod * (leafy ? sp.growthPerFoliage : P.growthPerFoliage) * potGrowth(s)
     * rootBoundFactor(s) * (1 - P.stressGrowthLoss * Math.min(1, s.stress));
   s.budget = G;
 
   const crowded = n > P.maxShoots;
+  const lam = leafy ? sp.lambdaLateral : P.lambdaLateral;
   const sinks: Sink[][] = Array.from({ length: n }, () => []);
   for (let i = 0; i < n; i++) {
     const sh = s.shoots[i];
     if (sh.dead || sh.kind === 'hypocotyl') { sh.stimulus = 0; continue; }
+    if (leafy) { leafySinks(s, sp, sh, i, kids, sinks, year, crowded); sh.stimulus = 0; continue; }
     const hasNeedles = sh.needleCount > 0 && sh.needleLive > 0.3;
     const tipFree = !kids[i].some((c) => s.shoots[c].attachT > 0.98) && !sh.buds.some((b) => b.t > 0.98);
     if (sh.light < P.lightDeath) sh.shedding = true;
@@ -162,8 +186,8 @@ function runBudSet(s: State) {
       const sh = s.shoots[i];
       if (sh.dead) continue;
       if (sh.parent < 0) V[i] = G;
-      const wKid = (c: number) => (s.shoots[c].isMain ? 1 - P.lambdaLateral : P.lambdaLateral) * Math.pow(Q[c], P.sinkExp);
-      const wSink = (k: Sink) => (k.kind === 'apex' ? 1 - P.lambdaLateral : P.lambdaLateral) * Math.pow(k.w, P.sinkExp);
+      const wKid = (c: number) => (s.shoots[c].isMain ? 1 - lam : lam) * Math.pow(Q[c], P.sinkExp);
+      const wSink = (k: Sink) => (k.kind === 'apex' ? 1 - lam : lam) * Math.pow(k.w, P.sinkExp);
       let sum = 0;
       for (const c of kids[i]) sum += wKid(c);
       for (const k of sinks[i]) sum += wSink(k);
@@ -181,14 +205,14 @@ function runBudSet(s: State) {
     }
     let dropped = 0;
     if (round < rounds - 1) for (let i = 0; i < n; i++) {
-      const keep = sinks[i].filter((k) => k.v >= P.minShoot);
+      const keep = sinks[i].filter((k) => k.v >= P.minShoot || k.min);
       dropped += sinks[i].length - keep.length;
       sinks[i] = keep;
     }
     if (!dropped) break;
   }
 
-  for (let i = 0; i < n; i++) for (const k of sinks[i]) expandSink(s, s.shoots[i], k, year);
+  for (let i = 0; i < n; i++) for (const k of sinks[i]) (leafy ? expandLeafy(s, sp, s.shoots[i], k, year) : expandSink(s, s.shoots[i], k, year));
 }
 
 function addBud(s: State, sh: Shoot, kind: BudKind, t: number, dir: Vec3, len: number, order: number, isMain: boolean) {
@@ -234,8 +258,143 @@ function expandSink(s: State, sh: Shoot, k: Sink, year: number) {
   }
 }
 
+// ---------------------------------------------------------------- olistěné druhy (listnáče a modřín)
+
+const nodesOf = (sp: Species, sh: Shoot) => Math.max(1, Math.round(sh.len / sp.internode)) * (sp.phyllotaxis === 'opposite' ? 2 : 1);
+
+/** Kde na výhonu smí vzniknout pupen. Letorost nese pupeny v úžlabí listů; starší dřevo jen tam, kde
+ *  zůstaly živé spící pupeny nebo krátké výhony (podle druhu obráží ochotně, nebo skoro vůbec). */
+function leafySinks(s: State, sp: Species, sh: Shoot, i: number, kids: number[][], sinks: Sink[][], year: number, crowded: boolean) {
+  const cur = sh.bornYear === year;
+  if (cur) sh.dormant = nodesOf(sp, sh);
+  if (sh.light < sp.lightDeath) { sh.dormant = 0; return; } // zastíněný úsek zakrní
+  const canBud = (sh.dormant ?? 0) > 0;
+  const tipFree = !kids[i].some((c) => s.shoots[c].attachT > 0.98) && !sh.buds.some((b) => b.t > 0.98);
+  if (tipFree && canBud && !(crowded && sh.light < 0.5)) {
+    const apex = cur && !sh.tipCut;
+    // pahýl ochotně obrážejícího druhu vyraší, i když na něj podle síly vrcholů skoro nic nezbude
+    const stub = !cur && sh.tipCut && sp.epicormic >= 0.5 ? 1.5 * sp.epicormic : undefined;
+    sinks[i].push({ i, kind: apex ? 'apex' : 'pinch', w: sh.light * (apex ? 1 : P.weightPinch * (cur ? 1 : sp.epicormic)), v: 0, min: stub });
+  }
+  if (sh.stimulus > 0 && canBud && !tipFree && sh.light > 0.2) {
+    const p = Math.min(0.9, sp.backbud * 0.6 * sh.stimulus) * sh.light * (cur || year - sh.bornYear <= 2 ? 1 : sp.epicormic);
+    if (rnd(s.seed, sh.id, year * 31 + 5) < p) {
+      const cnt = rnd(s.seed, sh.id, year * 31 + 6) < 0.4 ? 2 : 1;
+      for (let k = 0; k < Math.min(cnt, sh.dormant ?? 0); k++) sinks[i].push({ i, kind: 'back', w: sh.light * P.weightBack * 1.5, v: 0 });
+    }
+  }
+}
+
+/** Směr úžlabního pupenu podle postavení listů: dvouřadé (habr, buk), šroubovité (dub, bříza, modřín), vstřícné (javor). */
+function axilDir(s: State, sp: Species, sh: Shoot, rank: number, salt: number): Vec3 {
+  const j = rnd(s.seed, sh.id, salt + rank * 3) - 0.5;
+  const vertical = Math.abs(sh.dir[1]) > 0.86;
+  let phi: number;
+  if (sp.phyllotaxis === 'opposite') phi = (rank % 2) * Math.PI + (Math.floor(rank / 2) % 2) * (Math.PI / 2) + sh.id;
+  else if (sp.phyllotaxis === 'distichous' && !vertical) phi = (rank % 2) * Math.PI + j * 0.35; // ploché vějíře větví
+  else phi = rank * 2.39996 + sh.id * 1.7;
+  return tilt(sh.dir, sp.branchAngle + j * 0.3, phi + j * 0.3);
+}
+
+function leafyTerminal(s: State, sp: Species, sh: Shoot, salt: number): Vec3 {
+  const up = sh.order === 0 ? sp.apicalUp : 0.04;
+  const w = sh.order === 0 ? 0.1 : 0.14; // listnáče rostou klikatěji než borovice
+  return norm([
+    sh.dir[0] + (rnd(s.seed, sh.id, salt) - 0.5) * 2 * w,
+    sh.dir[1] + up + (rnd(s.seed, sh.id, salt + 1) - 0.5) * w,
+    sh.dir[2] + (rnd(s.seed, sh.id, salt + 2) - 0.5) * 2 * w,
+  ]);
+}
+
+function expandLeafy(s: State, sp: Species, sh: Shoot, k: Sink, year: number) {
+  if (k.min) k.v = Math.max(k.v, k.min);
+  const o = sh.order;
+  const cap = o === 0 ? sp.maxLeader : sp.maxLateral;
+  const salt = year * 131;
+  const N = Math.max(1, sh.dormant ?? 1);
+  const per = sp.phyllotaxis === 'opposite' ? 2 : 1;
+  const nodes = Math.max(1, Math.ceil(N / per));
+  // poloha pupenu podle pořadí od vrcholu: silné pupeny jsou nahoře (u dubu natěsnané u konce výhonu)
+  const place = (rank: number) => clamp(1 - ((Math.floor(rank / per) + 0.5) / nodes) * (1 - 0.8 * sp.tipCluster), 0.12, 0.98);
+  if (k.kind === 'apex') {
+    const rho = sp.lateralRatio, dec = sp.lateralDecay;
+    const maxN = Math.min(N, o === 0 ? sp.maxLaterals : Math.max(2, sp.maxLaterals - 2));
+    let nl = 0, sum = 0;
+    while (nl < maxN) {
+      const s2 = sum + Math.pow(dec, nl);
+      if ((rho * (k.v / (1 + rho * s2))) * Math.pow(dec, nl) < sp.minLateral) break;
+      sum = s2; nl++;
+    }
+    const lt = Math.min(cap, k.v / (1 + rho * sum));
+    if (lt < P.minShoot) return;
+    addBud(s, sh, 'terminal', 1, leafyTerminal(s, sp, sh, salt + 10), lt, o, true);
+    for (let j = 0; j < nl; j++) {
+      const l = rho * lt * Math.pow(dec, j) * (0.85 + 0.3 * rnd(s.seed, sh.id, salt + 20 + j));
+      addBud(s, sh, 'lateral', place(j), axilDir(s, sp, sh, j, salt + 40), Math.min(sp.maxLateral, l), o + 1, false);
+    }
+    sh.dormant = Math.max(0, N - nl);
+  } else if (k.kind === 'pinch') {
+    // po řezu vyraší nejvyšší zbylé pupeny; první převezme osu
+    const nb = Math.min(N, k.v < 0.9 ? 1 : Math.min(3, 1 + Math.floor(k.v / 4)));
+    const l = Math.min(cap, k.v / nb);
+    for (let j = 0; j < nb; j++) {
+      const dir = j === 0 && nb === 1 ? leafyTerminal(s, sp, sh, salt + 10) : axilDir(s, sp, sh, j, salt + 40);
+      addBud(s, sh, 'pinch', j === 0 ? 1 : place(j), dir, l * (0.85 + 0.3 * rnd(s.seed, sh.id, salt + 20 + j)), j === 0 ? o : o + 1, j === 0);
+    }
+    sh.dormant = Math.max(0, N - nb);
+  } else {
+    const t = 0.25 + 0.6 * rnd(s.seed, sh.id, salt + 60 + sh.buds.length);
+    addBud(s, sh, 'back', t, axilDir(s, sp, sh, sh.buds.length + 1, salt + 70), Math.min(P.maxBackShoot * 1.5, k.v), o + 1, false);
+    sh.dormant = Math.max(0, N - 1);
+  }
+}
+
+// listy na slabých a krátkých výhonech jsou menší jen mírně; hlavní zmenšení přináší malá nádoba
+const leafSize = (sp: Species, s: State, len: number) => sp.leafLen * (0.72 + 0.28 * (1 - Math.exp(-len / 6))) * POT[s.pot].needle;
+
+/** Z pupenu olistěného druhu vyroste výhon s listy v každém úžlabí. */
+function leafyShoot(s: State, sp: Species, sh: Shoot, b: Bud, late: boolean) {
+  const per = sp.phyllotaxis === 'opposite' ? 2 : 1;
+  const r = sp.twig0 + sp.twigPerLen * b.len;
+  newShoot(s, {
+    parent: sh.id, attachT: b.t, dir: b.order === 0 && b.isMain ? norm(add(b.dir, [0, 1.5, 0])) : b.dir, order: b.order, isMain: b.isMain,
+    targetLen: b.len, needleCount: Math.max(2, Math.round(b.len / sp.internode) + 1) * per, needleLen: leafSize(sp, s, b.len), area: Math.PI * r * r,
+    // druhý růst po zaštípnutí začíná až teď, ne na jaře
+    delay: late ? Math.max(0, s.gdd - sp.flushGdd) : (b.isMain ? 0 : 10) + rnd(s.seed, b.id, 3) * 30,
+  });
+}
+
+function flushLeafy(s: State, sp: Species) {
+  const year = yearOf(s.day);
+  s.flushedYear = year;
+  for (const sh of s.shoots.slice()) {
+    if (sh.dead) continue;
+    // loňské listí (i suché, které drželo přes zimu) je pryč; krátké výhony na starším dřevě raší znovu
+    if (sh.kind !== 'hypocotyl' || year - sh.bornYear >= 1) {
+      const age = year - sh.bornYear;
+      const spurs = age >= 1 && age <= sp.spurYears && sh.light >= sp.lightDeath ? Math.round((sh.dormant ?? 0) * sp.spurLeaves) : 0;
+      sh.needleCount = spurs;
+      sh.needleLen = leafSize(sp, s, 2) * 0.85;
+      sh.needleLive = spurs ? 1 : 0;
+    }
+    for (const b of sh.buds) leafyShoot(s, sp, sh, b, false);
+    sh.buds = [];
+  }
+}
+
+/** Stárnutí krátkých výhonů: po několika letech na dřevě zbude jen pár spících pupenů (nebo žádný). */
+function ageSpurs(s: State, sp: Species) {
+  const year = yearOf(s.day);
+  for (const sh of s.shoots) {
+    if (sh.dead || !sh.dormant) continue;
+    if (year - sh.bornYear >= sp.spurYears) sh.dormant = sp.epicormic >= 0.5 ? Math.min(sh.dormant, 2) : sp.epicormic >= 0.2 && year - sh.bornYear < sp.spurYears + 4 ? Math.min(sh.dormant, 1) : 0;
+  }
+}
+
 /** Jarní rašení: z každého pupenu vyroste výhon o délce předurčené loni v létě. */
 function flush(s: State) {
+  const lsp = speciesOf(s);
+  if (lsp.kind === 'leafy') { flushLeafy(s, lsp); return; }
   const year = yearOf(s.day);
   s.flushedYear = year;
   const pot = POT[s.pot];
@@ -266,10 +425,11 @@ export function updateDeath(s: State) {
   const idx = indexMap(s);
   const alive = new Uint8Array(n);
   const year = yearOf(s.day);
+  const leafy = speciesOf(s).kind === 'leafy'; // listnáč žije i bez listí, dokud má živé pupeny
   for (let i = n - 1; i >= 0; i--) {
     const sh = s.shoots[i];
     if (sh.dead) continue;
-    if (alive[i] || sh.buds.length || (sh.needleCount > 0 && sh.needleLive > 0.02)) {
+    if (alive[i] || sh.buds.length || (sh.needleCount > 0 && sh.needleLive > 0.02) || (leafy && (sh.dormant ?? 0) > 0)) {
       alive[i] = 1;
       if (sh.parent >= 0) alive[idx.get(sh.parent)!] = 1;
     } else {
@@ -298,6 +458,7 @@ function dropDeadTwigs(s: State) {
  *  klesá nejvíc, zesílená už drží; nadrátovaná větev drží tvar daný drátem. Jeden průchod od kořene:
  *  každý výhon nese složené otočení svých předků. */
 function sag(s: State) {
+  const sagF = speciesOf(s).kind === 'leafy' ? speciesOf(s).sag : 1;
   const n = s.shoots.length;
   const idx = indexMap(s);
   const year = yearOf(s.day);
@@ -314,7 +475,7 @@ function sag(s: State) {
     // úhel > 0 sklání špičku dolů (prověšení), < 0 ji zvedá (napřimování náhradního vrcholu)
     let deg = 0;
     if (!sh.dead && lateralAxis && year > sh.bornYear && !sh.wire && d[1] > P.sagFloor && sh.area > 0) {
-      deg = Math.min(P.sagMaxPerYear, (P.sagK * sh.fol * horiz) / sh.area);
+      deg = Math.min(P.sagMaxPerYear * sagF, (P.sagK * sagF * sh.fol * horiz) / sh.area);
     } else if (s.rules >= 3 && sh.heir && !sh.dead && !sh.wire && d[1] < P.heirUpDone) {
       // větev, která převzala vrchol, se tlakovým dřevem rok od roku zvedá ke svislici
       deg = -clamp(P.heirUpK / (1 + 6 * Math.sqrt(sh.area / Math.PI)), P.heirUpMin, P.heirUpMax);
@@ -365,13 +526,27 @@ export function step(s: State) {
   }
   if (s.stage === 'dead') return;
 
-  if (year > 0 && s.flushedYear < year && s.gdd >= P.flushGdd) flush(s);
+  const sp = speciesOf(s), leafy = sp.kind === 'leafy';
+  const flushGdd = leafy ? sp.flushGdd : P.flushGdd, elongSpan = leafy ? sp.elongSpanGdd : P.elongSpanGdd;
+  if (year > 0 && s.flushedYear < year && s.gdd >= flushGdd) flush(s);
+  if (s.pendingFlush) {
+    // druhý růst: pupeny vzniklé po letním zaštípnutí raší po několika týdnech
+    let left = 0;
+    for (const sh of s.shoots.slice()) {
+      if (sh.dead || !sh.buds.some((b) => b.flushDay !== undefined)) continue;
+      const due = sh.buds.filter((b) => b.flushDay !== undefined && b.flushDay <= s.day);
+      for (const b of due) leafyShoot(s, sp, sh, b, true);
+      sh.buds = sh.buds.filter((b) => !due.includes(b));
+      left += sh.buds.filter((b) => b.flushDay !== undefined).length;
+    }
+    s.pendingFlush = left;
+  }
 
   const cambium = s.gdd > P.cambiumStartGdd && s.gdd < P.cambiumEndGdd;
   if (cambium && (s.day % 7 === 0 || s.shoots[0].fol === 0)) updateFoliage(s);
   const shedding = doy >= P.shedStartDoy && doy < P.shedEndDoy;
   const shedRate = 1 / (P.shedEndDoy - P.shedStartDoy - 5);
-  const kArea = (P.areaPerFoliage * dG) / (P.cambiumEndGdd - P.cambiumStartGdd);
+  const kArea = (P.areaPerFoliage * (speciesOf(s).kind === 'leafy' ? speciesOf(s).thicken : 1) * dG) / (P.cambiumEndGdd - P.cambiumStartGdd);
 
   if (cambium) {
     // kořeny rostou s olistěním, dokud je v nádobě místo; stres z přesazení postupně odeznívá
@@ -388,7 +563,7 @@ export function step(s: State) {
       // tvar fixují nové letokruhy: silnější dřevo potřebuje víc sezón; drát mezitím zarůstá
       const r = Math.sqrt(sh.area / Math.PI);
       sh.wire.set = Math.min(1, sh.wire.set + setRate / (P.wireMinSeasons + P.wireSeasonsPerCm * r));
-      if (sh.area > sh.wire.area0 * P.wireBite) sh.scar = true;
+      if (sh.area > sh.wire.area0 * (leafy ? sp.wireBite : P.wireBite)) sh.scar = true;
     }
     if (sh.elong) {
       let e: number;
@@ -398,21 +573,26 @@ export function step(s: State) {
         if (a === P.epicotylDelayDays) startEpicotyl(s, sh);
         if (a < P.epicotylDelayDays) { sh.len = sh.targetLen * e; continue; }
       } else if (sh.kind === 'epicotyl') e = smooth((s.gdd - sh.gdd0) / P.epicotylGddSpan);
-      else e = smooth((s.gdd - P.flushGdd - sh.delay) / P.elongSpanGdd);
+      else e = smooth((s.gdd - flushGdd - sh.delay) / elongSpan);
       sh.len = sh.targetLen * e;
       if (e >= 1 || sh.bornYear < year) { sh.len = sh.targetLen; sh.elong = false; }
     }
     if (cambium) sh.area += kArea * sh.fol;
-    if (shedding && sh.needleLive > 0) {
+    if (leafy) {
+      // opad listí: celé olistění, u buku, habru a dubu část suchých listů zůstává do jara
+      if (doy >= sp.colorDoy + 12 && doy < sp.fallDoy && sh.needleLive > sp.marcescent && sh.kind !== 'hypocotyl') sh.needleLive = Math.max(sp.marcescent, sh.needleLive - 1 / (sp.fallDoy - sp.colorDoy - 12));
+      else if (sh.kind === 'hypocotyl' && doy >= sp.colorDoy && sh.needleLive > 0) sh.needleLive = Math.max(0, sh.needleLive - 0.05);
+    } else if (shedding && sh.needleLive > 0) {
       const old = year - sh.bornYear >= (sh.kind === 'hypocotyl' ? 1 : P.needleRetention - 1);
       if (old || sh.shedding) sh.needleLive = Math.max(0, sh.needleLive - shedRate);
     }
   }
 
-  const setNow = year === 0 ? doy >= P.seedlingBudSetDoy : s.gdd >= P.budSetGdd;
+  const setNow = year === 0 ? doy >= P.seedlingBudSetDoy : s.gdd >= (leafy ? sp.budSetGdd : P.budSetGdd);
   if (s.budSetYear < year && setNow) { runBudSet(s); updateDeath(s); }
   if (doy === P.shedEndDoy) {
     for (const sh of s.shoots) sh.shedding = false;
+    if (leafy) ageSpurs(s, sp);
     updateDeath(s);
     sag(s);
     dropDeadTwigs(s);

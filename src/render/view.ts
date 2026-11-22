@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { PotType, Shoot, State } from '../sim/types';
 import { P, potById } from '../sim/params';
+import { LeafShape, speciesOf } from '../sim/species';
 import type { Vec3 } from '../sim/types';
 import { Frames, basis, clamp, computeFrames, doyOf, needleGrowth, radiusOf, rnd, rotate, shootPoint, smooth, yearOf } from '../sim/util';
 
@@ -151,10 +152,31 @@ function fadeTexture(): THREE.CanvasTexture {
 }
 const MAX_FASCICLES = 30000;
 
+/** Obrys listu: body (x, y), x = do šířky (−0,5…0,5), y = podél listu (0 = řapík, 1 = špička). Pravá polovina; levá je zrcadlová. */
+const LEAF: Record<Exclude<LeafShape, 'needle' | 'tuft'>, [number, number][]> = {
+  ovate: [[0, 0], [0.3, 0.14], [0.48, 0.4], [0.4, 0.68], [0.18, 0.9], [0, 1]], // habr: vejčitý, zašpičatělý
+  beech: [[0, 0], [0.36, 0.16], [0.5, 0.45], [0.42, 0.74], [0.16, 0.94], [0, 1]], // buk: široce vejčitý
+  delta: [[0, 0], [0.5, 0.16], [0.36, 0.48], [0.14, 0.82], [0, 1]], // bříza: trojúhelníkovitý
+  lobed: [[0, 0], [0.14, 0.05], [0.1, 0.16], [0.34, 0.26], [0.2, 0.38], [0.48, 0.52], [0.26, 0.63], [0.44, 0.8], [0.18, 0.86], [0.12, 0.98], [0, 1]], // dub: laločnatý
+  palmate: [[0, 0.05], [0.16, 0], [0.5, 0.1], [0.3, 0.3], [0.5, 0.52], [0.24, 0.55], [0.16, 0.74], [0, 1]], // javor babyka: dlanitý
+};
+
 function woodColor(s: State, sh: Shoot, out: number[]) {
   const age = yearOf(s.day) - sh.bornYear;
   const r = radiusOf(sh);
   let c: number[];
+  const sp = speciesOf(s);
+  if (sp.kind === 'leafy' && !sh.dead) {
+    // letorost zelený, pak barva větviček, s věkem kůra druhu (bříza bělá, buk šedne, dub tmavne)
+    if (age === 0 && sh.elong) c = [0.5, 0.6, 0.3];
+    else if (age <= 1) c = sp.twigColor;
+    else {
+      const k = smooth((age - 1) / Math.max(2, sp.barkAge * 0.6)), k2 = smooth((age - sp.barkAge) / (sp.barkAge + 4));
+      c = [0, 1, 2].map((q) => (sp.twigColor[q] + (sp.barkColor[q] - sp.twigColor[q]) * k) * (1 - k2) + sp.oldBarkColor[q] * k2);
+    }
+    out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
+    return;
+  }
   if (sh.dead) c = [0.7, 0.67, 0.61];
   else if (sh.kind === 'hypocotyl' && age === 0) c = [0.62, 0.47, 0.4];
   else if (sh.elong && sh.kind === 'shoot') {
@@ -540,11 +562,12 @@ export class TreeView {
         if (sh.isMain || mainR[pi] === 0) mainR[pi] = Math.max(mainR[pi], sh.isMain ? r : r * 0.9);
       }
       if (!sh.dead) H = Math.max(H, tip[i * 3 + 1]);
-      total += sh.needleCount * sh.needleLive;
+      total += sh.needleCount * sh.needleLive * (speciesOf(s).kind === 'leafy' ? (speciesOf(s).leafShape === 'tuft' ? 4 : 2.2) : 1);
     }
     this.height = H;
     const stride = Math.max(1, Math.ceil(total / MAX_FASCICLES));
     const nw = Math.max(0.09, this.dist * 0.0011 * Math.pow(stride, 0.4));
+    const sp = speciesOf(s), leafySp = sp.kind === 'leafy';
     const budG = s.budSetYear === year ? 0.3 + 0.7 * smooth((s.gdd - s.budSetGdd) / P.budGrowGdd) : 1.1;
     const col = [0, 0, 0];
     const shedSeason = doy >= P.shedStartDoy && doy < P.shedEndDoy + 20;
@@ -558,7 +581,7 @@ export class TreeView {
       const ao = sh.dead ? 1 : 0.8 + 0.2 * sh.light;
       C[i * 3] = col[0] * ao; C[i * 3 + 1] = col[1] * ao; C[i * 3 + 2] = col[2] * ao;
       const ag = year - sh.bornYear;
-      BK[i] = sh.dead || ag < 2 ? 0 : smooth((ag - 1.5) / 5) * (0.6 + 0.4 * smooth(radiusOf(sh) / 1.2));
+      BK[i] = sh.dead || ag < 2 ? 0 : leafySp ? sp.barkRough * smooth((ag - sp.barkAge * 0.4) / sp.barkAge) : smooth((ag - 1.5) / 5) * (0.6 + 0.4 * smooth(radiusOf(sh) / 1.2));
     }
     const endTan = (sh: Shoot): Vec3 => (sh.arc ? rotate(sh.dir, sh.arc.axis, sh.arc.angle) : sh.dir);
     const nrm = (x: number, y: number, z: number): Vec3 => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
@@ -773,17 +796,101 @@ export class TreeView {
       }
       for (const b of sh.buds) {
         at(b.t);
-        drawBud(b.dir, Math.min(1.5, 0.28 + 0.045 * b.len) * budG, b.kind === 'terminal' || b.t < 0.98 ? 0 : rt * 0.5);
+        if (leafySp) drawBud(b.dir, sp.budLen * (0.7 + 0.03 * Math.min(20, b.len)) * budG, b.t > 0.98 && b.isMain ? 0 : rb * 0.6, sp.budFat, sp.budColor);
+        else drawBud(b.dir, Math.min(1.5, 0.28 + 0.045 * b.len) * budG, b.kind === 'terminal' || b.t < 0.98 ? 0 : rt * 0.5);
       }
       // rašící svíčka: pupen nezmizí, ale protahuje se – na špičce svíčky zůstává, dokud nedoroste
-      if (sh.elong && sh.kind === 'shoot' && !sh.tipCut) {
+      if (!leafySp && sh.elong && sh.kind === 'shoot' && !sh.tipCut) {
         const e = sh.targetLen > 0 ? len / sh.targetLen : 1;
         at(1);
         drawBud(d, Math.min(1.5, 0.28 + 0.045 * sh.targetLen) * (1.1 - 0.75 * e), 0);
       }
 
-      // jehlice: osvětlené, vrhají a přijímají stín; uvnitř koruny tmavší podle oslunění ze simulace
       if (sh.needleCount <= 0 || sh.needleLive <= 0) continue;
+      if (leafySp) {
+        // ---- listy (a jehlice modřínu): každé jaro nové, na podzim se barví a opadají
+        const g = needleGrowth(s, sh);
+        if (g < 0.04) continue;
+        const winter = doy >= sp.fallDoy - 2 || s.gdd < sp.flushGdd;
+        const fall = winter ? 1 : smooth((doy - (sp.colorDoy - 10)) / 22);
+        const base = [0, 1, 2].map((q) => sp.springColor[q] + (sp.leafColor[q] - sp.springColor[q]) * smooth(g * 1.3));
+        const tone = winter ? [0.46, 0.31, 0.18] : [0, 1, 2].map((q) => base[q] + (sp.autumnColor[q] - base[q]) * fall);
+        const cnt = sh.needleCount;
+        const L0 = sh.needleLen * (0.25 + 0.75 * g);
+        const shade = 0.62 + 0.38 * sh.light;
+        const cur = sh.bornYear === year || sh.kind !== 'shoot';
+        const cot = sh.kind === 'hypocotyl';
+        const flat = sp.phyllotaxis === 'distichous' && Math.abs(d0[1]) < 0.86;
+        const emit = (px: number, py: number, pz: number, ld: Vec3, L: number, k: number) => {
+          const j = (0.85 + 0.3 * rnd(sh.id, k, 12)) * shade;
+          const r = tone[0] * j, gg = tone[1] * j, b = tone[2] * j;
+          if (sp.leafShape === 'tuft') {
+            // modřín: jehlice jako úzký trojúhelník
+            const sx = ld[1] * 0 - ld[2], sz = ld[0], sl = Math.hypot(sx, sz) || 1;
+            const hw = nw * 0.8;
+            const i0 = nb.v(px - (sx / sl) * hw, py, pz - (sz / sl) * hw, 0, 1, 0, r * 0.75, gg * 0.75, b * 0.75); nb.t(0, 0, 0);
+            nb.v(px + (sx / sl) * hw, py, pz + (sz / sl) * hw, 0, 1, 0, r * 0.75, gg * 0.75, b * 0.75); nb.t(0, 0, 0);
+            nb.v(px + ld[0] * L, py + ld[1] * L, pz + ld[2] * L, 0, 1, 0, r * 1.15, gg * 1.15, b * 1.1); nb.t(0, 0, 1);
+            nb.tri(i0, i0 + 1, i0 + 2); nb.tri(i0, i0 + 2, i0 + 1);
+            return;
+          }
+          // čepel leží zhruba vodorovně, lícem vzhůru; okraje jsou lehce zvednuté podél střední žilky
+          let sx = -ld[2], sz = ld[0];
+          const sl = Math.hypot(sx, sz);
+          if (sl < 0.2) { sx = u[0]; sz = u[2]; } else { sx /= sl; sz /= sl; }
+          const nx = -sz * ld[1], ny = sz * ld[0] - sx * ld[2], nz = sx * ld[1]; // normála = šířka × délka
+          const nl2 = Math.hypot(nx, ny, nz) || 1, ux = nx / nl2, uy = Math.abs(ny / nl2), uz = nz / nl2;
+          const W = L * sp.leafWidth;
+          const out = LEAF[cot ? 'ovate' : (sp.leafShape as keyof typeof LEAF)];
+          const pet = L * 0.12;
+          const cx0 = px + ld[0] * (pet + L * 0.45), cy0 = py + ld[1] * (pet + L * 0.45), cz0 = pz + ld[2] * (pet + L * 0.45);
+          const c0 = nb.v(cx0, cy0, cz0, ux, uy, uz, r * 0.9, gg * 0.9, b * 0.9); nb.t(0, 0, 0.5);
+          let first = -1, prev = -1;
+          const ring = (x: number, y: number) => {
+            const lift = Math.abs(x) * W * 0.22;
+            const v = nb.v(px + ld[0] * (pet + L * y) + sx * W * x + ux * lift, py + ld[1] * (pet + L * y) + uy * lift, pz + ld[2] * (pet + L * y) + sz * W * x + uz * lift,
+              ux, uy, uz, r * (0.85 + 0.25 * y), gg * (0.85 + 0.25 * y), b * (0.85 + 0.2 * y));
+            nb.t(0, 0, y);
+            if (prev >= 0) { nb.tri(c0, prev, v); nb.tri(c0, v, prev); }
+            if (first < 0) first = v;
+            prev = v;
+          };
+          for (let q = 0; q < out.length; q++) ring(out[q][0], out[q][1]);
+          for (let q = out.length - 2; q >= 1; q--) ring(-out[q][0], out[q][1]);
+          nb.tri(c0, prev, first); nb.tri(c0, first, prev);
+        };
+        const tuft = sp.leafShape === 'tuft';
+        const perNode = tuft ? (cur ? 4 : 12) : 1;
+        nb.reserve(Math.ceil(cnt / stride + 1) * perNode * (tuft ? 3 : 24), Math.ceil(cnt / stride + 1) * perNode * (tuft ? 6 : 132));
+        for (let k = (sh.id * 7) % stride; k < cnt; k += stride) {
+          const h = rnd(sh.id, k, 11);
+          if (h >= sh.needleLive) continue;
+          const node = sp.phyllotaxis === 'opposite' ? Math.floor(k / 2) : k;
+          const nodes = sp.phyllotaxis === 'opposite' ? Math.ceil(cnt / 2) : cnt;
+          at(cot ? 1 : 0.08 + 0.9 * ((node + 0.5) / nodes));
+          let phi: number;
+          if (cot) phi = (k / cnt) * 6.2832 + sh.id;
+          else if (sp.phyllotaxis === 'opposite') phi = (k % 2) * Math.PI + (node % 2) * (Math.PI / 2) + sh.id;
+          else if (flat) phi = (k % 2) * Math.PI + (h - 0.5) * 0.5;
+          else phi = k * 2.39996 + sh.id;
+          for (let q = 0; q < perNode; q++) {
+            const a2 = tuft ? phi + q * 2.39996 : phi;
+            const tiltA = tuft ? (cur ? 1.0 : 0.35 + 0.9 * rnd(sh.id, k * 13 + q, 15)) : cot ? 1.25 : 1.05 + (h - 0.5) * 0.4;
+            const sa = Math.sin(tiltA), ca = Math.cos(tiltA), cp = Math.cos(a2), spn = Math.sin(a2);
+            // krátké výhony modřínu sedí na boku větve a míří ven; listy visí lehce dolů
+            const ax0 = tuft && !cur ? u[0] * cp + w[0] * spn : d[0], ay0 = tuft && !cur ? u[1] * cp + w[1] * spn : d[1], az0 = tuft && !cur ? u[2] * cp + w[2] * spn : d[2];
+            const a3 = a2 + (tuft && !cur ? 1.9 * q : 0);
+            const c3 = Math.cos(a3), s3 = Math.sin(a3);
+            const rx = tuft && !cur ? d[0] * c3 + (u[0] * -spn + w[0] * cp) * s3 : u[0] * cp + w[0] * spn;
+            const ry = tuft && !cur ? d[1] * c3 + (u[1] * -spn + w[1] * cp) * s3 : u[1] * cp + w[1] * spn;
+            const rz = tuft && !cur ? d[2] * c3 + (u[2] * -spn + w[2] * cp) * s3 : u[2] * cp + w[2] * spn;
+            const ld = nrm(ax0 * ca + rx * sa, ay0 * ca + ry * sa - (tuft ? 0.05 : 0.22), az0 * ca + rz * sa);
+            emit(cx, cy, cz, ld, L0 * (0.85 + 0.3 * rnd(sh.id, k * 7 + q, 13)), k * 5 + q);
+          }
+        }
+        continue;
+      }
+      // jehlice: osvětlené, vrhají a přijímají stín; uvnitř koruny tmavší podle oslunění ze simulace
       const g = needleGrowth(s, sh);
       const nl = sh.needleLen * g;
       if (nl < 0.03) continue;

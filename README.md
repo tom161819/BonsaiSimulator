@@ -1,6 +1,6 @@
 # Bonsai Simulator
 
-Simulátor růstu bonsaje. První verze: **jeden strom, jeden druh – borovice lesní (*Pinus sylvestris*) ze semínka**.
+Simulátor růstu bonsaje ze semínka. Druhy: **borovice lesní, modřín opadavý, habr obecný, buk lesní, dub letní, bříza bělokorá a javor babyka**.
 Strom roste den po dni podle fenologie druhu, na časové ose se dá kdykoli zastavit, vrátit a zasáhnout:
 zaštípnout svíčku, zkrátit nebo odstranit výhon, vylomit pupen, nadrátovat a ohnout větev,
 přesadit se zakrácením kořenů, natočením a náklonem. Každý zásah mění, jak strom poroste dál.

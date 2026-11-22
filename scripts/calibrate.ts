@@ -1,16 +1,20 @@
-// Kalibrace bez grafiky: vypíše vývoj stromu po letech pro jednotlivé nádoby.
+// Kalibrace bez grafiky: vývoj stromu po letech.  npm run calibrate -- [roky] [druh] [nádoba]
 import { Timeline } from '../src/sim/timeline';
 import { stats, YEAR } from '../src/sim/util';
+import { SPECIES, SPECIES_ORDER } from '../src/sim/species';
+if (process.env.C && process.argv[3]) (SPECIES as any)[process.argv[3]].growthPerFoliage = Number(process.env.C);
 import type { PotType } from '../src/sim/types';
 
 const years = Number(process.argv[2] || 12);
-for (const pot of ['ground', 'training', 'bonsai'] as PotType[]) {
-  const tl = new Timeline(7);
+const only = process.argv[3];
+const pots = (process.argv[4] ? [process.argv[4]] : ['ground', 'training', 'bonsai']) as PotType[];
+for (const sp of SPECIES_ORDER.filter((x) => (only ? x === only : x === 'pine'))) for (const pot of pots) {
+  const tl = new Timeline(7, [], undefined, sp);
   tl.act({ type: 'repot', pot });
-  console.log(`\n== ${pot} ==\nrok  výška  ø báze  výhony  pupeny  jehlic  leader  ms`);
+  console.log(`\n== ${sp} / ${pot} ==\nrok  výška  ø báze  výhony  pupeny   listů  leader  ms`);
   for (let y = 0; y < years; y++) {
     const t0 = Date.now();
-    tl.seek(y * YEAR + 300);
+    tl.seek(y * YEAR + 250);
     const st = stats(tl.state);
     const main = tl.state.shoots.filter((s) => s.order === 0 && s.bornYear === y && !s.dead);
     const leader = main.length ? main[main.length - 1].len : 0;

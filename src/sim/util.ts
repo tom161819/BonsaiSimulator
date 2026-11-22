@@ -1,5 +1,6 @@
 import type { Shoot, State, Vec3 } from './types';
 import { P, potById } from './params';
+import { speciesOf } from './species';
 
 export const YEAR = 365;
 export const yearOf = (day: number) => Math.floor(day / YEAR);
@@ -90,6 +91,13 @@ export function indexMap(s: State): Map<number, number> {
 
 /** Podíl dorůstu jehlic 0..1 (jehlice rostou déle než výhon). */
 export function needleGrowth(s: State, sh: Shoot): number {
+  const sp = speciesOf(s);
+  if (sp.kind === 'leafy') {
+    if (sh.kind === 'hypocotyl') return smooth((s.day - sh.bornDay - 6) / 16);
+    // listy raší každé jaro znovu – i na krátkých výhonech starého dřeva
+    const start = sh.bornYear === yearOf(s.day) ? sp.flushGdd + sh.delay : sp.flushGdd;
+    return sh.kind === 'epicotyl' ? 0.3 + 0.7 * smooth((s.gdd - sh.gdd0) / 500) : smooth((s.gdd - start) / sp.leafSpanGdd);
+  }
   if (sh.bornYear < yearOf(s.day)) return 1;
   if (sh.kind === 'hypocotyl') return smooth((s.day - sh.bornDay - 6) / 16);
   if (sh.kind === 'epicotyl') return 0.25 + 0.75 * smooth((s.gdd - sh.gdd0) / P.epicotylGddSpan);
@@ -99,6 +107,13 @@ export function needleGrowth(s: State, sh: Shoot): number {
 /** Vlastní olistění výhonu v jednotkách "1 cm výhonu s 5 svazečky 5cm jehlic". */
 export function ownFoliage(s: State, sh: Shoot): number {
   if (sh.dead || sh.needleCount === 0 || sh.needleLive <= 0) return 0;
+  const sp = speciesOf(s);
+  if (sp.kind === 'leafy') {
+    if (doyOf(s.day) >= sp.colorDoy) return 0; // barvící se a suché listí už nepracuje
+    const size = sh.needleLen / sp.leafLen;
+    const juv = sh.kind === 'shoot' ? 1 : 1.6;
+    return sh.needleCount * sp.leafUnits * size * size * Math.max(0.15, needleGrowth(s, sh)) * sh.needleLive * juv;
+  }
   const age = clamp(yearOf(s.day) - sh.bornYear, 0, P.ageEff.length - 1);
   const juvenile = sh.kind === 'shoot' ? 1 : P.juvenileEfficiency;
   const g = Math.max(0.15, needleGrowth(s, sh));
@@ -189,7 +204,7 @@ export function stats(s: State, fr = computeFrames(s)): Stats {
     if (sh.dead) { dead++; continue; }
     shoots++;
     buds += sh.buds.length;
-    needles += Math.round(sh.needleCount * sh.needleLive) * (sh.kind === 'shoot' ? 2 : 1);
+    needles += Math.round(sh.needleCount * sh.needleLive) * (sh.kind === 'shoot' && speciesOf(s).kind === 'pine' ? 2 : 1);
     height = Math.max(height, fr.tip[i * 3 + 1]);
   }
   const baseDiameter = s.shoots.length ? 2 * radiusOf(s.shoots[0]) : 0;

@@ -4,6 +4,7 @@ import { Timeline } from '../src/sim/timeline';
 import { YEAR, bendLimit, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
 import type { State, Vec3 } from '../src/sim/types';
 import samples from '../src/samples.json';
+import { SPECIES_ORDER } from '../src/sim/species';
 
 const sig = (s: State) => JSON.stringify(s.shoots.map((x) => [x.id, x.parent, +x.len.toFixed(4), x.buds.length, x.dead]));
 const at = (y: number, doy: number) => y * YEAR + doy;
@@ -231,6 +232,58 @@ test('v3: větev, která převzala vrchol, se zvedá i ve starém dřevě; ve v2
   const v3 = run(3), v2 = run(2);
   assert.ok(v3.after > v3.before + 0.15 && v3.after > 0.8, `v3: ${v3.before.toFixed(2)} -> ${v3.after.toFixed(2)}`);
   assert.ok(Math.abs(v2.after - v2.before) < 0.02, `v2 beze změny: ${v2.before.toFixed(2)} -> ${v2.after.toFixed(2)}`);
+});
+
+// ---------------------------------------------------------------- další druhy
+const leavesOf = (tl: Timeline) => tl.state.shoots.reduce((t, s) => t + (s.dead ? 0 : Math.round(s.needleCount * s.needleLive)), 0);
+
+test('všechny druhy vyklíčí, rostou a přežijí deset let bez zásahu', () => {
+  for (const id of SPECIES_ORDER) {
+    const tl = new Timeline(4, [], undefined, id); tl.act({ type: 'repot', pot: 'ground' }); tl.seek(at(9, 200));
+    const st = stats(tl.state);
+    assert.equal(tl.state.stage, 'growing', id);
+    assert.ok(st.height > 60 && st.height < 700, `${id}: výška ${st.height.toFixed(0)} cm`);
+    assert.ok(st.baseDiameter > 1 && st.baseDiameter < 16, `${id}: kmen ${st.baseDiameter.toFixed(1)} cm`);
+  }
+});
+
+test('listnáče na zimu opadají a na jaře znovu olistí; buk drží suché listí, bříza ne', () => {
+  for (const [id, keeps] of [['beech', true], ['hornbeam', true], ['birch', false], ['maple', false], ['larch', false]] as [string, boolean][]) {
+    const tl = new Timeline(4, [], undefined, id); tl.seek(at(5, 200));
+    const summer = leavesOf(tl);
+    tl.seek(at(5, 350));
+    const winter = leavesOf(tl);
+    tl.seek(at(6, 200));
+    assert.ok(summer > 20, `${id}: v létě olistěný (${summer})`);
+    assert.ok(keeps ? winter > summer * 0.3 : winter === 0, `${id}: v zimě ${winter} z ${summer} listů`);
+    assert.ok(leavesOf(tl) > summer, `${id}: další rok víc listů`);
+  }
+});
+
+test('habr po řezu do holého dřeva obrazí, borovice ne', () => {
+  const cutOld = (id: string) => {
+    const tl = new Timeline(4, [], undefined, id); tl.seek(at(6, 60));
+    // nejstarší boční větev zkrátit na pahýl bez listí a bez větvení
+    const br = tl.state.shoots.find((s) => s.order === 1 && !s.dead && s.bornYear <= 3 && s.kind === 'shoot')!;
+    tl.act({ type: 'cut', shoot: br.id, t: 0.3 });
+    tl.seek(at(8, 200));
+    const now = tl.state.shoots.find((s) => s.id === br.id);
+    return !!now && !now.dead && tl.state.shoots.some((s) => s.parent === br.id && !s.dead);
+  };
+  assert.ok(cutOld('hornbeam'), 'habr z pahýlu vyrašil');
+  assert.ok(!cutOld('pine'), 'borovice z pahýlu nevyrašila');
+});
+
+test('habr po zaštípnutí vyraší ještě téhož léta, buk a borovice jen výjimečně nebo vůbec', () => {
+  const again = (id: string) => {
+    const tl = new Timeline(6, [], undefined, id); tl.seek(at(4, 150));
+    const before = tl.state.shoots.length;
+    for (const sh of tl.state.shoots.filter((s) => s.elong && s.kind === 'shoot' && s.targetLen > 4)) tl.act({ type: 'cut', shoot: sh.id, t: 0.5 });
+    tl.seek(at(4, 195));
+    return tl.state.shoots.length - before;
+  };
+  assert.ok(again('hornbeam') > 0, 'habr vyrašil podruhé');
+  assert.equal(again('pine'), 0);
 });
 
 console.log(`\n${n} testů prošlo`);
