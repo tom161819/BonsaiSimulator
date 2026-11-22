@@ -280,6 +280,38 @@ export class TreeView {
     this.auto = false; this.needsRender = true;
   }
   recenter() { this.auto = true; this.needsRender = true; }
+
+  /** Portrét stromu pro sbírku: celý strom i s nádobou na průhledném pozadí, z právě zvoleného směru pohledu. */
+  capture(w = 360, h = 440): string {
+    const s = this.state;
+    if (!s) return '';
+    const keep = { target: this.target.clone(), dist: this.dist, phi: this.phi, auto: this.auto, pr: this.renderer.getPixelRatio() };
+    const hidden = [this.hi, this.marker, this.wireLines, this.wireDots, this.table].filter((o) => o.visible);
+    for (const o of hidden) o.visible = false;
+    const pot = potById(s.potId);
+    const H = Math.max(6, this.height), below = pot.shape === 'ground' ? 1 : pot.h + 2;
+    // skutečný rozsah koruny do stran (strom může být širší než vyšší)
+    let reach = 0;
+    if (this.frames) for (let i = 0; i < s.shoots.length; i++) if (!s.shoots[i].dead) reach = Math.max(reach, Math.hypot(this.frames.tip[i * 3], this.frames.tip[i * 3 + 2]));
+    const span = H + below + 3, width = Math.max(2 * reach + 8, pot.a + 4, pot.b + 4);
+    const tan = Math.tan((this.camera.fov * Math.PI) / 360);
+    this.auto = false;
+    this.phi = 1.38;
+    this.dist = Math.max(span / 2 / tan, width / 2 / (tan * (w / h))) * 1.08;
+    // dno nádoby sedí na spodním okraji obrázku, aby strom na lavici stál a nevznášel se
+    this.target.set(0, -below + this.dist * tan * 0.97, 0);
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.updateCamera();
+    this.renderer.render(this.scene, this.camera);
+    const url = this.canvas.toDataURL('image/png');
+    for (const o of hidden) o.visible = true;
+    this.target.copy(keep.target); this.dist = keep.dist; this.phi = keep.phi; this.auto = keep.auto;
+    this.renderer.setPixelRatio(keep.pr);
+    this.resize();
+    return url;
+  }
   /** Pohled zepředu (osa Z míří k pozorovateli) – vůči němu se zadává náklon při přesazení. */
   front() { this.theta = 0; this.phi = 1.3; this.auto = true; this.needsRender = true; }
   /** Náhled natočení a náklonu při přesazení (stupně), než se zásah potvrdí. */

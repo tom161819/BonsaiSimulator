@@ -30,6 +30,7 @@ Vývojový server běží na http://localhost:5173. `npm run build` vytvoří st
 - **Najetí myší** na výhon nebo pupen ukáže, co zásah udělá; **kliknutí** ho provede. Na dotykovém displeji ťuknutí vybere a tlačítko *Provést* potvrdí.
 - **Nástroj Drát:** posuvník *Tvar ohybu* volí ostrý zlom nebo plynulý oblouk; tažením za větev ji ohnete (zelený náhled = bezpečné, červený = hrozí prasknutí); kliknutí na nadrátovanou větev drát sundá.
 - **Přesadit…** otevře výběr z katalogu nádob (kelímek 0,5 l až kontejner 25 l, misky 0,2–12 l, volná půda), zakrácení kořenů, otočení a náklonu s živým náhledem.
+- **Přidat do sbírky** uloží strom v dnešním stavu; **Moje sbírka** ukáže uložené stromy na lavici, odkud jde v kterémkoli pokračovat. Sbírka se ukládá v prohlížeči.
 - Tažení mimo strom otáčí pohled, kolečko přibližuje, pravé tlačítko (nebo Shift + tažení) posouvá.
 - Mezerník spouští a zastavuje čas, Ctrl+Z vrací poslední zásah.
 - Posuvník času jde i dozadu. Zásah v minulosti přepíše pozdější zásahy v deníku.

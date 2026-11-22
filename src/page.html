@@ -9,6 +9,7 @@
     --fg: #17231d; --muted: #55655c; --line: rgba(23, 35, 29, 0.14);
     --accent: #2c6a48; --accent-fg: #ffffff; --bark: #a9562a; --danger: #b8321c;
     --hl: #e8912a; --hl-bg: rgba(232, 145, 42, 0.14);
+    --wood-a: #b98a5a; --wood-b: #8a623c; --wood-c: #6b4a2c;
     --spring: #9ccf6a; --summer: #f1c453; --autumn: #d9773a; --winter: #9db7d6;
     --display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
     --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -46,6 +47,7 @@
     pointer-events: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 12px 14px; min-width: 0;
   }
+  #collection { grid-area: phases; justify-self: start; align-self: start; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px; }
   #phases { grid-area: phases; justify-self: end; align-self: start; width: 190px; }
   #phaseList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
   #phaseList li { padding: 4px 8px; border: 2px solid transparent; border-radius: 7px; color: var(--muted); font-size: 12.5px; line-height: 1.25; }
@@ -108,6 +110,26 @@
   #years span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
   #marks { position: absolute; left: 8px; right: 8px; top: -3px; height: 4px; pointer-events: none; }
   #marks i { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: var(--bark); transform: translateX(-50%); }
+  #shelf {
+    position: absolute; inset: 0; z-index: 8; overflow-y: auto; background: linear-gradient(var(--sky-a), var(--sky-b));
+    padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  #shelf header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto 8px; }
+  #shelf header h1 { font-size: 22px; } #shelf header h1 i { display: inline; margin-left: 8px; }
+  #shelfEmpty { max-width: 1100px; margin: 24px auto; color: var(--muted); }
+  /* lavice: každý strom stojí na svém dílu prkna; díly na sebe navazují, takže řada tvoří jednu polici */
+  #bench { display: flex; flex-wrap: wrap; align-items: flex-end; row-gap: 26px; max-width: 1100px; margin: 0 auto; }
+  .kept { width: 220px; max-width: 50%; display: flex; flex-direction: column; min-width: 0; }
+  .kept img { width: 100%; height: 250px; object-fit: contain; object-position: bottom; display: block; }
+  .kept .plank {
+    height: 16px; background: linear-gradient(var(--wood-a), var(--wood-b)); border-bottom: 5px solid var(--wood-c);
+    box-shadow: 0 6px 8px -4px rgba(0, 0, 0, 0.35);
+  }
+  .kept .card { padding: 8px 8px 0; display: flex; flex-direction: column; gap: 4px; }
+  .kept input { font: 600 13px var(--body); color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 5px; padding: 2px 4px; width: 100%; min-width: 0; }
+  .kept input:hover, .kept input:focus { border-color: var(--line); }
+  .kept small { color: var(--muted); font-size: 11.5px; padding: 0 4px; font-variant-numeric: tabular-nums; }
+  .kept .row button { min-height: 28px; padding: 3px 8px; font-size: 12px; }
   #tip {
     position: absolute; pointer-events: none; max-width: 260px; background: var(--panel-solid); border: 1px solid var(--line);
     border-left: 3px solid var(--accent); border-radius: 6px; padding: 7px 10px; font-size: 12.5px; z-index: 5;
@@ -118,7 +140,8 @@
   #tip button { pointer-events: auto; margin-top: 6px; }
   #banner { grid-area: 1 / 1 / 2 / 4; place-self: center; text-align: center; max-width: 320px; }
   @media (max-width: 760px) {
-    #ui { grid-template: "left" auto "right" 1fr "bottom" auto / 1fr; gap: 8px; }
+    #ui { grid-template: "left" auto "bar" auto "right" 1fr "bottom" auto / 1fr; gap: 8px; }
+    #collection { grid-area: bar; }
     #right { align-self: end; justify-self: end; max-width: 100%; }
     #left .panel { padding: 8px 10px; } #date { font-size: 16px; }
     #stats, #diary, #hint, #phases, h1 i { display: none; }
@@ -154,6 +177,10 @@
         <dt>Teplotní suma</dt><dd id="sGdd">–</dd>
       </dl>
     </div>
+  </div>
+  <div class="panel" id="collection">
+    <button id="keep">Přidat do sbírky</button>
+    <button id="shelfBtn">Moje sbírka</button>
   </div>
   <div class="panel" id="phases">
     <h2>Období roku</h2>
@@ -226,6 +253,14 @@
       <div id="years"></div>
     </div>
   </div>
+</div>
+<div id="shelf" hidden>
+  <header>
+    <h1>Moje sbírka <i id="shelfCount"></i></h1>
+    <button id="shelfClose">Zpět ke stromu</button>
+  </header>
+  <p id="shelfEmpty" hidden>Sbírka je zatím prázdná. Tlačítkem „Přidat do sbírky“ uložíte strom ve stavu, v jakém právě je.</p>
+  <div id="bench"></div>
 </div>
 <div id="tip" hidden></div>
 <script src="app.js"></script>

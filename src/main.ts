@@ -477,6 +477,82 @@ $('unwireAll').onclick = () => {
   persist();
   refresh();
 };
+// --- sbírka: stromy uložené ve stavu, v jakém byly při přidání (semínko + deník zásahů do toho dne + portrét)
+const SHELF = 'bonsai-collection-v1';
+interface Kept { id: string; name: string; seed: number; actions: Action[]; day: number; thumb: string; height: number; savedAt: string }
+function loadShelf(): Kept[] {
+  try { return JSON.parse(localStorage.getItem(SHELF) || '[]') as Kept[]; } catch { return []; }
+}
+function saveShelf(list: Kept[]): boolean {
+  try { localStorage.setItem(SHELF, JSON.stringify(list)); return true; } catch { return false; }
+}
+function syncShelfBtn() { const n = loadShelf().length; $('shelfBtn').textContent = n ? `Moje sbírka (${n})` : 'Moje sbírka'; }
+
+$('keep').onclick = () => {
+  const s = tl.state;
+  if (s.stage === 'seed') { flash('Semínko ještě nevyklíčilo – do sbírky přidejte až strom.'); return; }
+  const list = loadShelf();
+  const st = stats(s);
+  list.push({
+    id: `${Date.now()}`, name: `Borovice lesní · ${yearOf(s.day) + 1}. rok`, seed: tl.seed,
+    actions: tl.actions.filter((a) => a.day <= s.day), day: s.day, thumb: view.capture(), height: st.height, savedAt: new Date().toISOString(),
+  });
+  if (!saveShelf(list)) { flash('Sbírku se nepodařilo uložit – úložiště prohlížeče je plné nebo nedostupné.'); return; }
+  syncShelfBtn();
+  flash('Strom je ve sbírce. Dál můžete pokračovat v pěstování.');
+};
+
+function renderShelf() {
+  const list = loadShelf();
+  const bench = $('bench');
+  bench.innerHTML = '';
+  $('shelfEmpty').hidden = list.length > 0;
+  $('shelfCount').textContent = list.length ? `${list.length} ${list.length === 1 ? 'strom' : list.length < 5 ? 'stromy' : 'stromů'}` : '';
+  for (const k of list) {
+    const el = document.createElement('div');
+    el.className = 'kept';
+    const img = document.createElement('img');
+    img.src = k.thumb; img.alt = k.name;
+    const plank = document.createElement('div');
+    plank.className = 'plank';
+    const card = document.createElement('div');
+    card.className = 'card';
+    const name = document.createElement('input');
+    name.value = k.name; name.id = `kept-${k.id}`; name.setAttribute('aria-label', 'Název stromu');
+    name.onchange = () => { const l = loadShelf(); const x = l.find((y) => y.id === k.id); if (x) { x.name = name.value.trim() || k.name; saveShelf(l); } };
+    const info = document.createElement('small');
+    const na = k.actions.length;
+    info.textContent = `${fmtDate(k.day)} · ${cm(k.height)} · ${na} ${na === 1 ? 'zásah' : na >= 2 && na <= 4 ? 'zásahy' : 'zásahů'}`;
+    const row = document.createElement('div');
+    row.className = 'row';
+    const open = document.createElement('button');
+    open.textContent = 'Pokračovat';
+    let armedOpen = 0;
+    open.onclick = () => {
+      if (Date.now() - armedOpen > 10000) { armedOpen = Date.now(); open.textContent = 'Nahradit rozpracovaný strom?'; return; }
+      lastLogKey = '';
+      start({ seed: k.seed, actions: k.actions, day: k.day });
+      buildTrack(); persist();
+      $('shelf').hidden = true;
+    };
+    const del = document.createElement('button');
+    del.textContent = 'Odebrat';
+    let armedDel = 0;
+    del.onclick = () => {
+      if (Date.now() - armedDel > 10000) { armedDel = Date.now(); del.textContent = 'Opravdu odebrat?'; return; }
+      saveShelf(loadShelf().filter((y) => y.id !== k.id));
+      syncShelfBtn(); renderShelf();
+    };
+    row.append(open, del);
+    card.append(name, info, row);
+    el.append(img, plank, card);
+    bench.appendChild(el);
+  }
+}
+$('shelfBtn').onclick = () => { playing = false; renderShelf(); $('shelf').hidden = false; refresh(); };
+$('shelfClose').onclick = () => { $('shelf').hidden = true; };
+syncShelfBtn();
+
 let flashTimer = 0;
 function flash(text: string) {
   const el = $('banner');
@@ -612,7 +688,7 @@ function loop(now: number) {
       if (now - lastSave > 3000) { lastSave = now; persist(); }
     }
   }
-  view.frame();
+  if ($('shelf').hidden) view.frame(); // při prohlížení sbírky scéna stojí
   requestAnimationFrame(loop);
 }
 
