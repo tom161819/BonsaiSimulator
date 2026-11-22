@@ -507,7 +507,7 @@ $('keep').onclick = () => {
 };
 
 /** Vzorová sbírka: stromy vypěstované skriptem scripts/gardener.ts stejnými zásahy, jaké má hráč. */
-interface Sample { id: string; name: string; style: string; about: string; seed: number; day: number; height: number; trunk: number; actions: Action[] }
+interface Sample { id: string; name: string; style: string; about: string; seed: number; rules: number; day: number; height: number; trunk: number; actions: Action[] }
 const SAMPLES = samplesJson as unknown as Sample[];
 const THUMBS = sampleThumbs as Record<string, string>;
 
@@ -540,7 +540,7 @@ function renderSamples() {
     open.onclick = () => {
       if (Date.now() - armed > 10000) { armed = Date.now(); open.textContent = 'Nahradit rozpracovaný strom?'; return; }
       lastLogKey = '';
-      start({ seed: k.seed, actions: k.actions, day: k.day, rules: RULES_LATEST });
+      start({ seed: k.seed, actions: k.actions, day: k.day, rules: k.rules });
       buildTrack(); persist();
       $('shelf').hidden = true;
       flash('Strom je načtený i s deníkem – posuvníkem času si projdete, jak vznikal.');

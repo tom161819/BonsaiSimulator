@@ -110,7 +110,14 @@ function runBudSet(s: State) {
 
   // produkce = osluněné olistění; rozpočet = kolik cm nových výhonů strom příští rok utáhne
   let prod = 0;
-  for (const sh of s.shoots) prod += ownFoliage(s, sh) * (0.25 + 0.75 * sh.light);
+  const own = new Float64Array(n), PS = new Float64Array(n); // vlastní produkce výhonu a produkce celého jeho větvení
+  for (let i = 0; i < n; i++) { own[i] = ownFoliage(s, s.shoots[i]) * (0.25 + 0.75 * s.shoots[i].light); prod += own[i]; }
+  for (let i = n - 1; i >= 0; i--) {
+    PS[i] += own[i];
+    const sh = s.shoots[i];
+    if (sh.parent >= 0 && !sh.dead) PS[idx.get(sh.parent)!] += PS[i];
+  }
+  const auto = s.rules >= 3 ? P.branchAutonomy : 0;
   s.production = prod;
   const G = prod * P.growthPerFoliage * potGrowth(s)
     * rootBoundFactor(s) * (1 - P.stressGrowthLoss * Math.min(1, s.stress));
@@ -161,8 +168,16 @@ function runBudSet(s: State) {
       for (const c of kids[i]) sum += wKid(c);
       for (const k of sinks[i]) sum += wSink(k);
       if (sum <= 0) continue;
-      for (const c of kids[i]) V[c] = (V[i] * wKid(c)) / sum;
-      for (const k of sinks[i]) k.v = (V[i] * wSink(k)) / sum;
+      // Soběstačnost větví (pravidla v3): část rozpočtu zůstává tam, kde ji jehličí vyrobilo, a jen zbytek se
+      // dělí podle síly vrcholů. Dobře olistěná spodní větev se tak uživí, i když jí vrchol konkuruje.
+      let pSum = 0;
+      if (auto > 0) {
+        for (const c of kids[i]) if (Q[c] > 0) pSum += PS[c];
+        if (sinks[i].length) pSum += own[i];
+      }
+      const a = pSum > 0 ? auto : 0;
+      for (const c of kids[i]) V[c] = V[i] * ((1 - a) * wKid(c) / sum + (a && Q[c] > 0 ? (a * PS[c]) / pSum : 0));
+      for (const k of sinks[i]) k.v = V[i] * ((1 - a) * wSink(k) / sum + (a ? (a * own[i]) / pSum / sinks[i].length : 0));
     }
     let dropped = 0;
     if (round < rounds - 1) for (let i = 0; i < n; i++) {

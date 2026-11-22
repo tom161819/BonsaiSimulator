@@ -74,8 +74,9 @@ test('zásah v minulosti přepíše pozdější zásahy', () => {
 });
 
 test('miska brzdí růst proti volné půdě', () => {
-  const h = (pot: 'ground' | 'bonsai') => { const tl = new Timeline(2); tl.act({ type: 'repot', pot }); tl.seek(at(9, 300)); return stats(tl.state).height; };
-  assert.ok(h('ground') > 2 * h('bonsai'));
+  const grow = (pot: 'ground' | 'bonsai') => { const tl = new Timeline(2); tl.act({ type: 'repot', pot }); tl.seek(at(9, 300)); return stats(tl.state); };
+  const g = grow('ground'), b = grow('bonsai');
+  assert.ok(g.height > b.height && g.needles > 2 * b.needles && g.baseDiameter > 1.5 * b.baseDiameter);
 });
 
 test('drát ohne větev i s podstromem; předčasné sundání ohyb vrátí, po sezónách tvar drží', () => {
@@ -210,8 +211,8 @@ test('po odstranění vrcholu převezme osu boční větev a napřímí se', () 
 
 test('vzorová sbírka se přehraje do stejného stromu (po změně modelu růstu spusťte npm run samples)', () => {
   assert.ok(samples.length >= 4);
-  for (const k of samples as unknown as { id: string; seed: number; day: number; height: number; actions: never[] }[]) {
-    const tl = new Timeline(k.seed, k.actions); tl.seek(k.day);
+  for (const k of samples as unknown as { id: string; seed: number; rules: number; day: number; height: number; actions: never[] }[]) {
+    const tl = new Timeline(k.seed, k.actions, k.rules); tl.seek(k.day);
     assert.equal(tl.state.stage, 'growing', k.id);
     assert.ok(Math.abs(stats(tl.state).height - k.height) < 0.2, `${k.id}: výška ${stats(tl.state).height.toFixed(1)} místo ${k.height}`);
   }

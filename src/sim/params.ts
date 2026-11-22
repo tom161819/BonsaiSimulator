@@ -32,6 +32,7 @@ export const P = {
   growthPerFoliage: 2.0, // cm nového výhonu na jednotku osluněného olistění
   lambdaLateral: 0.22, // apikální kontrola: váha bočních os proti hlavní
   sinkExp: 0.95, // síla jímky ~ Q^exp; <1 tlumí převahu mohutných spodních větví nad terminálem
+  branchAutonomy: 0.5, // pravidla v3: podíl rozpočtu, který zůstává ve větvi, jež ho vyrobila
   weightPinch: 0.7, // pupeny po zaštípnutí jsou slabší jímka než terminál
   weightBack: 0.3, // zpětné pupeny na starším dřevě
   whorlRatioTrunk: 0.55, // délka bočního výhonu přeslenu / délka terminálu
@@ -106,7 +107,7 @@ export const POT: Record<PotType, { name: string; growth: number; needle: number
 };
 /** Účinnost stanoviště v původních pravidlech (v1): miska strom živila výrazně hůř. */
 export const POT_GROWTH_V1: Record<PotType, number> = { ground: 1.0, training: 0.85, bonsai: 0.5 };
-export const RULES_LATEST = 2;
+export const RULES_LATEST = 3;
 
 /** Katalog nádob. Velikost se sama nemění – nádobu volí pěstitel při přesazení.
  *  Objem v litrech určuje, kolik kořenů se vejde (P.rootPerLiter); rozměry v cm slouží vykreslení:
@@ -125,6 +126,7 @@ export const POTS: PotSpec[] = [
   { id: 'b02', type: 'bonsai', name: 'Kulatá miska mame 0,2 l', liters: 0.2, shape: 'round', a: 11, b: 11, h: 3.5, color: 0x6b4634, glaze: false },
   { id: 'b07', type: 'bonsai', name: 'Oválná miska 0,7 l, modrá glazura', liters: 0.7, shape: 'oval', a: 20, b: 15, h: 4, color: 0x3d5266, glaze: true },
   { id: 'b15', type: 'bonsai', name: 'Obdélníková miska 1,5 l, neglazovaná', liters: 1.5, shape: 'rect', a: 27, b: 19, h: 5, color: 0x4f3a30, glaze: false },
+  { id: 'b25', type: 'bonsai', name: 'Obdélníková miska 2,5 l, neglazovaná', liters: 2.5, shape: 'rect', a: 34, b: 24, h: 5.5, color: 0x5a3f33, glaze: false },
   { id: 'b3', type: 'bonsai', name: 'Oválná miska 3 l, zelená glazura', liters: 3, shape: 'oval', a: 36, b: 27, h: 6, color: 0x5d7262, glaze: true },
   { id: 'b6', type: 'bonsai', name: 'Obdélníková miska 6 l, neglazovaná', liters: 6, shape: 'rect', a: 46, b: 33, h: 7.5, color: 0x7a4a36, glaze: false },
   { id: 'b12', type: 'bonsai', name: 'Hluboká obdélníková miska 12 l', liters: 12, shape: 'rect', a: 52, b: 38, h: 11, color: 0x3c3f44, glaze: true },

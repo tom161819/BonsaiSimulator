@@ -113,10 +113,29 @@ Při ladění zahradníka se ukázaly a opravily tři slabiny modelu: strom v mi
 připadající na neživotaschopné pupeny se ztrácel (nově se přerozdělí mezi zbylé). Po seříznutí vrcholu navíc
 osu převezme nejsilnější boční větev a napřímí se.
 
+### Pravidla bonsajové estetiky, podle kterých zahradník staví
+
+Ověřeno jen z úryvků ve výsledcích vyhledávání (stránky nebyly dostupné); autoři je sami označují za vodítka, ne zákony.
+
+| Pravidlo | Zdroj | Jak ho zahradník plní |
+| --- | --- | --- |
+| Kmen se k vrcholu zužuje a má pohyb; nevrací se „do sebe“ | Walston, Evergreen Gardenworks | Plán ohybů vlevo–vpravo–vlevo vedený drátem, obětní větev u paty |
+| Moyogi: vrchol nad patou kmene, lehce k divákovi | Wikipedia – Bonsai styles; Walston | Poslední úsek kmene míří drátem nad patu a mírně dopředu |
+| Výška ≈ 6× průměr kmene (často 6–10×) | Walston | Výsledek 55 cm / 41 mm ≈ 13× – pravidlo nesplněno |
+| První větev v 1/3 výšky, každá další o 1/3 zbývající vzdálenosti výš | Walston | Rozestupy větví se počítají přesně takto |
+| Větve z vnějších stran ohybů, žádné protilehlé ani přesleny, dole žádná k divákovi | Walston; Harrington, bonsai4me | Z každého přeslenu zůstane jedna větev, vybraná podle vnější strany ohybu a střídání stran |
+| Větve se směrem vzhůru zkracují a slábnou; silueta nepravidelný trojúhelník | Harrington; Wikipedia | Délka větví klesá s výškou; síla se vyrovnává prořezáváním vrcholu |
+| U jehličnanů větve skloněné dolů, nejvíc dole | praxe (bez číselného zdroje) | Drátování do sklonu, který se k vrcholu zmenšuje |
+| Miska dlouhá ≈ 2/3 výšky stromu, hluboká ≈ průměr kmene; pro borovice neglazovaná | Bonsai Empire (zrcadlo stránky) | Obdélníková neglazovaná 34 × 24 × 5,5 cm |
+
+**Pravidla v3 – soběstačnost větví.** Při stavbě podle pravidel spodní větve stále slábly: rozpočet se dělil
+jen shora podle síly vrcholů. Ve v3 zůstává polovina rozpočtu ve větvi, která ji svým jehličím vyrobila
+(princip uhlíkové autonomie větví), zbytek se dělí jako dřív. Hodnota 0,5 je odhad.
+
 **Verze pravidel.** Protože strom je `f(semínko, zásahy, den)`, každá změna modelu růstu mění i už uložené
 stromy. Tři z výše uvedených oprav a náhrada vrcholu jsou proto vázané na verzi pravidel uloženou se hrou:
-v1 = původní chování, v2 = nové. Hry a stromy ve sbírce uložené před zavedením verzí rostou podle v1
-(ověřeno shodou s původním kódem), nová semínka podle v2; verzi lze u rozpracovaného stromu přepnout.
+v1 = původní chování, v2 = opravy misek, větvení a náhrady vrcholu, v3 = navíc soběstačnost větví. Hry a stromy ve sbírce uložené před zavedením verzí rostou podle v1
+(ověřeno shodou s původním kódem), nová semínka podle nejnovější verze; verzi lze u rozpracovaného stromu přepnout.
 Další změny modelu, které mají zachovat staré stromy, patří do nové verze pravidel.
 
 ## 4. Architektura

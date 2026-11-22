@@ -291,8 +291,11 @@ export class TreeView {
     const pot = potById(s.potId);
     const H = Math.max(6, this.height), below = pot.shape === 'ground' ? 1 : pot.h + 2;
     // skutečný rozsah koruny do stran (strom může být širší než vyšší)
-    let reach = 0;
-    if (this.frames) for (let i = 0; i < s.shoots.length; i++) if (!s.shoots[i].dead) reach = Math.max(reach, Math.hypot(this.frames.tip[i * 3], this.frames.tip[i * 3 + 2]));
+    // šířka koruny: 92. percentil vzdálenosti špiček od osy – jedna dlouhá větev nemá zmenšit celý portrét
+    const rs: number[] = [];
+    if (this.frames) for (let i = 0; i < s.shoots.length; i++) if (!s.shoots[i].dead) rs.push(Math.hypot(this.frames.tip[i * 3], this.frames.tip[i * 3 + 2]));
+    rs.sort((a, b) => a - b);
+    const reach = rs.length ? Math.max(rs[Math.floor(rs.length * 0.92)], rs[rs.length - 1] * 0.6) : 0;
     const span = H + below + 3, width = Math.max(2 * reach + 8, pot.a + 4, pot.b + 4);
     const tan = Math.tan((this.camera.fov * Math.PI) / 360);
     this.auto = false;
@@ -687,10 +690,12 @@ export class TreeView {
           }
           prev = first;
         }
-        const cut = sh.tipCut && !sh.elong ? 0.2 : 0.8;
+        // světlá řezná plocha jen tam, kde výhon opravdu končí řezem; zaštípnutý výhon, ze kterého osa pokračuje, ji nemá
+        const bareCut = sh.tipCut && contKid[i] < 0;
+        const cut = bareCut && !sh.elong ? 0.2 : 0.8;
         const c = B.v(cx + d[0] * rt * cut, cy + d[1] * rt * cut, cz + d[2] * rt * cut, d[0], d[1], d[2],
-          sh.tipCut ? 0.8 : colorAt(1, 0), sh.tipCut ? 0.7 : colorAt(1, 1), sh.tipCut ? 0.5 : colorAt(1, 2));
-        B.t(0.5, v0 + len / (tile * 2), sh.tipCut ? 0 : barkAt(1));
+          bareCut ? 0.8 : colorAt(1, 0), bareCut ? 0.7 : colorAt(1, 1), bareCut ? 0.5 : colorAt(1, 2));
+        B.t(0.5, v0 + len / (tile * 2), bareCut ? 0 : barkAt(1));
         for (let k = 0; k < RN; k++) B.tri(prev + k, prev + k + 1, c);
       }
 
