@@ -17,6 +17,7 @@ class Buf {
   col = new Float32Array(3 * 4096);
   nor = new Float32Array(3 * 4096);
   uv = new Float32Array(2 * 4096);
+  aux = new Float32Array(4096);
   idx = new Uint32Array(3 * 4096);
   nv = 0;
   ni = 0;
@@ -26,6 +27,7 @@ class Buf {
       const cap = Math.max(this.pos.length * 2, (this.nv + v) * 3);
       for (const k of ['pos', 'col', 'nor'] as const) { const a = new Float32Array(cap); a.set(this[k]); this[k] = a; }
       const u = new Float32Array((cap / 3) * 2); u.set(this.uv); this.uv = u;
+      const x = new Float32Array(cap / 3); x.set(this.aux); this.aux = x;
     }
     if (this.ni + i > this.idx.length) {
       const a = new Uint32Array(Math.max(this.idx.length * 2, this.ni + i)); a.set(this.idx); this.idx = a;
@@ -41,13 +43,14 @@ class Buf {
     return this.nv++;
   }
   /** souřadnice textury pro naposledy přidaný vrchol */
-  t(u: number, v: number) { const o = (this.nv - 1) * 2; this.uv[o] = u; this.uv[o + 1] = v; }
+  t(u: number, v: number, bark = 0) { const o = (this.nv - 1) * 2; this.uv[o] = u; this.uv[o + 1] = v; this.aux[this.nv - 1] = bark; }
   tri(a: number, b: number, c: number) { this.idx[this.ni++] = a; this.idx[this.ni++] = b; this.idx[this.ni++] = c; }
   apply(geo: THREE.BufferGeometry, withNormals: boolean) {
     geo.setAttribute('position', new THREE.BufferAttribute(this.pos.subarray(0, this.nv * 3), 3));
     geo.setAttribute('color', new THREE.BufferAttribute(this.col.subarray(0, this.nv * 3), 3));
     if (withNormals) geo.setAttribute('normal', new THREE.BufferAttribute(this.nor.subarray(0, this.nv * 3), 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(this.uv.subarray(0, this.nv * 2), 2));
+    geo.setAttribute('aBark', new THREE.BufferAttribute(this.aux.subarray(0, this.nv), 1));
     geo.setIndex(new THREE.BufferAttribute(this.idx.subarray(0, this.ni), 1));
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 100, 0), 1e5);
   }
@@ -67,7 +70,7 @@ function tileNoise(x: number, y: number, px: number, py: number, seed: number) {
 /** Borka borovice: podélně protažené šupinaté desky oddělené tmavými hlubokými prasklinami
  *  (dlaždicovatelný Voronoiův vzor). Slouží jako barva i jako reliéf. */
 function barkTexture(): THREE.CanvasTexture {
-  const W = 256, H = 512, GX = 6, GY = 3;
+  const W = 256, H = 512, GX = 8, GY = 4;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d')!;
@@ -215,7 +218,18 @@ export class TreeView {
     this.sun.shadow.bias = -0.0006;
     this.scene.add(this.sun, this.sun.target);
     const barkTex = barkTexture();
-    this.bark = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, map: barkTex, bumpMap: barkTex, bumpScale: 5, envMapIntensity: 0.3 }));
+    const barkMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, map: barkTex, bumpMap: barkTex, bumpScale: 6, envMapIntensity: 0.3 });
+    // síla borky je ve vrcholech (aBark 0..1): mladé dřevo hladké, staré hluboce rozpraskané, s plynulým přechodem
+    barkMat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', 'attribute float aBark;\nvarying float vBark;\n#include <common>')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBark = aBark;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', 'varying float vBark;\n#include <common>')
+        .replace('#include <map_fragment>', '#ifdef USE_MAP\n diffuseColor.rgb *= mix(vec3(0.8), texture2D(map, vMapUv).rgb * 1.3, vBark);\n#endif')
+        .replace('#include <normal_fragment_maps>', THREE.ShaderChunk.normal_fragment_maps.replace('dHdxy_fwd(), faceDirection', 'dHdxy_fwd() * vBark, faceDirection'));
+    };
+    this.bark = new THREE.Mesh(new THREE.BufferGeometry(), barkMat);
     for (const m of [this.wood, this.bark, this.needles]) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; }
     this.table = new THREE.Mesh(new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2),
       new THREE.MeshStandardMaterial({ color: 0xa39f94, roughness: 1, envMapIntensity: 0.25, transparent: true, alphaMap: fadeTexture(), depthWrite: false }));
@@ -444,13 +458,14 @@ export class TreeView {
     // pokračující výhon určuje poloměr na vrcholu a směr, kterým osa plynule navazuje
     const mainR = new Float32Array(n);
     const mainKid = new Int32Array(n).fill(-1);
+    const whorl = new Uint8Array(n); // počet bočních větví v přeslenu na vrcholu výhonu
     let H = 0, total = 0;
     for (let i = 0; i < n; i++) {
       const sh = s.shoots[i];
       if (sh.parent >= 0 && sh.attachT > 0.98) {
         const pi = fr.index.get(sh.parent)!;
         const r = radiusOf(sh);
-        if (sh.isMain) mainKid[pi] = i;
+        if (sh.isMain) mainKid[pi] = i; else if (!sh.dead) whorl[pi]++;
         if (sh.isMain || mainR[pi] === 0) mainR[pi] = Math.max(mainR[pi], sh.isMain ? r : r * 0.9);
       }
       if (!sh.dead) H = Math.max(H, tip[i * 3 + 1]);
@@ -463,7 +478,7 @@ export class TreeView {
     const col = [0, 0, 0];
     const shedSeason = doy >= P.shedStartDoy && doy < P.shedEndDoy + 20;
     const R0 = n ? radiusOf(s.shoots[0]) : 0;
-    const zone = 3.2 * R0 * smooth((R0 - 0.12) / 0.5);
+    const zone = 2.6 * R0 * smooth((R0 - 0.12) / 0.5);
     const endTan = (sh: Shoot): Vec3 => (sh.arc ? rotate(sh.dir, sh.arc.axis, sh.arc.angle) : sh.dir);
     const nrm = (x: number, y: number, z: number): Vec3 => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
 
@@ -516,26 +531,47 @@ export class TreeView {
       woodColor(s, sh, col);
       const ao = sh.dead ? 1 : 0.8 + 0.2 * sh.light;
       // kořenové náběhy u země a límec v nasazení větve
-      const flareAmt = (!sh.isMain && sh.parent >= 0 ? 0.3 : 0) * smooth((rb - 0.12) / 0.5);
-      // kořenové náběhy: kmen se u země rozšiřuje do výšky ~3 poloměrů, přes hranice ročních úseků
       const onTrunk = i === 0 || (sh.order === 0 && sh.isMain);
       const inZone = onTrunk && by < zone && zone > 0.2;
-      const tc = len > 0 ? Math.min(0.4, (2.6 * rb) / len) : 0;
-      const radiusAt = (t: number) => (rb + (rt - rb) * t) * (flareAmt > 0 && t < tc ? 1 + flareAmt * (1 - t / tc) * (1 - t / tc) : 1);
+      const par = sh.parent >= 0 ? s.shoots[fr.index.get(sh.parent)!] : null;
+      // límec v nasazení boční větve: rozšíření, které je protažené podél mateřské osy (jako u skutečné větve)
+      const collar = par && !sh.isMain && rb > 0.1 && len > 0;
+      const pd: Vec3 = par ? endTan(par) : d0;
+      const rp = par ? radiusOf(par) * (sh.attachT > 0.98 ? 0.75 : 1) : 0;
+      const tc = collar ? Math.min(0.6, (rp * 1.2 + 2.6 * rb) / len) : 0;
+      // ztluštění v přeslenu: kmen je v místě nasazení větví mírně naběhlý
+      const swellTip = whorl[i] > 0 && rb > 0.15, swellBase = !!par && sh.isMain && sh.attachT > 0.98 && whorl[fr.index.get(sh.parent)!] > 0 && rb > 0.15;
+      const radiusAt = (t: number) => {
+        let r = rb + (rt - rb) * t;
+        if (collar && t < tc) r *= 1 + 0.45 * (1 - t / tc) * (1 - t / tc);
+        if (swellTip) { const x = ((1 - t) * len) / (1.4 * rt + 0.05); r *= 1 + 0.13 * Math.exp(-x * x); }
+        if (swellBase) { const x = (t * len) / (1.4 * rb + 0.05); r *= 1 + 0.13 * Math.exp(-x * x); }
+        return r;
+      };
 
       if (len > 0.01) {
-        const isBark = !sh.dead && age >= 3;
+        const isBark = !sh.dead && age >= 2;
+        const barkAmt = isBark ? smooth((age - 1.5) / 5) * (0.6 + 0.4 * smooth(rb / 1.2)) : 0;
         const B = isBark ? bb : wb;
         const RN = rb < 0.25 ? 6 : rb < 0.8 ? 8 : rb < 2 ? 12 : 16;
         const ts: number[] = [0];
-        if (flareAmt > 0 && tc > 0.02) ts.push(tc * 0.35, tc);
-        if (inZone) { ts.push(0.15, 0.3, 0.5, 0.75); ts.sort((a, b) => a - b); }
+        if (collar && tc > 0.02) ts.push(tc * 0.2, tc * 0.45, tc * 0.7, tc);
+        if (inZone) ts.push(0.15, 0.3, 0.5, 0.75);
+        if (swellTip) ts.push(1 - Math.min(0.3, (1.5 * rt) / len), 1 - Math.min(0.15, (0.7 * rt) / len));
+        if (swellBase) ts.push(Math.min(0.15, (0.7 * rb) / len), Math.min(0.3, (1.5 * rb) / len));
+        ts.sort((a, b) => a - b);
         const turn = arc ? Math.abs(arc.angle) : curved ? Math.acos(clamp(T0[0] * T1[0] + T0[1] * T1[1] + T0[2] * T1[2], -1, 1)) : 0;
         const seg = arc ? clamp(Math.round(turn * 10), 4, 16) : curved ? clamp(Math.ceil(turn * 8) + 2, 3, 8) : 1;
-        for (let k = 1; k <= seg; k++) if (k / seg > ts[ts.length - 1] + 0.03) ts.push(k / seg);
-        if (ts[ts.length - 1] < 1) ts.push(1);
+        for (let k = 1; k <= seg; k++) ts.push(k / seg);
+        ts.sort((a, b) => a - b);
+        {
+          const keep = [0];
+          for (const t of ts) if (t - keep[keep.length - 1] >= 0.02 && 1 - t >= 0.02) keep.push(t);
+          keep.push(1);
+          ts.length = 0; ts.push(...keep);
+        }
         const rough = isBark ? clamp((rb - 0.3) * 0.05, 0, 0.07) : 0;
-        const tile = 3 + rb * 1.2; // silnější kmen má větší desky
+        const tile = 2.4 + rb * 1.8; // silnější kmen má větší desky
         const tiles = Math.max(1, Math.round((6.2832 * rb) / tile));
         const v0 = (sh.id % 7) * 0.13;
         B.reserve(ts.length * (RN + 1) + 1, ts.length * RN * 6);
@@ -543,16 +579,19 @@ export class TreeView {
         for (let q = 0; q < ts.length; q++) {
           const t = ts[q];
           at(t);
-          let r = radiusAt(t), lobe = 0;
-          if (inZone && cy < zone) { const f = 1 - Math.max(0, cy) / zone; r *= 1 + 1.1 * f * f; lobe = 0.28 * f; }
+          let r = radiusAt(t);
+          if (inZone && cy < zone) { const f = 1 - Math.max(0, cy) / zone; r *= 1 + 0.6 * f * f; }
+          const stretch = collar && t < tc ? 0.9 * (1 - t / tc) * (1 - t / tc) : 0;
           const shade = (isBark ? 1 : 0.9 + 0.2 * rnd(sh.id, 5, q)) * ao;
           const first = B.nv;
           for (let k = 0; k <= RN; k++) {
             const a = (k / RN) * 6.2832, km = k % RN;
             const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
-            const rr = r * (1 + lobe * Math.sin(3 * a + 0.7) + rough * (rnd(sh.id, km, q + 20) - 0.5) * 2);
-            B.v(cx + nx * rr, cy + ny * rr, cz + nz * rr, nx, ny, nz, col[0] * shade, col[1] * shade, col[2] * shade);
-            B.t((k / RN) * tiles, v0 + (t * len) / (tile * 2));
+            const rr = r * (1 + rough * (rnd(sh.id, km, q + 20) - 0.5) * 2);
+            // protažení límce podél mateřské osy
+            const al = stretch ? (nx * pd[0] + ny * pd[1] + nz * pd[2]) * rr * stretch : 0;
+            B.v(cx + nx * rr + pd[0] * al, cy + ny * rr + pd[1] * al, cz + nz * rr + pd[2] * al, nx, ny, nz, col[0] * shade, col[1] * shade, col[2] * shade);
+            B.t((k / RN) * tiles, v0 + (t * len) / (tile * 2), barkAmt);
           }
           if (prev >= 0) for (let k = 0; k < RN; k++) {
             B.tri(prev + k, prev + k + 1, first + k); B.tri(prev + k + 1, first + k + 1, first + k);
@@ -562,7 +601,7 @@ export class TreeView {
         const cut = sh.tipCut && !sh.elong ? 0.2 : 0.8;
         const c = B.v(cx + d[0] * rt * cut, cy + d[1] * rt * cut, cz + d[2] * rt * cut, d[0], d[1], d[2],
           sh.tipCut ? 0.8 : col[0] * ao, sh.tipCut ? 0.7 : col[1] * ao, sh.tipCut ? 0.5 : col[2] * ao);
-        B.t(0.5, v0 + len / 7);
+        B.t(0.5, v0 + len / (tile * 2), barkAmt);
         for (let k = 0; k < RN; k++) B.tri(prev + k, prev + k + 1, c);
       }
 
@@ -691,6 +730,53 @@ export class TreeView {
             nb.tri(p0, p1 + 1, p0 + 1); nb.tri(p0, p1, p1 + 1);
           }
           nb.tri(r2, r2 + 1, tp); nb.tri(r2, tp, r2 + 1);
+        }
+      }
+    }
+
+    // povrchové kořeny (nebari): několik kořenů se od paty kmene rozbíhá a noří do substrátu
+    if (n && R0 > 0.2) {
+      const root0 = s.shoots[0];
+      const grow = smooth((R0 - 0.2) / 0.7);
+      woodColor(s, root0, col);
+      const rootAge = year - root0.bornYear;
+      const rootBark = root0.dead ? 0 : smooth((rootAge - 1.5) / 5) * (0.6 + 0.4 * smooth(R0 / 1.2));
+      const count = 5 + Math.floor(rnd(s.seed, 501, 1) * 3);
+      const SEG = 8, RN = 8;
+      for (let k = 0; k < count; k++) {
+        let az = (k / count) * 6.2832 + (rnd(s.seed, 502, k) - 0.5) * 0.7;
+        const Lr = R0 * (2.4 + 2.8 * rnd(s.seed, 503, k)) * (0.5 + 0.5 * grow);
+        const thick = R0 * (0.34 + 0.22 * rnd(s.seed, 504, k)) * (0.55 + 0.45 * grow);
+        const pts: number[][] = [], rad: number[] = [];
+        for (let j = 0; j <= SEG; j++) {
+          const f = j / SEG;
+          az += (rnd(s.seed, 505 + k, j) - 0.5) * 0.22;
+          const rho = R0 * 0.15 + Lr * f;
+          pts.push([Math.cos(az) * rho, R0 * 1.0 * Math.pow(1 - f, 2.1) - R0 * 0.35 * f * f, Math.sin(az) * rho]);
+          rad.push(thick * (Math.pow(1 - f, 0.8) * 0.85 + 0.15));
+        }
+        bb.reserve((SEG + 1) * (RN + 1) + 1, SEG * RN * 6);
+        let uu: Vec3 = [0, 1, 0], prev = -1;
+        const tile = 2.4 + thick * 1.8, tiles = Math.max(1, Math.round((6.2832 * thick) / tile));
+        for (let j = 0; j <= SEG; j++) {
+          const a0 = pts[Math.max(0, j - 1)], a1 = pts[Math.min(SEG, j + 1)];
+          const dd = nrm(a1[0] - a0[0], a1[1] - a0[1], a1[2] - a0[2]);
+          const kk = uu[0] * dd[0] + uu[1] * dd[1] + uu[2] * dd[2];
+          uu = nrm(uu[0] - dd[0] * kk, uu[1] - dd[1] * kk, uu[2] - dd[2] * kk);
+          const ww: Vec3 = [dd[1] * uu[2] - dd[2] * uu[1], dd[2] * uu[0] - dd[0] * uu[2], dd[0] * uu[1] - dd[1] * uu[0]];
+          const first = bb.nv;
+          for (let q = 0; q <= RN; q++) {
+            const a = (q / RN) * 6.2832;
+            const nx = uu[0] * Math.cos(a) + ww[0] * Math.sin(a), ny = uu[1] * Math.cos(a) + ww[1] * Math.sin(a), nz = uu[2] * Math.cos(a) + ww[2] * Math.sin(a);
+            // kořen je vyšší než širší – hřbet nad substrátem
+            const rr = rad[j] * (1 + 0.25 * ny * ny) * (1 + 0.08 * (rnd(k, q % RN, j + 30) - 0.5));
+            // ke konci kořen tmavne do barvy substrátu
+            const e = j / SEG, c0 = 0.8 * (1 - e), c1 = e;
+            bb.v(pts[j][0] + nx * rr, pts[j][1] + ny * rr, pts[j][2] + nz * rr, nx, ny, nz, col[0] * c0 + 0.34 * c1, col[1] * c0 + 0.27 * c1, col[2] * c0 + 0.21 * c1);
+            bb.t((q / RN) * tiles, (j / SEG) * (Lr / (tile * 2)) + k * 0.37, rootBark);
+          }
+          if (prev >= 0) for (let q = 0; q < RN; q++) { bb.tri(prev + q, prev + q + 1, first + q); bb.tri(prev + q + 1, first + q + 1, first + q); }
+          prev = first;
         }
       }
     }
