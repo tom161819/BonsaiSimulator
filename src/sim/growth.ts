@@ -5,13 +5,14 @@ import { P, POT, START_DOY } from './params';
 import { temperature } from './climate';
 import { computeLight } from './light';
 import {
-  UP, YEAR, add, clamp, computeFrames, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
+  UP, YEAR, add, clamp, computeFrames, rootBoundFactor, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
 } from './util';
 
 export function createState(seed: number): State {
   return {
     seed, day: START_DOY, gdd: 0, nextId: 1, pot: 'training', stage: 'seed', shoots: [],
     flushedYear: 0, budSetYear: -1, budSetGdd: 0, production: 0, budget: 0,
+    roots: 0, potCap: POT.training.minCap, stress: 0, repotDay: START_DOY,
   };
 }
 
@@ -20,7 +21,7 @@ function newShoot(s: State, o: Partial<Shoot>): Shoot {
     id: s.nextId++, parent: -1, attachT: 1, dir: [0, 1, 0], order: 0, isMain: true, kind: 'shoot',
     bornYear: yearOf(s.day), bornDay: s.day, targetLen: 1, len: 0, elong: true, delay: 0, gdd0: s.gdd,
     needleCount: 0, needleLen: 0, needleLive: 1, shedding: false, area: 0, dead: false, deadYear: -1,
-    tipCut: false, stimulus: 0, light: 1, fol: 0, buds: [], ...o,
+    tipCut: false, stimulus: 0, light: 1, fol: 0, wire: null, scar: false, buds: [], ...o,
   };
   s.shoots.push(sh);
   return sh;
@@ -104,7 +105,8 @@ function runBudSet(s: State) {
   for (const sh of s.shoots) prod += ownFoliage(s, sh) * (0.25 + 0.75 * sh.light);
   s.production = prod;
   const pot = POT[s.pot];
-  const G = (prod * P.growthPerFoliage * pot.growth) / (1 + prod / pot.capacity);
+  const G = prod * P.growthPerFoliage * pot.growth
+    * rootBoundFactor(s) * (1 - P.stressGrowthLoss * Math.min(1, s.stress));
   s.budget = G;
 
   const crowded = n > P.maxShoots;
@@ -208,7 +210,8 @@ function flush(s: State) {
       const l = b.len;
       const nl = (P.needleLenMin + P.needleLenGain * (1 - Math.exp(-l / P.needleLenScale))) * pot.needle;
       newShoot(s, {
-        parent: sh.id, attachT: b.t, dir: b.dir, order: b.order, isMain: b.isMain,
+        // měkká svíčka kmene se gravitropicky napřímí během dnů, i když je strom nakloněný
+        parent: sh.id, attachT: b.t, dir: b.order === 0 && b.isMain ? norm(add(b.dir, [0, 1.5, 0])) : b.dir, order: b.order, isMain: b.isMain,
         targetLen: l, needleCount: Math.round(8 + 5 * l), needleLen: nl, area: r0Area(l),
         delay: (b.isMain ? 0 : 15) + rnd(s.seed, b.id, 3) * 25 + b.order * 5,
       });
@@ -287,9 +290,23 @@ export function step(s: State) {
   const shedRate = 1 / (P.shedEndDoy - P.shedStartDoy - 5);
   const kArea = (P.areaPerFoliage * dG) / (P.cambiumEndGdd - P.cambiumStartGdd);
 
+  if (cambium) {
+    // kořeny rostou s olistěním, dokud je v nádobě místo; stres z přesazení postupně odeznívá
+    const season = dG / (P.cambiumEndGdd - P.cambiumStartGdd);
+    if (s.pot !== 'ground') s.roots += P.rootGrowth * s.shoots[0].fol * season * Math.max(0, 1 - s.roots / (s.potCap * P.rootMaxFill));
+    s.stress *= 1 - P.stressDecay * season;
+  }
+  const setRate = cambium ? dG / (P.cambiumEndGdd - P.cambiumStartGdd) : 0;
+
   for (let i = 0, n = s.shoots.length; i < n; i++) {
     const sh = s.shoots[i];
     if (sh.dead) continue;
+    if (sh.wire && cambium) {
+      // tvar fixují nové letokruhy: silnější dřevo potřebuje víc sezón; drát mezitím zarůstá
+      const r = Math.sqrt(sh.area / Math.PI);
+      sh.wire.set = Math.min(1, sh.wire.set + setRate / (P.wireMinSeasons + P.wireSeasonsPerCm * r));
+      if (sh.area > sh.wire.area0 * P.wireBite) sh.scar = true;
+    }
     if (sh.elong) {
       let e: number;
       if (sh.kind === 'hypocotyl') {

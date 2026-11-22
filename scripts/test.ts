@@ -1,7 +1,7 @@
 // Testy simulačního jádra (bez grafiky): node scripts/run.mjs scripts/test.ts
 import assert from 'node:assert/strict';
 import { Timeline } from '../src/sim/timeline';
-import { YEAR, stats } from '../src/sim/util';
+import { YEAR, bendLimit, rootFill, stats } from '../src/sim/util';
 import type { State } from '../src/sim/types';
 
 const sig = (s: State) => JSON.stringify(s.shoots.map((x) => [x.id, x.parent, +x.len.toFixed(4), x.buds.length, x.dead]));
@@ -75,6 +75,69 @@ test('zásah v minulosti přepíše pozdější zásahy', () => {
 test('miska brzdí růst proti volné půdě', () => {
   const h = (pot: 'ground' | 'bonsai') => { const tl = new Timeline(2); tl.act({ type: 'repot', pot }); tl.seek(at(9, 300)); return stats(tl.state).height; };
   assert.ok(h('ground') > 2 * h('bonsai'));
+});
+
+test('drát ohne větev i s podstromem; předčasné sundání ohyb vrátí, po sezónách tvar drží', () => {
+  const mk = () => { const tl = new Timeline(3); tl.seek(at(5, 320)); return tl; };
+  const tl = mk();
+  const br = tl.state.shoots.find((s) => s.order === 1 && s.bornYear === 3 && !s.dead)!;
+  const kid = tl.state.shoots.find((s) => s.parent === br.id)!;
+  const d0 = [...br.dir], k0 = [...kid.dir];
+  const ang = bendLimit(tl.state, br) * 0.9;
+  tl.act({ type: 'wire', shoot: br.id, axis: [0, 0, 1], angle: ang });
+  const get = (id: number) => tl.state.shoots.find((s) => s.id === id)!;
+  const dotp = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  assert.ok(!get(br.id).dead && get(br.id).wire);
+  assert.ok(dotp(get(kid.id).dir, k0) < 0.999, 'potomek se otočil s větví');
+  tl.act({ type: 'unwire', shoot: br.id });
+  assert.ok(dotp(get(br.id).dir, d0) > 0.9999, 'hned po sundání se větev vrátí');
+  tl.undo();
+  tl.seek(at(9, 320));
+  assert.equal(get(br.id).wire!.set, 1);
+  assert.ok(get(br.id).scar, 'drát ponechaný roky zaroste');
+  const bent = [...get(br.id).dir];
+  tl.act({ type: 'unwire', shoot: br.id });
+  assert.ok(dotp(get(br.id).dir, bent) > 0.9999, 'po letech tvar drží');
+});
+
+test('ohyb daleko za bezpečnou mez větev zlomí', () => {
+  const tl = new Timeline(3); tl.seek(at(5, 320));
+  const br = tl.state.shoots.find((s) => s.order === 1 && s.bornYear === 3 && !s.dead)!;
+  tl.act({ type: 'wire', shoot: br.id, axis: [0, 0, 1], angle: bendLimit(tl.state, br) * 1.5 });
+  assert.ok(tl.state.shoots.find((s) => s.id === br.id)!.dead);
+});
+
+test('v misce kořeny přerostou a strom chřadne; pravidelné přesazování ho udrží', () => {
+  const run = (repot: boolean) => {
+    const tl = new Timeline(4);
+    tl.seek(at(4, 75));
+    tl.act({ type: 'repot', pot: 'bonsai', prune: 0.3 });
+    for (let y = 5; y <= 14; y++) {
+      tl.seek(at(y, 75));
+      if (repot && (y - 4) % 3 === 0) tl.act({ type: 'repot', pot: 'bonsai', prune: 0.4 });
+    }
+    tl.seek(at(14, 200));
+    return { fill: rootFill(tl.state), needles: stats(tl.state).needles, stage: tl.state.stage };
+  };
+  const a = run(false), b = run(true);
+  assert.ok(a.fill > 1.5, `bez přesazení přerostlé kořeny (${a.fill.toFixed(2)})`);
+  assert.equal(b.stage, 'growing');
+  assert.ok(b.needles > 1.5 * a.needles, `přesazovaný strom je vitálnější (${b.needles} vs ${a.needles})`);
+});
+
+test('tvrdé zakrácení kořenů uprostřed růstu strom zabije, v předjaří ne', () => {
+  const go = (doy: number) => { const tl = new Timeline(4); tl.seek(at(5, doy)); tl.act({ type: 'repot', pot: 'bonsai', prune: 0.5 }); return tl.state.stage; };
+  assert.equal(go(75), 'growing');
+  assert.equal(go(150), 'dead');
+});
+
+test('strom přesazený nakřivo zůstane dole šikmý, ale nový vrchol roste vzhůru', () => {
+  const tl = new Timeline(4); tl.seek(at(4, 75));
+  tl.act({ type: 'repot', pot: 'training', prune: 0.2, tiltZ: -40 });
+  assert.ok(tl.state.shoots[0].dir[1] < 0.85, 'kmen je nakloněný');
+  tl.seek(at(7, 300));
+  const top = tl.state.shoots.filter((s) => s.order === 0 && s.bornYear === 7 && !s.dead).pop()!;
+  assert.ok(top.dir[1] > 0.93, `vrchol míří vzhůru (${top.dir[1].toFixed(2)})`);
 });
 
 console.log(`\n${n} testů prošlo`);

@@ -24,6 +24,15 @@ export interface Bud {
   isMain: boolean;
 }
 
+/** Drát na výhonu: ohyb = otočení výhonu i s podstromem kolem jeho paty. */
+export interface Wire {
+  day: number;
+  axis: Vec3;
+  angle: number; // rad
+  set: number; // 0..1 jak moc už dřevo nový tvar drží
+  area0: number; // průřez při nasazení (pro zarůstání drátu)
+}
+
 /** Roční přírůstek (růstová jednotka) – základní stavební prvek stromu. */
 export interface Shoot {
   id: number;
@@ -51,6 +60,8 @@ export interface Shoot {
   stimulus: number; // podnět k tvorbě zpětných pupenů po řezu
   light: number; // 0..1 oslunění
   fol: number; // olistění celého podstromu (cache pro tloušťkový růst)
+  wire: Wire | null;
+  scar: boolean; // drát zarostl do kůry – trvalá jizva
   buds: Bud[];
 }
 
@@ -70,14 +81,24 @@ export interface State {
   /** poslední spočtená produkce a růstový rozpočet (pro UI) */
   production: number;
   budget: number;
+  /** kořeny v jednotkách olistění, které uživí; potCap = kolik se jich vejde do nádoby */
+  roots: number;
+  potCap: number;
+  /** stres z přesazení 0..1+ (>= 1 strom nepřežije) */
+  stress: number;
+  repotDay: number;
 }
 
 export type Action =
   | { day: number; type: 'cut'; shoot: number; t: number; label?: string }
   | { day: number; type: 'bud'; shoot: number; bud: number; label?: string }
-  | { day: number; type: 'repot'; pot: PotType; label?: string };
+  | { day: number; type: 'repot'; pot: PotType; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; label?: string }
+  | { day: number; type: 'wire'; shoot: number; axis: Vec3; angle: number; label?: string }
+  | { day: number; type: 'unwire'; shoot: number; label?: string };
 
 export type ActionInput =
   | { type: 'cut'; shoot: number; t: number; label?: string }
   | { type: 'bud'; shoot: number; bud: number; label?: string }
-  | { type: 'repot'; pot: PotType; label?: string };
+  | { type: 'repot'; pot: PotType; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; label?: string }
+  | { type: 'wire'; shoot: number; axis: Vec3; angle: number; label?: string }
+  | { type: 'unwire'; shoot: number; label?: string };

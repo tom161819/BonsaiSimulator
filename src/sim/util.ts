@@ -1,5 +1,5 @@
-import type { Shoot, State, Vec3 } from './types';
-import { P } from './params';
+import type { PotType, Shoot, State, Vec3 } from './types';
+import { P, POT } from './params';
 
 export const YEAR = 365;
 export const yearOf = (day: number) => Math.floor(day / YEAR);
@@ -35,6 +35,13 @@ export function norm(a: Vec3): Vec3 {
   return [a[0] / l, a[1] / l, a[2] / l];
 }
 export const UP: Vec3 = [0, 1, 0];
+
+/** Otočení vektoru kolem osy (Rodrigues). */
+export function rotate(v: Vec3, k: Vec3, angle: number): Vec3 {
+  const c = Math.cos(angle), s = Math.sin(angle), d = dot(k, v) * (1 - c);
+  const x = cross(k, v);
+  return [v[0] * c + x[0] * s + k[0] * d, v[1] * c + x[1] * s + k[1] * d, v[2] * c + x[2] * s + k[2] * d];
+}
 
 /** Ortonormální báze kolmá na osu p: u = vodorovně do strany, w = "nahoru" od osy. */
 export function basis(p: Vec3): [Vec3, Vec3] {
@@ -102,6 +109,50 @@ export function computeFrames(s: State): Frames {
     for (let k = 0; k < 3; k++) tip[i * 3 + k] = base[i * 3 + k] + sh.dir[k] * sh.len;
   }
   return { base, tip, index };
+}
+
+/** Kolik kořenů pojme čerstvá nádoba daného typu – dimenzuje se podle velikosti stromu. */
+export function potCapFor(s: State, pot: PotType): number {
+  const fol = s.shoots.length ? Math.max(s.shoots[0].fol, s.production) : 0;
+  return Math.max(POT[pot].minCap, fol * POT[pot].rootRoom);
+}
+
+/** Zaplnění nádoby kořeny (1 = plná). */
+export const rootFill = (s: State) => (s.pot === 'ground' ? 0 : s.roots / Math.max(1, s.potCap));
+
+/** Násobitel růstu podle prokořenění: přerostlé kořeny strom dusí. */
+export function rootBoundFactor(s: State): number {
+  const f = rootFill(s);
+  if (f <= P.rootBoundStart) return 1;
+  return Math.max(P.rootBoundMin, 1 - ((1 - P.rootBoundMin) * (f - P.rootBoundStart)) / (P.rootBoundFull - P.rootBoundStart));
+}
+
+/** Bezpečný úhel ohybu výhonu drátem (rad): tenké dřevo se ohne hodně, silné málo. */
+export function bendLimit(s: State, sh: Shoot): number {
+  let deg = clamp(P.bendK / (radiusOf(sh) + 0.25), P.bendMin, P.bendMax);
+  if (s.gdd >= P.flushGdd && s.gdd < P.budSetGdd) deg *= P.bendSpringFactor;
+  return (deg * Math.PI) / 180;
+}
+
+/** Pravděpodobnost prasknutí při ohybu o daný úhel. */
+export const breakRisk = (s: State, sh: Shoot, angle: number) => {
+  const safe = bendLimit(s, sh);
+  return clamp((angle - safe) / (0.5 * safe), 0, 1);
+};
+
+/** Sezónní násobek stresu z přesazení: nejšetrnější je předjaří při nalévání pupenů. */
+export function repotSeason(s: State): { k: number; name: string } {
+  const doy = doyOf(s.day);
+  if (s.stage === 'seed') return { k: 0, name: 'semínko' };
+  if (s.gdd >= P.flushGdd && s.gdd < P.budSetGdd) return { k: 2.5, name: 'strom raší a roste – nejhorší doba' };
+  if (s.gdd >= P.budSetGdd && doy < 235) return { k: 2.0, name: 'vrchol léta – nevhodná doba' };
+  if (doy >= 235 && doy < 275) return { k: 1.3, name: 'pozdní léto – náhradní termín' };
+  if (doy >= 275 || doy < 45) return { k: 1.6, name: 'podzim a zima – kořeny neregenerují' };
+  return { k: 1.0, name: 'předjaří, pupeny nalévají – nejlepší doba' };
+}
+
+export function repotStress(s: State, prune: number): number {
+  return (P.repotBaseStress + P.repotPruneStress * prune) * repotSeason(s).k;
 }
 
 export interface Stats {

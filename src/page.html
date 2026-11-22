@@ -69,6 +69,14 @@
   .seg { display: flex; } .seg button { border-radius: 0; flex: 1; padding-inline: 6px; }
   .seg button:first-child { border-radius: 7px 0 0 7px; } .seg button:last-child { border-radius: 0 7px 7px 0; }
   .seg button + button { border-left: 0; }
+  #repot { display: flex; flex-direction: column; gap: 4px; }
+  #repot label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  #repot output { color: var(--fg); font-variant-numeric: tabular-nums; }
+  #repot input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
+  #rInfo { margin: 6px 0; font-size: 12.5px; }
+  #rInfo b { display: block; }
+  #rInfo .bad { color: var(--danger); }
+  dd.bad { color: var(--danger); }
   #log { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
   #log li button { width: 100%; text-align: left; border: 0; padding: 5px 6px; min-height: 0; font-weight: 400; }
   #log li button span { display: block; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
@@ -96,6 +104,7 @@
     #right { align-self: end; justify-self: end; max-width: 100%; }
     #left .panel { padding: 8px 10px; } #date { font-size: 16px; }
     #stats, #diary, #hint, h1 i { display: none; }
+    #right { overflow-y: auto; }
     body.more #stats, body.more #diary, body.more #hint { display: grid; } body.more #diary { display: flex; max-height: 30vh; }
     #banner { grid-area: 2 / 1; }
   }
@@ -122,23 +131,46 @@
         <dt>Živé výhony</dt><dd id="sShoots">–</dd>
         <dt>Pupeny</dt><dd id="sBuds">–</dd>
         <dt>Jehlice</dt><dd id="sNeedles">–</dd>
+        <dt>Kořeny v nádobě</dt><dd id="sRoots">–</dd>
+        <dt>Dráty</dt><dd id="sWires">–</dd>
         <dt>Teplotní suma</dt><dd id="sGdd">–</dd>
       </dl>
     </div>
   </div>
   <div id="right">
     <div class="panel">
-      <h2>Kde strom roste</h2>
+      <h2>Nástroj</h2>
+      <div class="seg" id="toolSeg">
+        <button id="tool-cut" data-tool="cut">Nůžky</button>
+        <button id="tool-wire" data-tool="wire">Drát</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="repotBtn">Přesadit…</button>
+        <button id="undo">Vrátit zásah</button>
+        <button id="center">Vycentrovat</button>
+        <button id="moreBtn">Více</button>
+        <button id="reset">Nové semínko</button>
+      </div>
+    </div>
+    <div class="panel" id="repot" hidden>
+      <h2>Přesazení</h2>
       <div class="seg" id="pots">
         <button id="pot-ground" data-pot="ground">Půda</button>
         <button id="pot-training" data-pot="training">Nádoba</button>
         <button id="pot-bonsai" data-pot="bonsai">Miska</button>
       </div>
-      <div class="row" style="margin-top:8px">
-        <button id="undo">Vrátit zásah</button>
-        <button id="center">Vycentrovat</button>
-        <button id="moreBtn">Více</button>
-        <button id="reset">Nové semínko</button>
+      <label for="rPrune">Zakrátit kořeny <output id="rPruneV"></output></label>
+      <input type="range" id="rPrune" min="0" max="70" step="5" value="30">
+      <label for="rYaw">Otočit strom <output id="rYawV"></output></label>
+      <input type="range" id="rYaw" min="-180" max="180" step="5" value="0">
+      <label for="rSide">Náklon vlevo / vpravo <output id="rSideV"></output></label>
+      <input type="range" id="rSide" min="-60" max="60" step="1" value="0">
+      <label for="rFwd">Náklon dozadu / dopředu <output id="rFwdV"></output></label>
+      <input type="range" id="rFwd" min="-60" max="60" step="1" value="0">
+      <p id="rInfo"></p>
+      <div class="row">
+        <button id="rOk" class="primary">Přesadit</button>
+        <button id="rCancel">Zrušit</button>
       </div>
     </div>
     <div class="panel" id="diary">

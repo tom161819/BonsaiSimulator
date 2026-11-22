@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import type { PotType, Shoot, State } from '../sim/types';
 import { P } from '../sim/params';
+import type { Vec3 } from '../sim/types';
 import { Frames, basis, clamp, computeFrames, doyOf, needleGrowth, radiusOf, rnd, smooth, yearOf } from '../sim/util';
 
 export type Pick =
@@ -76,6 +77,7 @@ export class TreeView {
   private hi = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff3b1f, depthTest: false, transparent: true }));
   private marker = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ color: 0xff3b1f, depthTest: false, transparent: true }));
   private potGroup = new THREE.Group();
+  private tree = new THREE.Group();
   private potKey = '';
   private seedMesh: THREE.Mesh;
   private wb = new Buf();
@@ -105,7 +107,9 @@ export class TreeView {
     this.seedMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.8 }));
     this.seedMesh.scale.set(0.22, 0.12, 0.14);
     this.seedMesh.position.set(0, 0.1, 0);
-    this.scene.add(this.wood, this.needles, this.hi, this.marker, this.potGroup, this.seedMesh);
+    this.tree.add(this.wood, this.needles);
+    this.tree.rotation.order = 'ZXY';
+    this.scene.add(this.tree, this.hi, this.marker, this.potGroup, this.seedMesh);
     this.resize();
   }
 
@@ -136,6 +140,14 @@ export class TreeView {
     this.auto = false; this.needsRender = true;
   }
   recenter() { this.auto = true; this.needsRender = true; }
+  /** Pohled zepředu (osa Z míří k pozorovateli) – vůči němu se zadává náklon při přesazení. */
+  front() { this.theta = 0; this.phi = 1.3; this.auto = true; this.needsRender = true; }
+  /** Náhled natočení a náklonu při přesazení (stupně), než se zásah potvrdí. */
+  previewRotation(yaw: number, tiltX: number, tiltZ: number) {
+    const r = Math.PI / 180;
+    this.tree.rotation.set(tiltX * r, yaw * r, tiltZ * r);
+    this.needsRender = true;
+  }
 
   private updateCamera() {
     if (this.auto) {
@@ -281,6 +293,29 @@ export class TreeView {
         for (let k = 0; k < RAD; k++) wb.tri(prev + k, prev + (k + 1) % RAD, c);
       }
 
+      if ((sh.wire || sh.scar) && len > 0.3) {
+        // drát: měděná šroubovice o síle ~1/3 větve; po zarostlém drátu zůstane tmavá jizva
+        const wr = sh.wire ? Math.max(0.035, rb / 3) : 0.02;
+        const pitch = Math.max(0.45, rb * 3.2 + wr * 2);
+        const steps = Math.min(240, Math.max(8, Math.round((len / pitch) * 8)));
+        const [cr, cg, cb] = sh.wire ? (sh.scar ? [0.5, 0.3, 0.16] : [0.78, 0.48, 0.22]) : [0.27, 0.2, 0.16];
+        wb.reserve((steps + 1) * 2, steps * 12);
+        let prev = -1;
+        for (let k = 0; k <= steps; k++) {
+          const t = k / steps, a = (k / 8) * 6.2832 + sh.id;
+          const rr = rb + (rt - rb) * t + (sh.wire && !sh.scar ? wr * 0.7 : 0.012);
+          const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
+          const px = bx + d[0] * len * t + nx * rr, py = by + d[1] * len * t + ny * rr, pz = bz + d[2] * len * t + nz * rr;
+          const v0 = wb.v(px - d[0] * wr, py - d[1] * wr, pz - d[2] * wr, nx, ny, nz, cr, cg, cb);
+          wb.v(px + d[0] * wr, py + d[1] * wr, pz + d[2] * wr, nx, ny, nz, cr, cg, cb);
+          if (prev >= 0) {
+            wb.tri(prev, prev + 1, v0); wb.tri(prev + 1, v0 + 1, v0);
+            wb.tri(prev, v0, prev + 1); wb.tri(prev + 1, v0, v0 + 1);
+          }
+          prev = v0;
+        }
+      }
+
       if (sh.dead) continue;
 
       // pupeny: vejčité, červenohnědé, se světlou zasmolenou špičkou
@@ -402,8 +437,64 @@ export class TreeView {
     return best;
   }
 
-  /** Zvýrazní, co by zásah odstranil. */
-  highlight(p: Pick | null) {
+  /** Kam by se větev ohnula, kdyby její špička šla za kurzorem (v rovině obrazovky procházející patou). */
+  bendTarget(id: number, x: number, y: number): { axis: Vec3; angle: number } | null {
+    const s = this.state, fr = this.frames;
+    const i = fr?.index.get(id);
+    if (!s || !fr || i === undefined) return null;
+    const B = new THREE.Vector3(fr.base[i * 3], fr.base[i * 3 + 1], fr.base[i * 3 + 2]);
+    const ndc = new THREE.Vector2((x / this.canvas.clientWidth) * 2 - 1, -(y / this.canvas.clientHeight) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(this.camera.getWorldDirection(new THREE.Vector3()), B);
+    const hit = ray.ray.intersectPlane(plane, new THREE.Vector3());
+    if (!hit) return null;
+    const d = new THREE.Vector3(...s.shoots[i].dir);
+    const nd = hit.sub(B).normalize();
+    const axis = new THREE.Vector3().crossVectors(d, nd);
+    if (axis.length() < 1e-4) return null;
+    axis.normalize();
+    return { axis: [axis.x, axis.y, axis.z], angle: d.angleTo(nd) };
+  }
+
+  /** Náhled ohybu: kostra větve otočená kolem paty; barva podle rizika. */
+  previewBend(id: number, axis: Vec3, angle: number, risky: boolean) {
+    const s = this.state, fr = this.frames;
+    const i = fr?.index.get(id);
+    if (!s || !fr || i === undefined) return;
+    const B = new THREE.Vector3(fr.base[i * 3], fr.base[i * 3 + 1], fr.base[i * 3 + 2]);
+    const ax = new THREE.Vector3(...axis);
+    const pts: number[] = [];
+    const v = new THREE.Vector3();
+    const push = (j: number, arr: Float32Array) => {
+      v.set(arr[j * 3], arr[j * 3 + 1], arr[j * 3 + 2]).sub(B).applyAxisAngle(ax, angle).add(B);
+      pts.push(v.x, v.y, v.z);
+    };
+    const sub = new Set<number>([id]);
+    for (let j = i; j < s.shoots.length; j++) {
+      const c = s.shoots[j];
+      if (j !== i && !sub.has(c.parent)) continue;
+      sub.add(c.id);
+      push(j, fr.base); push(j, fr.tip);
+    }
+    this.setLines(pts, risky ? 0xff3b1f : 0x1f9d55);
+    this.marker.position.copy(B);
+    this.marker.scale.setScalar(this.dist * 0.006);
+    this.marker.visible = true;
+  }
+
+  private setLines(pts: number[], color: number) {
+    this.hi.geometry.dispose();
+    this.hi.geometry = new THREE.BufferGeometry();
+    this.hi.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    (this.hi.material as THREE.LineBasicMaterial).color.setHex(color);
+    (this.marker.material as THREE.MeshBasicMaterial).color.setHex(color);
+    this.hi.visible = pts.length > 0;
+    this.needsRender = true;
+  }
+
+  /** Zvýrazní, co by zásah odstranil (nůžky) nebo čeho se týká (drát). */
+  highlight(p: Pick | null, color = 0xff3b1f) {
     const s = this.state, fr = this.frames;
     if (!p || !s || !fr) {
       if (this.hi.visible || this.marker.visible) this.needsRender = true;
@@ -432,10 +523,7 @@ export class TreeView {
         }
       }
     }
-    this.hi.geometry.dispose();
-    this.hi.geometry = new THREE.BufferGeometry();
-    this.hi.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    this.hi.visible = pts.length > 0;
+    this.setLines(pts, color);
     this.marker.position.set(m[0], m[1], m[2]);
     this.marker.scale.setScalar(this.dist * 0.0075);
     this.marker.visible = true;

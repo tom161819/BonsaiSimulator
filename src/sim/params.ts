@@ -61,15 +61,37 @@ export const P = {
   shootRadius0: 0.07, // cm
   shootRadiusPerLen: 0.006,
 
+  // --- kořeny a přesazování ---
+  rootGrowth: 0.35, // přírůst kořenů za rok na jednotku olistění (zpomaluje, jak se nádoba plní)
+  rootBoundStart: 0.75, // od tohoto zaplnění nádoby růst slábne
+  rootBoundFull: 1.6, // při tomto zaplnění je růst na minimu
+  rootBoundMin: 0.3,
+  rootMaxFill: 1.8,
+  repotBaseStress: 0.1, // stres ze samotného přesazení
+  repotPruneStress: 1.0, // stres na jednotku odstraněných kořenů
+  stressGrowthLoss: 0.7, // o kolik stres 1,0 sníží růstový rozpočet
+  stressDecay: 0.75, // podíl stresu, který odezní za vegetační sezónu
+
+  // --- drátování ---
+  wireMinSeasons: 1.0, // tenká větvička drží tvar po jedné sezóně tloustnutí
+  wireSeasonsPerCm: 1.0, // + sezóna na každý cm poloměru
+  wireBite: 1.45, // poměr průřezu, při kterém drát zarůstá (poloměr +20 %)
+  bendK: 28, // bezpečný ohyb ve stupních ≈ bendK / (poloměr cm + 0,25)
+  bendMin: 8,
+  bendMax: 80,
+  bendSpringFactor: 0.6, // v době jarního růstu se kůra snadno odlupuje – menší bezpečný ohyb
+
   maxShoots: 7000,
 };
 
-/** growth = účinnost kořenů, capacity = olistění, při kterém je nádoba prokořeněná
- *  (rozpočet = c·P·growth / (1 + P/capacity) – nasycení růstu v malé nádobě). */
-export const POT: Record<PotType, { name: string; growth: number; capacity: number; needle: number }> = {
-  ground: { name: 'Volná půda', growth: 1.0, capacity: 1e7, needle: 1.0 },
-  training: { name: 'Pěstební nádoba', growth: 0.9, capacity: 250, needle: 0.9 },
-  bonsai: { name: 'Bonsajová miska', growth: 0.75, capacity: 25, needle: 0.72 },
+/** growth = jak dobře substrát strom živí (mělká miska hůř než hluboká nádoba).
+ *  rootRoom = kolikanásobek současného olistění uživí kořeny v čerstvě přesazené nádobě;
+ *  miska je těsná, proto se v ní kořeny při přesazení musí zakracovat.
+ *  Jak se nádoba plní kořeny, růst slábne (viz rootBound*). */
+export const POT: Record<PotType, { name: string; growth: number; needle: number; rootRoom: number; minCap: number }> = {
+  ground: { name: 'Volná půda', growth: 1.0, needle: 1.0, rootRoom: 1e6, minCap: 1e9 },
+  training: { name: 'Pěstební nádoba', growth: 0.85, needle: 0.9, rootRoom: 3, minCap: 40 },
+  bonsai: { name: 'Bonsajová miska', growth: 0.5, needle: 0.72, rootRoom: 1.5, minCap: 15 },
 };
 
 export const START_DOY = 90; // výsev 1. dubna

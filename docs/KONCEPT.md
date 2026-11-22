@@ -56,7 +56,37 @@ délku, průřez dřeva, počet a stav jehlic a své pupeny (`Bud`).
    několik rovnocenných slabších pupenů – tak vzniká jemné větvení.
 
 **Zásahy** (`src/sim/actions.ts`): `cut(výhon, t)` – zaštípnutí svíčky i řez staršího dřeva jsou tatáž operace,
-liší se jen stavem výhonu; `bud` – vylomení pupenu; `repot` – změna nádoby.
+liší se jen stavem výhonu; `bud` – vylomení pupenu; `repot` – nádoba, zakrácení kořenů, natočení a náklon;
+`wire` / `unwire` – nasazení drátu s ohybem a jeho sundání.
+
+## 3a. Kořeny a přesazování
+
+Stav nese množství kořenů a kapacitu nádoby. Kořeny přirůstají úměrně olistění a zpomalují, jak se nádoba plní.
+
+| Pravidlo v modelu | Opora ve zdrojích (viz poznámka o ověření níže) |
+| --- | --- |
+| Od 75 % zaplnění nádoby růst slábne, při 160 % klesá na 30 % – strom v misce bez přesazení během let chřadne | Příznaky prokořenění: kořeny krouží, voda neprotéká, růst slábne [P2, P8]. Větší nádoba = víc biomasy (+43 % na zdvojnásobení objemu) [28] |
+| Miska je těsná (pojme 1,5násobek současného olistění), pěstební nádoba volná (3násobek) | Interval přesazování borovic 2–5 let, mladé častěji [P1, P2] |
+| Při přesazení se volí, kolik kořenů zakrátit; stres = (0,1 + podíl zakrácení) × sezónní násobek | Silně zakrácené stromy přirostly první rok o 65 % méně na výšku; u borovice lesní přežívaly stromy s polovinou kořenů jako nezakrácené, při úplném zakrácení nejhůř [P10–P12] |
+| Nejšetrnější termín je předjaří při nalévání pupenů (×1), náhradní pozdní léto (×1,3), podzim–zima ×1,6, léto ×2, doba rašení ×2,5 | Předjaří před prodlužováním svíček; u borovice lesní se v Evropě přesazuje i koncem léta [P3, P4] |
+| Stres ≥ 1 strom nepřežije; nižší stres snižuje růstový rozpočet a během sezóny odeznívá | Úplné obnažení kořenů jehličnany silně oslabí a může je zabít; část balu má zůstat netknutá kvůli mykorhize [P5–P7] |
+| Strom lze otočit a posadit nakřivo. Starý kmen zůstane šikmý, nová svíčka kmene se napřímí | U borovic se měkký vrchol po naklonění napřímí během dnů, zdřevnatělý kmen se rovná jen pomalu tlakovým dřevem [P14–P16]. Šikmý styl (shakan) [P13] |
+
+## 3b. Drátování
+
+Drát se nasazuje na vyzrálý výhon a ohyb je otočení výhonu i s celým podstromem kolem jeho paty.
+
+| Pravidlo v modelu | Opora ve zdrojích |
+| --- | --- |
+| Bezpečný ohyb ≈ 28° / (poloměr v cm + 0,25), nejvýš 80°; přes mez roste riziko prasknutí až na 100 % při 1,5násobku. Prasklá větev odumře | Jen zkušenostní pravidla – tenké větve se ohýbají drátem, silné potřebují rafii a kotvicí dráty [P24]. Číselná mez je odhad modelu |
+| V době jarního růstu je bezpečný ohyb o 40 % menší | Při aktivním růstu se kůra odděluje od dřeva; borovice se drátují od podzimu do předjaří [P19, P20] |
+| Tvar fixuje tloušťkový přírůst: tenká větvička drží po jedné sezóně, každý cm poloměru přidá další. Dřív sundaný drát = větev se úměrně vrátí | Tvar drží až nové dřevo narostlé v ohnuté poloze; borovice fixují pomalu; po předčasném sundání se větve vracejí [P17, P18, P23] |
+| Když průřez větve naroste o 45 %, drát zarůstá a zůstane trvalá jizva | Drát se nejrychleji zařezává na jaře u mladých vitálních borovic [P21, P22] |
+| Zobrazený drát je měděný, o síle asi 1/3 větve | Pro jehličnany žíhaná měď; síla ~1/3 větve [P17, P18] |
+
+**Poznámka o ověření.** Stránky zdrojů nebyly při rešerši dostupné; tvrzení v těchto dvou tabulkách pocházejí
+z úryvků ve výsledcích vyhledávání a z abstraktů. Číselné hodnoty modelu (meze ohybu, násobky stresu, rychlost
+fixace) jsou odhady zvolené tak, aby chování odpovídalo popsané praxi.
 
 ## 4. Architektura
 
@@ -85,7 +115,8 @@ Náhoda je hash z id výhonu, takže zásah na jedné větvi nezmění zbytek st
 
 | Krok | Co je potřeba |
 | --- | --- |
-| Drátování | Směr výhonu uložit relativně k rodiči; zásah `wire(výhon, ohyb)`; dřevo po 1–2 sezónách tvar podrží |
+| Ohyb uprostřed výhonu, rafie, kotvicí dráty | Dnes se ohýbá jen v místě nasazení výhonu; silné větve by potřebovaly rozdělit úsek |
+| Zalévání a substrát | Prokořenění zatím jen brzdí růst; chybí voda a propustnost substrátu |
 | Vyštipování jehlic | Zásah snižující `needleCount`; sníží sílu větve a pustí světlo dovnitř |
 | Zalévání, hnojení, zdraví | Další násobitele rozpočtu; délka jehlic podle dusíku |
 | Převěšování větví vahou | Směr se počítá při vykreslení z hmotnosti podstromu |
@@ -122,3 +153,29 @@ Náhoda je hash z id výhonu, takže zásah na jedné větvi nezmění zbytek st
 26. Bjorholm, evropské borovice. https://www.bjornbjorholm.com/care-and-maintenance-guide-for-native-european-pine-bonsai-pinus/
 27. Hagedorn. https://crataegus.com/2016/04/14/big-difference-between-decandling-and-breaking-pine-shoots/
 28. Poorter et al. 2012, Functional Plant Biology 39:839. https://juser.fz-juelich.de/record/20247
+
+Zdroje k přesazování a drátování (ověřeno jen z úryvků):
+
+- P1. RHS, Bonsai. https://www.rhs.org.uk/plants/types/trees/bonsai
+- P2. Bonsai Tree Gardener, Repotting. https://www.bonsaitreegardener.net/care/how-to/repotting
+- P3. Bonsai Galinou, Scots pine. https://www.bonsaigalinou.com/en/blog-module?id=112
+- P4. Shohin Europe, Summer repotting Scots pine. https://shohin-europe.com/2022/08/11/summer-repotting-scots-pine/
+- P5. Bonsai Tonight, Repotting black pine in nursery soil. https://bonsaitonight.com/2015/04/14/repotting-black-pine-in-nursery-soil/
+- P6. Bonsai Mirai, Repotting conifers. https://bonsaimirai.com/blog/repotting-conifers
+- P7. Scottish Bonsai Association. https://scottishbonsai.org/Atoz/AtoZCare.cfm?id=605
+- P8. Bonsai Tonight, Signs it's time to repot. https://bonsaitonight.com/2018/02/20/signs-time-repot/
+- P10. Gilman et al., UF/IFAS – řez kořenů a přírůst. https://hort.ifas.ufl.edu/woody/documents/articles/GilmanHarchickPazAUF2010.pdf
+- P11. Buraczyk & Kapuścińska – řez kořenů semenáčků borovice lesní.
+- P12. Brown, disertace MSU – přežívání borovice lesní po řezu kořenů. https://d.lib.msu.edu/etd/34669/FULL_TEXT/view
+- P13. Bonsai styles. https://www.bonsaiempire.com/origin/bonsai-styles
+- P14. Herrera et al. 2010, BMC Plant Biology 10:217. https://dx.doi.org/10.1186/1471-2229-10-217
+- P15. Ba, Salin, Fourcaud & Stokes 2010, IAWA Journal 31(4):465. https://hal.inrae.fr/hal-02663092
+- P16. Archer & Wilson 1973. https://pmc.ncbi.nlm.nih.gov/articles/PMC366344
+- P17. Harrington, Wiring Bonsai. https://bonsai4me.com/wiring-bonsai/ ; Bonsai Empire. https://bonsaiempire.com/basics/styling/wiring
+- P18. Bonsai Learning Center, Wire. https://bonsailearningcenter.com/wire/
+- P19. Bonsai Tonight, Fall work basics: black and red pine. https://bonsaitonight.com/2025/01/04/fall-work-basics-black-and-red-pine/
+- P20. BonsaiNut, diskuse o termínu drátování (fórum).
+- P21. Arnold Arboretum, Bonsai and Penjing Collection care. https://arboretum.harvard.edu/plants/bonsai-penjing-collection-care
+- P22. Bonsai Tonight, Swelling on recently wired branches. https://bonsaitonight.com/2015/06/02/looking-out-for-swelling-on-recently-wired-branches/
+- P23. Fire Escape Bonsai, Wire scars. https://fireescapebonsai.substack.com/p/wire-scars
+- P24. Eastern Leaf, Heavy bends with guy wire. https://blog.easternleaf.com/heavy-bends-with-guy-wire

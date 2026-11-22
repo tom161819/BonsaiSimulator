@@ -4,7 +4,7 @@ import { Timeline } from './sim/timeline';
 import { TreeView, Pick } from './render/view';
 import { P, POT, MAX_YEARS } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
-import { YEAR, doyOf, stats, yearOf } from './sim/util';
+import { YEAR, bendLimit, breakRisk, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -27,6 +27,8 @@ let speed = 7;
 let acc = 0;
 let hover: Pick | null = null;
 let pending: Described | null = null;
+let tool: 'cut' | 'wire' = 'cut';
+let repotOpen = false;
 
 const view = new TreeView($<HTMLCanvasElement>('scene'));
 
@@ -52,7 +54,7 @@ const cm = (x: number) => (x >= 100 ? `${(x / 100).toFixed(2).replace('.', ',')}
 function phase(s: State): { name: string; hint: string; season: string } {
   const doy = doyOf(s.day), year = yearOf(s.day);
   if (s.stage === 'seed') return { name: 'Semínko v zemi', hint: 'Vyseto 1. dubna. Vyklíčí, až se půda prohřeje – pusťte čas.', season: 'spring' };
-  if (s.stage === 'dead') return { name: 'Strom odumřel', hint: 'Bez jehlic borovice nepřežije. Vraťte poslední zásah nebo se posuňte v čase zpět.', season: 'winter' };
+  if (s.stage === 'dead') return { name: 'Strom odumřel', hint: 'Bez jehlic nebo po příliš tvrdém přesazení borovice nepřežije. Vraťte poslední zásah nebo se posuňte v čase zpět.', season: 'winter' };
   if (year === 0) {
     if (doy < 150) return { name: 'Klíčení', hint: 'Hypokotyl vynáší dělohy nad zem. První rok se nic nestříhá.', season: 'spring' };
     if (doy < P.seedlingBudSetDoy) return { name: 'Růst epikotylu', hint: 'Semenáček roste volně a nese jednotlivé primární jehlice.', season: 'summer' };
@@ -66,10 +68,39 @@ function phase(s: State): { name: string; hint: string; season: string } {
   return { name: 'Vegetační klid', hint: 'Strom odpočívá. Vhodná doba na výběr pupenů a hrubý řez.', season: doy > 330 ? 'winter' : 'autumn' };
 }
 
-interface Described { title: string; detail: string; danger: string; action: ActionInput; pick: Pick }
+interface Described { title: string; detail: string; danger: string; action: ActionInput | null; pick: Pick }
+
+const deg = (rad: number) => Math.round((rad * 180) / Math.PI);
+
+/** Nástroj Drát: co jde s větví udělat. */
+function describeWire(p: Pick): Described | null {
+  const s = tl.state;
+  const sh = s.shoots.find((x) => x.id === p.shoot);
+  if (!sh || sh.dead) return null;
+  const pick: Pick = { type: 'shoot', shoot: sh.id, t: 0 };
+  if (sh.wire) {
+    const hold = Math.round(sh.wire.set * 100);
+    return {
+      title: 'Sundat drát', pick,
+      detail: `Tvar zatím drží z ${hold} %${hold < 100 ? ' – zbytek ohybu se vrátí' : ''}. Tažením můžete větev doohnout.`,
+      danger: sh.scar ? 'Drát už zarostl do kůry a nechá jizvu.' : '',
+      action: { type: 'unwire', shoot: sh.id, label: `Sundán drát (tvar držel z ${hold} %)` },
+    };
+  }
+  if (sh.parent < 0) return { title: 'Kmen u země', detail: 'Sklon celého stromu se mění při přesazení, ne drátem.', danger: '', action: null, pick };
+  if (sh.elong) return { title: 'Svíčka je příliš měkká', detail: 'Drátuje se až vyzrálý výhon.', danger: '', action: null, pick };
+  const spring = s.gdd >= P.flushGdd && s.gdd < P.budSetGdd;
+  return {
+    title: 'Nadrátovat a ohnout', pick,
+    detail: `Táhněte větev tam, kam ji chcete ohnout. Bezpečný ohyb do ${deg(bendLimit(s, sh))}°, měděný drát ø ${(radiusOf(sh) * 20 / 3).toFixed(1).replace('.', ',')} mm.`,
+    danger: spring ? 'Strom je v růstu a kůra se snadno odlupuje – větve teď praskají dřív. Lepší je podzim až předjaří.' : '',
+    action: null,
+  };
+}
 
 /** Popíše, co zásah v daném místě udělá – ještě před kliknutím. */
 function describe(p: Pick): Described | null {
+  if (tool === 'wire') return describeWire(p);
   const s = tl.state;
   const sh = s.shoots.find((x) => x.id === p.shoot);
   if (!sh) return null;
@@ -176,7 +207,25 @@ function refresh() {
   $('date').textContent = fmtDate(s.day);
   $('phaseName').textContent = ph.name;
   const fut = tl.futureActions();
-  $('hint').textContent = fut ? `Jste v minulosti: nový zásah přepíše ${fut} pozdějších zásahů v deníku.` : ph.hint;
+  const fill = rootFill(s);
+  const wires = s.shoots.filter((x) => x.wire);
+  const biting = wires.filter((x) => x.scar).length;
+  const ready = wires.filter((x) => x.wire!.set >= 1).length;
+  let hint = ph.hint;
+  if (s.stage === 'growing') {
+    if (s.stress > 0.45) hint = 'Strom se vzpamatovává z přesazení – letos poroste slabě. Nestříhejte a nepřesazujte.';
+    else if (fill > 1.2) hint = 'Kořeny přerostly nádobu: voda neprotéká, strom slábne a bez přesazení se zakrácením kořenů bude chřadnout.';
+    else if (biting) hint = `Drát na ${biting} ${biting === 1 ? 'větvi' : 'větvích'} zarůstá do kůry. Sundejte ho nástrojem Drát.`;
+    else if (fill > P.rootBoundStart) hint = 'Nádoba je prokořeněná a růst začíná slábnout. Naplánujte přesazení na předjaří.';
+    else if (ready) hint = `${ready} ${ready === 1 ? 'nadrátovaná větev už drží' : 'nadrátované větve už drží'} tvar – drát lze sundat.`;
+  }
+  $('hint').textContent = fut ? `Jste v minulosti: nový zásah přepíše ${fut} pozdějších zásahů v deníku.` : hint;
+  const sr = $('sRoots');
+  sr.textContent = s.pot === 'ground' ? 'volná půda' : `${POT[s.pot].name.split(' ')[1]} · ${Math.round(fill * 100)} %`;
+  sr.className = fill > 1.2 ? 'bad' : '';
+  const sw = $('sWires');
+  sw.textContent = wires.length ? `${wires.length}${biting ? ` · ${biting} zarůstá` : ''}` : '–';
+  sw.className = biting ? 'bad' : '';
   $('season').style.setProperty('--season', `var(--${ph.season})`);
   $('sHeight').textContent = s.stage === 'seed' ? '–' : cm(st.height);
   $('sDia').textContent = s.stage === 'seed' ? '–' : `${(st.baseDiameter * 10).toFixed(1).replace('.', ',')} mm`;
@@ -185,12 +234,13 @@ function refresh() {
   $('sNeedles').textContent = st.needles.toLocaleString('cs-CZ');
   $('sGdd').textContent = `${Math.round(s.gdd)} d.d.`;
   slider.value = String(s.day);
-  for (const b of $('pots').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.pot === s.pot));
+  for (const b of $('toolSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.tool === tool));
+  if (repotOpen) updateRepot();
   $('play').textContent = playing ? '❚❚' : '▶';
   $('play').setAttribute('aria-label', playing ? 'Pozastavit čas' : 'Spustit čas');
   const banner = $('banner');
-  banner.hidden = s.stage !== 'dead';
-  if (s.stage === 'dead') banner.textContent = 'Strom odumřel – nezůstaly mu žádné jehlice. Vraťte poslední zásah.';
+  if (s.stage === 'dead') banner.hidden = false; else if (!flashTimer) banner.hidden = true;
+  if (s.stage === 'dead') banner.textContent = 'Strom odumřel. Vraťte poslední zásah nebo se posuňte v čase zpět.';
   const key = `${tl.actions.length}:${tl.actions.filter((a) => a.day > s.day).length}`;
   if (key !== lastLogKey) { lastLogKey = key; refreshLog(); }
 }
@@ -199,7 +249,7 @@ const tip = $('tip');
 function setHover(d: Described | null, x = 0, y = 0, touch = false) {
   hover = d ? d.pick : null;
   pending = touch ? d : null;
-  view.highlight(hover);
+  view.highlight(hover, tool === 'wire' ? 0xd98324 : 0xff3b1f);
   if (!d) { tip.hidden = true; return; }
   tip.hidden = false;
   tip.className = d.danger ? 'danger' : '';
@@ -208,7 +258,7 @@ function setHover(d: Described | null, x = 0, y = 0, touch = false) {
   const t = document.createElement('span'); t.textContent = d.detail;
   tip.append(b, t);
   if (d.danger) { const e = document.createElement('em'); e.textContent = d.danger; tip.appendChild(e); }
-  if (touch) {
+  if (touch && d.action) {
     const btn = document.createElement('button');
     btn.className = 'primary'; btn.textContent = 'Provést';
     btn.onclick = () => { if (pending) doAction(pending); };
@@ -221,6 +271,7 @@ function setHover(d: Described | null, x = 0, y = 0, touch = false) {
 }
 
 function doAction(d: Described) {
+  if (!d.action) return;
   tl.act(d.action);
   lastLogKey = '';
   persist();
@@ -236,12 +287,21 @@ let moved = 0;
 let pinch = 0;
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+let bend: { id: number; axis: [number, number, number]; angle: number } | null = null;
+
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   downAt = { x: e.clientX, y: e.clientY, button: e.button };
   moved = 0;
+  bend = null;
   if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
+  else if (tool === 'wire' && e.button === 0 && !repotOpen) {
+    // tažení za větev = ohyb drátem; tažení mimo strom otáčí pohled
+    const p = view.pick(e.offsetX, e.offsetY);
+    const sh = p && tl.state.shoots.find((x) => x.id === p.shoot);
+    if (sh && !sh.dead && !sh.elong && sh.parent >= 0) bend = { id: sh.id, axis: [0, 1, 0], angle: 0 };
+  }
 });
 canvas.addEventListener('pointermove', (e) => {
   const prev = pointers.get(e.pointerId);
@@ -250,20 +310,38 @@ canvas.addEventListener('pointermove', (e) => {
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y);
     if (pinch > 0) view.zoom(pinch / d);
-    pinch = d; moved = 99;
+    pinch = d; moved = 99; bend = null;
     return;
   }
   if (prev && downAt) {
     const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
     moved += Math.abs(dx) + Math.abs(dy);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (moved > 5) {
-      if (downAt.button === 2 || e.shiftKey) view.pan(dx, dy); else view.orbit(dx, dy);
-      if (hover) setHover(null);
+    if (moved <= 5) return;
+    if (bend) {
+      const sh = tl.state.shoots.find((x) => x.id === bend!.id)!;
+      const tgt = view.bendTarget(bend.id, e.offsetX, e.offsetY);
+      if (tgt) {
+        const safe = bendLimit(tl.state, sh);
+        bend.axis = tgt.axis;
+        bend.angle = Math.min(tgt.angle, safe * 1.5);
+        const risk = breakRisk(tl.state, sh, bend.angle);
+        view.previewBend(bend.id, bend.axis, bend.angle, risk > 0);
+        tip.hidden = false;
+        tip.className = risk > 0 ? 'danger' : '';
+        tip.textContent = risk > 0
+          ? `Ohyb ${deg(bend.angle)}° · riziko prasknutí ${Math.round(risk * 100)} % (bezpečně do ${deg(safe)}°)`
+          : `Ohyb ${deg(bend.angle)}° · bezpečně do ${deg(safe)}°`;
+        tip.style.left = `${Math.min(window.innerWidth - 270, e.clientX + 16)}px`;
+        tip.style.top = `${Math.max(8, e.clientY - 44)}px`;
+      }
+      return;
     }
+    if (downAt.button === 2 || e.shiftKey) view.pan(dx, dy); else view.orbit(dx, dy);
+    if (hover) setHover(null);
     return;
   }
-  if (e.pointerType === 'mouse') {
+  if (e.pointerType === 'mouse' && !repotOpen) {
     const p = view.pick(e.offsetX, e.offsetY);
     setHover(p ? describe(p) : null, e.clientX, e.clientY);
   }
@@ -273,14 +351,30 @@ const up = (e: PointerEvent) => {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinch = 0;
   if (!pointers.size) downAt = null;
-  if (!wasTap) return;
+  if (bend && !wasTap) {
+    const b = bend;
+    bend = null;
+    setHover(null);
+    if (b.angle > 0.05) {
+      tl.act({ type: 'wire', shoot: b.id, axis: b.axis, angle: b.angle });
+      const broke = tl.state.shoots.find((x) => x.id === b.id)?.dead;
+      tl.actions[tl.actions.length - 1].label = broke ? `Větev při ohybu o ${deg(b.angle)}° praskla` : `Nadrátováno, ohyb o ${deg(b.angle)}°`;
+      lastLogKey = '';
+      persist();
+      refresh();
+      if (broke) flash('Větev praskla a odumře. Zásah můžete vrátit.');
+    }
+    return;
+  }
+  bend = null;
+  if (!wasTap || repotOpen) return;
   const p = view.pick(e.offsetX, e.offsetY);
   const d = p ? describe(p) : null;
   if (e.pointerType === 'mouse') { if (d) doAction(d); }
   else setHover(d, e.clientX, e.clientY, true);
 };
 canvas.addEventListener('pointerup', up);
-canvas.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); downAt = null; });
+canvas.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); downAt = null; bend = null; });
 canvas.addEventListener('pointerleave', () => { if (!pending) setHover(null); });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.zoom(Math.exp(e.deltaY * 0.0012)); }, { passive: false });
 window.addEventListener('resize', () => view.resize());
@@ -304,13 +398,78 @@ $('j-spring').onclick = () => {
   refresh();
 };
 slider.oninput = () => { playing = false; go(Number(slider.value)); };
-for (const b of $('pots').querySelectorAll('button')) {
-  b.onclick = () => {
-    const pot = b.dataset.pot as PotType;
-    if (pot === tl.state.pot) return;
-    doAction({ title: '', detail: '', danger: '', pick: { type: 'shoot', shoot: -1, t: 0 }, action: { type: 'repot', pot, label: `Přesazeno: ${POT[pot].name.toLowerCase()}` } });
-  };
+// --- nástroje a přesazení
+for (const b of $('toolSeg').querySelectorAll('button')) {
+  b.onclick = () => { tool = b.dataset.tool as 'cut' | 'wire'; canvas.style.cursor = tool === 'wire' ? 'grab' : 'crosshair'; setHover(null); refresh(); };
 }
+let flashTimer = 0;
+function flash(text: string) {
+  const el = $('banner');
+  el.textContent = text; el.hidden = false;
+  clearTimeout(flashTimer);
+  flashTimer = window.setTimeout(() => { flashTimer = 0; if (tl.state.stage !== 'dead') el.hidden = true; }, 4500);
+}
+
+let rPot: PotType = 'training';
+const rIn = (id: string) => $<HTMLInputElement>(id);
+const rVals = () => ({ prune: Number(rIn('rPrune').value) / 100, yaw: Number(rIn('rYaw').value), side: Number(rIn('rSide').value), fwd: Number(rIn('rFwd').value) });
+
+function updateRepot() {
+  const s = tl.state, v = rVals();
+  for (const b of $('pots').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.pot === rPot));
+  $('rPruneV').textContent = `${Math.round(v.prune * 100)} %`;
+  $('rYawV').textContent = `${v.yaw}°`;
+  $('rSideV').textContent = v.side ? `${Math.abs(v.side)}° ${v.side < 0 ? 'vlevo' : 'vpravo'}` : '0°';
+  $('rFwdV').textContent = v.fwd ? `${Math.abs(v.fwd)}° ${v.fwd < 0 ? 'dozadu' : 'dopředu'}` : '0°';
+  view.previewRotation(v.yaw, v.fwd, -v.side);
+  const info = $('rInfo');
+  info.innerHTML = '';
+  const line = (t: string, bad = false) => { const e = document.createElement(bad ? 'b' : 'span'); e.textContent = t + ' '; if (bad) e.className = 'bad'; info.appendChild(e); };
+  if (s.stage === 'seed') { line('Semínko zatím nevyklíčilo – nádobu lze zvolit bez rizika.'); $<HTMLButtonElement>('rOk').disabled = false; return; }
+  const season = repotSeason(s);
+  const total = s.stress + repotStress(s, v.prune);
+  const after = rPot === 'ground' ? 0 : (s.roots * (1 - v.prune)) / Math.max(1, potCapFor(s, rPot));
+  line(`Kořeny teď zaplňují nádobu z ${Math.round(rootFill(s) * 100)} %, po přesazení z ${Math.round(after * 100)} %.`);
+  if (after > P.rootBoundStart) line('Nová nádoba bude hned těsná – zakraťte kořeny víc.', true);
+  line(`Termín: ${season.name}.`, season.k > 1.5);
+  if (total >= 1) line('Takový zásah strom nepřežije.', true);
+  else if (total > 0.7) line('Stres vysoký: příští rok skoro neporoste.', true);
+  else if (total > 0.4) line('Stres střední: růst příští rok znatelně zeslábne.');
+  else line('Stres nízký.');
+  if (v.prune > 0.5) line('Borovice žije s houbami na kořenech (mykorhiza). Část kořenového balu má vždy zůstat netknutá.');
+}
+
+function closeRepot() {
+  repotOpen = false;
+  $('repot').hidden = true;
+  view.previewRotation(0, 0, 0);
+  refresh();
+}
+$('repotBtn').onclick = () => {
+  if (repotOpen) { closeRepot(); return; }
+  repotOpen = true; playing = false;
+  rPot = tl.state.pot;
+  rIn('rPrune').value = tl.state.pot === 'ground' || tl.state.stage === 'seed' ? '0' : '30';
+  rIn('rYaw').value = '0'; rIn('rSide').value = '0'; rIn('rFwd').value = '0';
+  $('repot').hidden = false;
+  view.front();
+  setHover(null);
+  refresh();
+};
+for (const b of $('pots').querySelectorAll('button')) b.onclick = () => { rPot = b.dataset.pot as PotType; updateRepot(); };
+for (const id of ['rPrune', 'rYaw', 'rSide', 'rFwd']) rIn(id).oninput = updateRepot;
+$('rCancel').onclick = closeRepot;
+$('rOk').onclick = () => {
+  const v = rVals();
+  const parts = [POT[rPot].name.toLowerCase()];
+  if (v.prune) parts.push(`kořeny −${Math.round(v.prune * 100)} %`);
+  if (v.yaw) parts.push(`otočení ${v.yaw}°`);
+  if (v.side || v.fwd) parts.push(`náklon ${Math.round(Math.hypot(v.side, v.fwd))}°`);
+  tl.act({ type: 'repot', pot: rPot, prune: v.prune, yaw: v.yaw, tiltX: v.fwd, tiltZ: -v.side, label: `Přesazeno: ${parts.join(', ')}` });
+  lastLogKey = '';
+  persist();
+  closeRepot();
+};
 $('undo').onclick = () => { tl.undo(); lastLogKey = ''; persist(); refresh(); };
 $('center').onclick = () => view.recenter();
 $('moreBtn').onclick = () => document.body.classList.toggle('more');
