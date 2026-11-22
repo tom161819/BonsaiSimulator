@@ -488,6 +488,8 @@ export class TreeView {
     // pokračující výhon určuje poloměr na vrcholu a směr, kterým osa plynule navazuje
     const mainR = new Float32Array(n);
     const mainKid = new Int32Array(n).fill(-1);
+    // kdo skutečně pokračuje v ose: živý terminál, jinak nejsilnější živá větev na vrcholu (po řezu vrcholu)
+    const contKid = new Int32Array(n).fill(-1);
     const whorl = new Uint8Array(n); // počet bočních větví v přeslenu na vrcholu výhonu
     let H = 0, total = 0;
     for (let i = 0; i < n; i++) {
@@ -496,6 +498,10 @@ export class TreeView {
         const pi = fr.index.get(sh.parent)!;
         const r = radiusOf(sh);
         if (sh.isMain) mainKid[pi] = i; else if (!sh.dead) whorl[pi]++;
+        if (!sh.dead) {
+          const cur = contKid[pi];
+          if (cur < 0 || (sh.isMain && !s.shoots[cur].isMain) || (sh.isMain === s.shoots[cur].isMain && r > radiusOf(s.shoots[cur]))) contKid[pi] = i;
+        }
         if (sh.isMain || mainR[pi] === 0) mainR[pi] = Math.max(mainR[pi], sh.isMain ? r : r * 0.9);
       }
       if (!sh.dead) H = Math.max(H, tip[i * 3 + 1]);
@@ -570,11 +576,15 @@ export class TreeView {
       const rt = sh.dead ? rb * 0.6 : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
       col[0] = C[i * 3]; col[1] = C[i * 3 + 1]; col[2] = C[i * 3 + 2];
       // sousedé v ose: úsek, na který navazuji, a úsek, který navazuje na mě
-      const pj = sh.isMain && sh.attachT > 0.98 && sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;
-      const kj = mainKid[i];
+      const pIdx = sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;
+      const isCont = pIdx >= 0 && contKid[pIdx] === i; // pokračuji v ose rodiče
+      const pj = pIdx >= 0 && !sh.dead && !s.shoots[pIdx].dead ? pIdx : -1;
+      const kj = sh.dead ? -1 : contKid[i];
       const mixAt = (t: number, own: number, a: number, b: number) => {
-        const lo = pj >= 0 ? (own + a) / 2 : own, hi = kj >= 0 ? (own + b) / 2 : own;
-        return t < 0.5 ? lo + (own - lo) * smooth(t * 2) : own + (hi - own) * smooth(t * 2 - 1);
+        // v kloubu průměr obou úseků; boční větev přechází do vlastní barvy o něco rychleji
+        const lo = pj < 0 ? own : (own + a) / 2, span = isCont ? 0.5 : 0.4;
+        const hi = kj >= 0 ? (own + b) / 2 : own;
+        return t < span ? lo + (own - lo) * smooth(t / span) : t > 0.5 ? own + (hi - own) * smooth(t * 2 - 1) : own;
       };
       const colorAt = (t: number, ch: number) => mixAt(t, col[ch], pj >= 0 ? C[pj * 3 + ch] : 0, kj >= 0 ? C[kj * 3 + ch] : 0);
       const barkAt = (t: number) => mixAt(t, BK[i], pj >= 0 ? BK[pj] : 0, kj >= 0 ? BK[kj] : 0);
@@ -628,7 +638,7 @@ export class TreeView {
           at(t);
           let r = radiusAt(t);
           if (inZone && cy < zone) { const f = 1 - Math.max(0, cy) / zone; r *= 1 + 0.6 * f * f; }
-          const stretch = collar && t < tc ? 0.9 * (1 - t / tc) * (1 - t / tc) : 0;
+          const stretch = collar && t < tc ? 0.3 * (1 - t / tc) * (1 - t / tc) : 0;
           const c0 = colorAt(t, 0), c1 = colorAt(t, 1), c2 = colorAt(t, 2), bk = barkAt(t);
           const first = B.nv;
           for (let k = 0; k <= RN; k++) {
