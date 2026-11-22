@@ -52,6 +52,13 @@
   #phaseList li span { display: block; font-size: 11px; }
   #phaseList li.on { border-color: var(--hl); background: var(--hl-bg); color: var(--fg); font-weight: 600; }
   #phaseList li.on span { font-weight: 400; color: var(--muted); }
+  #phaseList li { position: relative; cursor: help; }
+  #phaseList li p {
+    display: none; position: absolute; right: calc(100% + 18px); top: -4px; width: 250px; margin: 0; z-index: 6;
+    background: var(--panel-solid); border: 1px solid var(--line); border-left: 3px solid var(--hl); border-radius: 6px;
+    padding: 8px 10px; font-size: 12.5px; font-weight: 400; line-height: 1.4; color: var(--fg);
+  }
+  #phaseList li:hover p, #phaseList li:focus-visible p { display: block; }
   #left { grid-area: left; align-self: start; display: flex; flex-direction: column; gap: 10px; }
   #right { grid-area: right; align-self: start; display: flex; flex-direction: column; gap: 10px; max-height: 100%; min-height: 0; }
   #bottom { grid-area: bottom; display: flex; flex-direction: column; gap: 8px; }

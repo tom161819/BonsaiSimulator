@@ -70,13 +70,25 @@ function phase(s: State): { name: string; hint: string; season: string } {
 }
 
 /** Sloupec období: v prvním roce vývoj semenáčku, pak roční cyklus stromu. Názvy odpovídají phase(). */
-const PHASES_SEEDLING: [string, string][] = [
-  ['Semínko v zemi', 'duben'], ['Klíčení', 'duben–květen'], ['Růst epikotylu', 'červen–srpen'],
-  ['Zakládání pupenů', 'srpen–září'], ['Opad starých jehlic', 'září–říjen'], ['Vegetační klid', 'listopad–duben'],
+const PHASES_SEEDLING: [string, string, string][] = [
+  ['Semínko v zemi', 'duben', 'Pusťte čas. Semínko vyklíčí, až se půda prohřeje.'],
+  ['Klíčení', 'duben–květen', 'Žádné zásahy. Semenáček žije ze zásob a z děloh.'],
+  ['Růst epikotylu', 'červen–srpen', 'Nechte růst. První rok se nestříhá ani nedrátuje.'],
+  ['Zakládání pupenů', 'srpen–září', 'Zakládá se první terminální pupen. Žádné zásahy.'],
+  ['Opad starých jehlic', 'září–říjen', 'První rok ještě nic neopadává. Bez zásahů.'],
+  ['Vegetační klid', 'listopad–duben', 'Na jaře, až začnou nalévat pupeny, lze semenáček přesadit do většího květináče.'],
 ];
-const PHASES_TREE: [string, string][] = [
-  ['Vegetační klid', 'listopad–duben'], ['Prodlužování svíček', 'duben–červen'], ['Vyzrávání letorostů', 'červen–červenec'],
-  ['Zakládání pupenů', 'červenec–září'], ['Opad starých jehlic', 'září–říjen'],
+const PHASES_TREE: [string, string, string][] = [
+  ['Vegetační klid', 'listopad–duben',
+    'Hrubý řez a odstranění celých větví. Drátování – kůra teď drží na dřevě nejlépe. Výběr pupenů: u silných vrcholů nechte dva. Koncem období, když pupeny nalévají, je nejlepší čas na přesazení.'],
+  ['Prodlužování svíček', 'duben–červen',
+    'Zaštipování svíček: silné zkraťte o třetinu až polovinu, slabé nechte být. Nedrátujte a nepřesazujte – kůra se snadno odlupuje a strom je nejzranitelnější.'],
+  ['Vyzrávání letorostů', 'červen–červenec',
+    'Zkrácení vyzrálých letorostů tak, aby zůstaly jehlice – u řezu se ještě letos založí nové pupeny. Kontrolujte dráty, v době tloustnutí zarůstají nejrychleji.'],
+  ['Zakládání pupenů', 'červenec–září',
+    'Nechte strom růst, v pupenech se rozhoduje o příštím roce. Řez už letos nové pupeny nevytvoří. Koncem srpna je náhradní termín přesazení. Hlídejte zarůstající dráty.'],
+  ['Opad starých jehlic', 'září–říjen',
+    'Výběr pupenů – vylomte přebytečné. Začíná vhodná doba na drátování. Sundejte dráty, u kterých tvar už drží.'],
 ];
 let phaseKey = '';
 function refreshPhases(s: State, active: string) {
@@ -86,12 +98,15 @@ function refreshPhases(s: State, active: string) {
   phaseKey = key;
   const ol = $('phaseList');
   ol.innerHTML = '';
-  for (const [name, months] of list) {
+  for (const [name, months, advice] of list) {
     const li = document.createElement('li');
     li.textContent = name;
+    li.tabIndex = 0;
     const sp = document.createElement('span');
     sp.textContent = months;
-    li.appendChild(sp);
+    const tipEl = document.createElement('p');
+    tipEl.textContent = advice;
+    li.append(sp, tipEl);
     if (name === active) { li.className = 'on'; li.setAttribute('aria-current', 'step'); }
     ol.appendChild(li);
   }
