@@ -2,6 +2,7 @@
 // Simulace o rendereru neví nic – renderer jen čte State.
 
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { PotType, Shoot, State } from '../sim/types';
 import { P, potById } from '../sim/params';
 import type { Vec3 } from '../sim/types';
@@ -63,26 +64,36 @@ function tileNoise(x: number, y: number, px: number, py: number, seed: number) {
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
 
-/** Borka: podélně protažené šupiny oddělené tmavými prasklinami. Slouží jako barva i jako reliéf. */
+/** Borka borovice: podélně protažené šupinaté desky oddělené tmavými hlubokými prasklinami
+ *  (dlaždicovatelný Voronoiův vzor). Slouží jako barva i jako reliéf. */
 function barkTexture(): THREE.CanvasTexture {
-  const W = 256, H = 512;
+  const W = 256, H = 512, GX = 6, GY = 3;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d')!;
   const img = ctx.createImageData(W, H);
+  const wrap = (i: number, m: number) => ((i % m) + m) % m;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const u = x / W, v = y / H;
-    // pokřivení souřadnic, aby praskliny nebyly rovné
-    const wx = u + 0.06 * (tileNoise(u * 4, v * 6, 4, 6, 11) - 0.5), wy = v + 0.03 * (tileNoise(u * 6, v * 8, 6, 8, 12) - 0.5);
-    let ridge = 0, amp = 0.6, fx = 5, fy = 3;
-    for (let o = 0; o < 3; o++) {
-      const n = tileNoise(wx * fx, wy * fy, fx, fy, 20 + o);
-      ridge += amp * Math.abs(2 * n - 1);
-      amp *= 0.5; fx *= 2; fy *= 2;
+    // pokřivení, aby hrany desek nebyly rovné
+    const px = (u + 0.035 * (tileNoise(u * 6, v * 8, 6, 8, 11) - 0.5)) * GX;
+    const py = (v + 0.02 * (tileNoise(u * 8, v * 10, 8, 10, 12) - 0.5)) * GY;
+    const ci = Math.floor(px), cj = Math.floor(py);
+    let f1 = 9, f2 = 9, id = 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const gi = ci + di, gj = cj + dj, wi = wrap(gi, GX), wj = wrap(gj, GY);
+      const qx = gi + 0.15 + 0.7 * rnd(31, wi, wj), qy = gj + 0.15 + 0.7 * rnd(32, wi, wj);
+      const dd = Math.hypot(px - qx, py - qy);
+      if (dd < f1) { f2 = f1; f1 = dd; id = wi * 17 + wj; } else if (dd < f2) f2 = dd;
     }
-    const crack = Math.min(1, ridge * 1.7); // 0 = dno praskliny, 1 = plocha šupiny
-    const flake = tileNoise(u * 32, v * 48, 32, 48, 40);
-    const g = Math.max(0, Math.min(1, 0.42 + 0.58 * Math.pow(crack, 0.6) + 0.14 * (flake - 0.5)));
+    const edge = f2 - f1;
+    let plate = Math.min(1, edge / 0.11); // 0 = dno praskliny, 1 = plocha desky
+    // jemnější vrstva odlupujících se šupin uvnitř desek
+    const fine = Math.abs(2 * tileNoise(u * 14 + 3 * rnd(34, id, 2), v * 7, 14, 7, 42) - 1);
+    plate *= 0.72 + 0.28 * Math.min(1, fine * 3);
+    const flake = tileNoise(u * 40, v * 24, 40, 24, 40), grain = tileNoise(u * 64, v * 6, 64, 6, 41);
+    const top = 0.66 + 0.2 * rnd(33, id, 1) + 0.12 * (flake - 0.5) + 0.1 * (grain - 0.5);
+    const g = Math.max(0, Math.min(1, 0.24 + (top - 0.24) * Math.pow(plate, 0.6)));
     const o = (y * W + x) * 4;
     img.data[o] = img.data[o + 1] = img.data[o + 2] = Math.round(g * 255);
     img.data[o + 3] = 255;
@@ -135,7 +146,7 @@ function fadeTexture(): THREE.CanvasTexture {
   ctx.fillRect(0, 0, N, N);
   return new THREE.CanvasTexture(cv);
 }
-const MAX_FASCICLES = 42000;
+const MAX_FASCICLES = 30000;
 
 function woodColor(s: State, sh: Shoot, out: number[]) {
   const age = yearOf(s.day) - sh.bornYear;
@@ -160,9 +171,9 @@ export class TreeView {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(32, 1, 0.5, 20000);
-  private wood = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+  private wood = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, envMapIntensity: 0.3 }));
   private bark: THREE.Mesh;
-  private needles = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  private needles = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 28, specular: 0x1c2a1c }));
   private sun = new THREE.DirectionalLight(0xfff0d8, 2.3);
   private soilTex = soilTexture();
   private table: THREE.Mesh;
@@ -196,16 +207,18 @@ export class TreeView {
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.scene.add(new THREE.HemisphereLight(0xdfeaff, 0x7a6a55, 0.95));
+    // odlesky a měkké okolní světlo z jednoduchého prostředí (glazura misek, kůra)
+    this.scene.environment = new THREE.PMREMGenerator(this.renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.add(new THREE.HemisphereLight(0xdfeaff, 0x7a6a55, 0.75));
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0006;
     this.scene.add(this.sun, this.sun.target);
     const barkTex = barkTexture();
-    this.bark = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, map: barkTex, bumpMap: barkTex, bumpScale: 3 }));
+    this.bark = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, map: barkTex, bumpMap: barkTex, bumpScale: 5, envMapIntensity: 0.3 }));
     for (const m of [this.wood, this.bark, this.needles]) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; }
     this.table = new THREE.Mesh(new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0xa39f94, roughness: 1, transparent: true, alphaMap: fadeTexture(), depthWrite: false }));
+      new THREE.MeshStandardMaterial({ color: 0xa39f94, roughness: 1, envMapIntensity: 0.25, transparent: true, alphaMap: fadeTexture(), depthWrite: false }));
     this.table.receiveShadow = true;
     this.scene.add(this.table);
     this.hi.renderOrder = 10; this.marker.renderOrder = 11;
@@ -317,7 +330,7 @@ export class TreeView {
     tex.needsUpdate = true;
     const span = spec.shape === 'ground' ? groundR * 2 : Math.max(spec.a, spec.b);
     tex.repeat.set(Math.max(1.5, span / 10), Math.max(1.5, span / 10));
-    const soil = new THREE.MeshStandardMaterial({ map: tex, roughness: 1 });
+    const soil = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, envMapIntensity: 0.25 });
     const add = (g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0, sx = 1, sz = 1) => {
       const mesh = new THREE.Mesh(g, m);
       mesh.position.set(x, y, z); mesh.scale.set(sx, 1, sz);
@@ -331,7 +344,7 @@ export class TreeView {
       add(new THREE.CircleGeometry(groundR, 40).rotateX(-Math.PI / 2), soil);
       return;
     }
-    const wall = new THREE.MeshStandardMaterial({ color: spec.color, roughness: spec.glaze ? 0.3 : 0.85, metalness: spec.glaze ? 0.05 : 0, side: THREE.DoubleSide });
+    const wall = new THREE.MeshStandardMaterial({ color: spec.color, roughness: spec.glaze ? 0.3 : 0.85, metalness: spec.glaze ? 0.05 : 0, envMapIntensity: spec.glaze ? 1 : 0.3, side: THREE.DoubleSide });
     const { a, b, h } = spec;
     const lip = Math.max(0.35, h * 0.06); // okraj nad substrátem
     const dish = spec.type === 'bonsai';
@@ -359,6 +372,22 @@ export class TreeView {
       if (dish) for (let k = 0; k < 3; k++) {
         const ang = (k / 3) * 6.2832 + 0.5;
         add(new THREE.BoxGeometry(r * 0.3, footH, r * 0.22), wall, Math.cos(ang) * r * 0.62, -h - footH / 2, Math.sin(ang) * r * 0.62 * sz);
+      }
+    }
+    if (dish) {
+      // polštářky mechu na substrátu
+      const moss = new THREE.MeshStandardMaterial({ color: 0x4a6628, roughness: 1, envMapIntensity: 0.15, flatShading: true });
+      for (let c = 0; c < 4; c++) {
+        const ang = rnd(77, c, 1) * 6.2832, rad = 0.2 + 0.2 * rnd(77, c, 2);
+        const ox = Math.cos(ang) * a * rad, oz = Math.sin(ang) * b * rad;
+        const base = Math.min(a, b) * 0.028;
+        for (let k = 0; k < 7; k++) {
+          const mr = Math.max(0.35, base * (0.6 + 0.9 * rnd(77, c * 10 + k, 3)));
+          const m = add(new THREE.IcosahedronGeometry(mr, 1), moss,
+            ox + (rnd(77, c * 10 + k, 4) - 0.5) * base * 5, mr * 0.1, oz + (rnd(77, c * 10 + k, 5) - 0.5) * base * 5);
+          m.scale.set(1.2, 0.5 + 0.3 * rnd(77, c * 10 + k, 6), 1.2);
+          m.rotation.set(rnd(77, k, 7), rnd(77, k, 8) * 3, 0);
+        }
       }
     }
     this.table.position.y = -h - footH - 0.02;
@@ -429,7 +458,7 @@ export class TreeView {
     }
     this.height = H;
     const stride = Math.max(1, Math.ceil(total / MAX_FASCICLES));
-    const nw = Math.max(0.085, this.dist * 0.0017) * Math.sqrt(stride);
+    const nw = Math.max(0.09, this.dist * 0.0011 * Math.pow(stride, 0.4));
     const budG = s.budSetYear === year ? 0.3 + 0.7 * smooth((s.gdd - s.budSetGdd) / P.budGrowGdd) : 1.1;
     const col = [0, 0, 0];
     const shedSeason = doy >= P.shedStartDoy && doy < P.shedEndDoy + 20;
@@ -506,7 +535,8 @@ export class TreeView {
         for (let k = 1; k <= seg; k++) if (k / seg > ts[ts.length - 1] + 0.03) ts.push(k / seg);
         if (ts[ts.length - 1] < 1) ts.push(1);
         const rough = isBark ? clamp((rb - 0.3) * 0.05, 0, 0.07) : 0;
-        const tiles = Math.max(1, Math.round((6.2832 * rb) / 3.5));
+        const tile = 3 + rb * 1.2; // silnější kmen má větší desky
+        const tiles = Math.max(1, Math.round((6.2832 * rb) / tile));
         const v0 = (sh.id % 7) * 0.13;
         B.reserve(ts.length * (RN + 1) + 1, ts.length * RN * 6);
         let prev = -1;
@@ -522,7 +552,7 @@ export class TreeView {
             const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
             const rr = r * (1 + lobe * Math.sin(3 * a + 0.7) + rough * (rnd(sh.id, km, q + 20) - 0.5) * 2);
             B.v(cx + nx * rr, cy + ny * rr, cz + nz * rr, nx, ny, nz, col[0] * shade, col[1] * shade, col[2] * shade);
-            B.t((k / RN) * tiles, v0 + (t * len) / 7);
+            B.t((k / RN) * tiles, v0 + (t * len) / (tile * 2));
           }
           if (prev >= 0) for (let k = 0; k < RN; k++) {
             B.tri(prev + k, prev + k + 1, first + k); B.tri(prev + k + 1, first + k + 1, first + k);
@@ -604,7 +634,7 @@ export class TreeView {
       const cnt = sh.needleCount;
       const fasc = sh.kind === 'shoot';
       const perF = fasc ? 2 : 1;
-      nb.reserve(Math.ceil(cnt / stride + 1) * perF * 3, Math.ceil(cnt / stride + 1) * perF * 6);
+      nb.reserve(Math.ceil(cnt / stride + 1) * perF * 7, Math.ceil(cnt / stride + 1) * perF * 30);
       let cr: number, cg: number, cb: number;
       if (sh.kind === 'hypocotyl') { cr = 0.42; cg = 0.6; cb = 0.3; }
       else if (sh.kind === 'epicotyl') { cr = 0.33; cg = 0.53; cb = 0.38; }
@@ -637,13 +667,30 @@ export class TreeView {
         const L = nl * (0.85 + 0.3 * rnd(sh.id, k, 13));
         // normála míří ven z koruny a vzhůru – chomáč jehlic se pak stínuje jako objem, ne jako plošky
         const N = nrm(rx * 0.7 + d[0] * 0.2, ry * 0.7 + d[1] * 0.2 + 0.65, rz * 0.7 + d[2] * 0.2);
+        const fs = fasc ? Math.min(0.2, 0.45 / Math.max(L, 0.1)) : 0; // pochva svazečku u báze
         for (let q = 0; q < perF; q++) {
           const sgn = perF === 1 ? 0 : q === 0 ? -0.1 : 0.1;
           const nx = d[0] * ca + rx * sa + tx * sgn, ny = d[1] * ca + ry * sa + ty * sgn - 0.06, nz = d[2] * ca + rz * sa + tz * sgn;
-          const a0 = nb.v(px - tx * nw * 0.5, py - ty * nw * 0.5, pz - tz * nw * 0.5, N[0], N[1], N[2], r * 0.7, gg * 0.7, b * 0.7);
-          const a1 = nb.v(px + tx * nw * 0.5, py + ty * nw * 0.5, pz + tz * nw * 0.5, N[0], N[1], N[2], r * 0.7, gg * 0.7, b * 0.7);
-          const a2 = nb.v(px + nx * L, py + ny * L, pz + nz * L, N[0], N[1], N[2], r * 1.15, gg * 1.15, b * 1.15);
-          nb.tri(a0, a1, a2); nb.tri(a0, a2, a1);
+          // každá jehlice má trochu jinou normálu – v protisvětle se pak lesknou jednotlivě
+          const jn = (rnd(sh.id, k, 14 + q) - 0.5) * 0.9;
+          const M = nrm(N[0] + tx * jn, N[1] + ty * jn, N[2] + tz * jn);
+          const hw = nw * 0.5;
+          const ring = (f: number, wd: number, cr2: number, cg2: number, cb2: number) => {
+            const qx = px + nx * L * f, qy = py + ny * L * f, qz = pz + nz * L * f;
+            const i0 = nb.v(qx - tx * hw * wd, qy - ty * hw * wd, qz - tz * hw * wd, M[0], M[1], M[2], cr2, cg2, cb2);
+            nb.v(qx + tx * hw * wd, qy + ty * hw * wd, qz + tz * hw * wd, M[0], M[1], M[2], cr2, cg2, cb2);
+            return i0;
+          };
+          const sheath = fs > 0 && !yellow;
+          const r0 = ring(0, 1, sheath ? 0.5 * nao : r * 0.7, sheath ? 0.4 * nao : gg * 0.7, sheath ? 0.27 * nao : b * 0.7);
+          const r1 = ring(fs || 0.12, 1, r * 0.72, gg * 0.72, b * 0.72);
+          const r2 = ring(0.74, 0.85, r * 1.05, gg * 1.05, b * 1.05);
+          const tp = nb.v(px + nx * L, py + ny * L, pz + nz * L, M[0], M[1], M[2], r * 1.2, gg * 1.2, b * 1.12);
+          for (const [p0, p1] of [[r0, r1], [r1, r2]]) {
+            nb.tri(p0, p0 + 1, p1 + 1); nb.tri(p0, p1 + 1, p1);
+            nb.tri(p0, p1 + 1, p0 + 1); nb.tri(p0, p1, p1 + 1);
+          }
+          nb.tri(r2, r2 + 1, tp); nb.tri(r2, tp, r2 + 1);
         }
       }
     }
