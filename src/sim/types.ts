@@ -77,6 +77,8 @@ export type Stage = 'seed' | 'growing' | 'dead';
 
 export interface State {
   seed: number;
+  /** verze pravidel růstu: 1 = původní, 2 = po úpravě misek, větvení a náhrady vrcholu */
+  rules: number;
   day: number; // absolutní den od 1. ledna roku 0
   gdd: number; // teplotní suma od začátku roku (°C·den nad +5 °C)
   nextId: number;

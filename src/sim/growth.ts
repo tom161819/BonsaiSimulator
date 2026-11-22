@@ -1,16 +1,18 @@
 // Růstové jádro: jeden krok = jeden den. Čistá funkce nad stavem, bez vazby na vykreslování.
 
 import type { Bud, BudKind, Shoot, State, Vec3 } from './types';
-import { P, POT, START_DOY, START_POT } from './params';
+import { P, POT, POT_GROWTH_V1, RULES_LATEST, START_DOY, START_POT } from './params';
 import { temperature } from './climate';
 import { computeLight } from './light';
 import {
   UP, YEAR, add, clamp, computeFrames, potCapFor, rootBoundFactor, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
 } from './util';
 
-export function createState(seed: number): State {
+const potGrowth = (s: State) => (s.rules >= 2 ? POT[s.pot].growth : POT_GROWTH_V1[s.pot]);
+
+export function createState(seed: number, rules = RULES_LATEST): State {
   return {
-    seed, day: START_DOY, gdd: 0, nextId: 1, pot: 'training', stage: 'seed', shoots: [],
+    seed, rules, day: START_DOY, gdd: 0, nextId: 1, pot: 'training', stage: 'seed', shoots: [],
     flushedYear: 0, budSetYear: -1, budSetGdd: 0, production: 0, budget: 0,
     roots: 0, potCap: potCapFor(START_POT), potId: START_POT, nebari: [], stress: 0, repotDay: START_DOY,
   };
@@ -54,7 +56,7 @@ function germinate(s: State) {
 function startEpicotyl(s: State, hyp: Shoot) {
   newShoot(s, {
     kind: 'epicotyl', parent: hyp.id, dir: norm(add(hyp.dir, [0, 0.4, 0])),
-    targetLen: (P.epicotylLen + rnd(s.seed, 2, 1)) * (0.6 + 0.4 * POT[s.pot].growth),
+    targetLen: (P.epicotylLen + rnd(s.seed, 2, 1)) * (0.6 + 0.4 * potGrowth(s)),
     needleCount: 24 + Math.floor(rnd(s.seed, 2, 2) * 10), needleLen: 2.0, area: Math.PI * 0.04 * 0.04,
   });
 }
@@ -110,8 +112,7 @@ function runBudSet(s: State) {
   let prod = 0;
   for (const sh of s.shoots) prod += ownFoliage(s, sh) * (0.25 + 0.75 * sh.light);
   s.production = prod;
-  const pot = POT[s.pot];
-  const G = prod * P.growthPerFoliage * pot.growth
+  const G = prod * P.growthPerFoliage * potGrowth(s)
     * rootBoundFactor(s) * (1 - P.stressGrowthLoss * Math.min(1, s.stress));
   s.budget = G;
 
@@ -142,7 +143,8 @@ function runBudSet(s: State) {
   // Vrcholy, na které vyjde méně než na životaschopný pupen, se vyřadí a rozpočet se rozdělí znovu mezi
   // zbylé – slabé pupeny zakrní ve prospěch silnějších, místo aby se energie stromu rozplynula.
   const Q = new Float64Array(n), V = new Float64Array(n);
-  for (let round = 0; round < 4; round++) {
+  const rounds = s.rules >= 2 ? 4 : 1; // přerozdělení rozpočtu zakrnělých pupenů je až v pravidlech v2
+  for (let round = 0; round < rounds; round++) {
     Q.fill(0); V.fill(0);
     for (let i = n - 1; i >= 0; i--) {
       for (const k of sinks[i]) Q[i] += k.w;
@@ -163,7 +165,7 @@ function runBudSet(s: State) {
       for (const k of sinks[i]) k.v = (V[i] * wSink(k)) / sum;
     }
     let dropped = 0;
-    if (round < 3) for (let i = 0; i < n; i++) {
+    if (round < rounds - 1) for (let i = 0; i < n; i++) {
       const keep = sinks[i].filter((k) => k.v >= P.minShoot);
       dropped += sinks[i].length - keep.length;
       sinks[i] = keep;
@@ -187,7 +189,7 @@ function expandSink(s: State, sh: Shoot, k: Sink, year: number) {
   if (k.kind === 'apex') {
     // terminální pupen + přeslen bočních; počet bočních roste s vitalitou vrcholu
     const maxN = o === 0 ? 6 : o === 1 ? 4 : 3;
-    const perN = o === 0 ? 3.0 : 2.0; // i krátký výhon větve se větví – bez toho by v misce nevznikalo jemné větvení
+    const perN = o === 0 ? 3.0 : s.rules >= 2 ? 2.0 : 3.5; // i krátký výhon větve se větví – bez toho by v misce nevznikalo jemné větvení
     const rho = o === 0 ? P.whorlRatioTrunk : P.whorlRatioBranch;
     let nl = 0;
     while (nl < maxN && k.v / (1 + rho * (nl + 1)) >= perN * (nl + 1)) nl++;
@@ -204,7 +206,7 @@ function expandSink(s: State, sh: Shoot, k: Sink, year: number) {
     }
   } else if (k.kind === 'pinch') {
     // po zaštípnutí/řezu: několik rovnocenných pupenů ze svazečků jehlic u řezu, bez dominantního terminálu
-    const nb = k.v < 0.9 ? 1 : Math.min(4, 2 + Math.floor(k.v / 7));
+    const nb = k.v < (s.rules >= 2 ? 0.9 : 1.5) ? 1 : Math.min(4, 2 + Math.floor(k.v / 7));
     const l = Math.min(cap, k.v / nb);
     for (let i = 0; i < nb; i++) {
       const dir = nb === 1 ? terminalDir(s, sh, salt + 10) : lateralDir(s, sh, i, nb, 0.42, salt + 40);

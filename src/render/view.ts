@@ -697,9 +697,9 @@ export class TreeView {
       if ((sh.wire || sh.scar) && len > 0.3) {
         // drát: měděná šroubovice o síle ~1/3 větve; po zarostlém drátu zůstane tmavá jizva
         const wr = sh.wire ? Math.max(0.035, rb / 3) : 0.02;
-        const pitch = Math.max(0.45, rb * 3.2 + wr * 2);
+        const pitch = Math.max(0.5, rb * 4 + wr * 2);
         const steps = Math.min(240, Math.max(8, Math.round((len / pitch) * 8)));
-        const [cr, cg, cb] = sh.wire ? (sh.scar ? [0.5, 0.3, 0.16] : [0.78, 0.48, 0.22]) : [0.27, 0.2, 0.16];
+        const [cr, cg, cb] = sh.wire ? (sh.scar ? [0.42, 0.26, 0.16] : [0.6, 0.36, 0.2]) : [0.3, 0.23, 0.19];
         wb.reserve((steps + 1) * 2, steps * 12);
         let prev = -1;
         for (let k = 0; k <= steps; k++) {
@@ -708,8 +708,9 @@ export class TreeView {
           const rr = radiusAt(t) + (sh.wire && !sh.scar ? wr * 0.7 : 0.012);
           const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
           const px = cx + nx * rr, py = cy + ny * rr, pz = cz + nz * rr;
-          const v0 = wb.v(px - d[0] * wr, py - d[1] * wr, pz - d[2] * wr, nx, ny, nz, cr, cg, cb);
-          wb.v(px + d[0] * wr, py + d[1] * wr, pz + d[2] * wr, nx, ny, nz, cr, cg, cb);
+          const hw2 = wr * 0.55; // drát je tenký proužek, ne široký pás
+          const v0 = wb.v(px - d[0] * hw2, py - d[1] * hw2, pz - d[2] * hw2, nx, ny, nz, cr, cg, cb);
+          wb.v(px + d[0] * hw2, py + d[1] * hw2, pz + d[2] * hw2, nx, ny, nz, cr, cg, cb);
           if (prev >= 0) {
             wb.tri(prev, prev + 1, v0); wb.tri(prev + 1, v0 + 1, v0);
             wb.tri(prev, v0, prev + 1); wb.tri(prev + 1, v0, v0 + 1);

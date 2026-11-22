@@ -2,7 +2,7 @@
 // datu se dopočítá přehráním simulace (se snapshoty po rocích kvůli rychlosti).
 
 import type { Action, ActionInput, State } from './types';
-import { MAX_YEARS, START_DOY } from './params';
+import { MAX_YEARS, RULES_LATEST, START_DOY } from './params';
 import { createState, step } from './growth';
 import { applyAction } from './actions';
 import { YEAR, doyOf } from './util';
@@ -16,10 +16,13 @@ export class Timeline {
   /** snapshoty stavu "ráno před zásahy" daného dne */
   private snaps = new Map<number, State>();
 
-  constructor(seed: number, actions: Action[] = []) {
+  readonly rules: number;
+
+  constructor(seed: number, actions: Action[] = [], rules = RULES_LATEST) {
+    this.rules = rules;
     this.seed = seed;
     this.actions = actions.slice().sort((a, b) => a.day - b.day);
-    this.state = createState(seed);
+    this.state = createState(seed, rules);
     this.snaps.set(this.state.day, structuredClone(this.state));
     this.applyAt(this.state.day);
   }

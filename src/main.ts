@@ -2,7 +2,7 @@
 
 import { Timeline } from './sim/timeline';
 import { TreeView, Pick } from './render/view';
-import { P, POT, POTS, MAX_YEARS, potById } from './sim/params';
+import { P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
 import { YEAR, bendLimit, breakRisk, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
@@ -12,7 +12,8 @@ import sampleThumbs from './sampleThumbs.json';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const SAVE = 'bonsai-simulator-v1';
-interface Save { seed: number; actions: Action[]; day: number }
+/** rules = verze pravidel růstu; hry uložené před zavedením verzí ji nemají a rostly podle v1 */
+interface Save { seed: number; actions: Action[]; day: number; rules?: number }
 
 function loadSave(): Save | null {
   const hot = (window as any).claude?.hot?.data;
@@ -36,14 +37,15 @@ let repotOpen = false;
 const view = new TreeView($<HTMLCanvasElement>('scene'));
 
 function start(save: Save | null) {
-  tl = new Timeline(save?.seed ?? Math.floor(Math.random() * 1e9), save?.actions ?? []);
+  tl = new Timeline(save?.seed ?? Math.floor(Math.random() * 1e9), save?.actions ?? [], save ? save.rules ?? 1 : RULES_LATEST);
+  $<HTMLSelectElement>('rules').value = String(tl.rules);
   if (save) tl.seek(save.day);
   view.recenter();
   refresh();
 }
 
 function persist() {
-  try { localStorage.setItem(SAVE, JSON.stringify({ seed: tl.seed, actions: tl.actions, day: tl.day })); } catch { /* bez uložení */ }
+  try { localStorage.setItem(SAVE, JSON.stringify({ seed: tl.seed, actions: tl.actions, day: tl.day, rules: tl.rules })); } catch { /* bez uložení */ }
 }
 
 // ---------------------------------------------------------------- texty
@@ -481,7 +483,7 @@ $('unwireAll').onclick = () => {
 };
 // --- sbírka: stromy uložené ve stavu, v jakém byly při přidání (semínko + deník zásahů do toho dne + portrét)
 const SHELF = 'bonsai-collection-v1';
-interface Kept { id: string; name: string; seed: number; actions: Action[]; day: number; thumb: string; height: number; savedAt: string }
+interface Kept { id: string; name: string; seed: number; actions: Action[]; day: number; thumb: string; height: number; savedAt: string; rules?: number }
 function loadShelf(): Kept[] {
   try { return JSON.parse(localStorage.getItem(SHELF) || '[]') as Kept[]; } catch { return []; }
 }
@@ -496,7 +498,7 @@ $('keep').onclick = () => {
   const list = loadShelf();
   const st = stats(s);
   list.push({
-    id: `${Date.now()}`, name: `Borovice lesní · ${yearOf(s.day) + 1}. rok`, seed: tl.seed,
+    id: `${Date.now()}`, name: `Borovice lesní · ${yearOf(s.day) + 1}. rok`, seed: tl.seed, rules: tl.rules,
     actions: tl.actions.filter((a) => a.day <= s.day), day: s.day, thumb: view.capture(), height: st.height, savedAt: new Date().toISOString(),
   });
   if (!saveShelf(list)) { flash('Sbírku se nepodařilo uložit – úložiště prohlížeče je plné nebo nedostupné.'); return; }
@@ -538,7 +540,7 @@ function renderSamples() {
     open.onclick = () => {
       if (Date.now() - armed > 10000) { armed = Date.now(); open.textContent = 'Nahradit rozpracovaný strom?'; return; }
       lastLogKey = '';
-      start({ seed: k.seed, actions: k.actions, day: k.day });
+      start({ seed: k.seed, actions: k.actions, day: k.day, rules: RULES_LATEST });
       buildTrack(); persist();
       $('shelf').hidden = true;
       flash('Strom je načtený i s deníkem – posuvníkem času si projdete, jak vznikal.');
@@ -572,7 +574,7 @@ function renderShelf() {
     name.onchange = () => { const l = loadShelf(); const x = l.find((y) => y.id === k.id); if (x) { x.name = name.value.trim() || k.name; saveShelf(l); } };
     const info = document.createElement('small');
     const na = k.actions.length;
-    info.textContent = `${fmtDate(k.day)} · ${cm(k.height)} · ${na} ${na === 1 ? 'zásah' : na >= 2 && na <= 4 ? 'zásahy' : 'zásahů'}`;
+    info.textContent = `${fmtDate(k.day)} · ${cm(k.height)} · ${na} ${na === 1 ? 'zásah' : na >= 2 && na <= 4 ? 'zásahy' : 'zásahů'} · pravidla v${k.rules ?? 1}`;
     const row = document.createElement('div');
     row.className = 'row';
     const open = document.createElement('button');
@@ -581,7 +583,7 @@ function renderShelf() {
     open.onclick = () => {
       if (Date.now() - armedOpen > 10000) { armedOpen = Date.now(); open.textContent = 'Nahradit rozpracovaný strom?'; return; }
       lastLogKey = '';
-      start({ seed: k.seed, actions: k.actions, day: k.day });
+      start({ seed: k.seed, actions: k.actions, day: k.day, rules: k.rules ?? 1 });
       buildTrack(); persist();
       $('shelf').hidden = true;
     };
@@ -600,6 +602,14 @@ function renderShelf() {
   }
 }
 $('shelfBtn').onclick = () => { playing = false; renderShelf(); $('shelf').hidden = false; refresh(); };
+// přepínač verze pravidel: strom se přepočítá od semínka podle zvolených pravidel (zásahy zůstávají)
+$<HTMLSelectElement>('rules').onchange = () => {
+  const rules = Number($<HTMLSelectElement>('rules').value);
+  lastLogKey = '';
+  start({ seed: tl.seed, actions: tl.actions, day: tl.day, rules });
+  buildTrack(); persist();
+  flash(`Strom přepočítán podle pravidel v${rules}. Zásahy, které v nich nenajdou svůj cíl, se neprovedou.`);
+};
 $('shelfClose').onclick = () => { $('shelf').hidden = true; };
 syncShelfBtn();
 
@@ -749,7 +759,7 @@ function loop(now: number) {
 }
 
 const hot = (window as any).claude?.hot;
-hot?.snapshot?.(() => ({ seed: tl.seed, actions: tl.actions, day: tl.day }));
+hot?.snapshot?.(() => ({ seed: tl.seed, actions: tl.actions, day: tl.day, rules: tl.rules }));
 start(loadSave());
 buildTrack();
 syncSpeed();

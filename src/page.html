@@ -47,7 +47,7 @@
     pointer-events: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 12px 14px; min-width: 0;
   }
-  #collection { grid-area: phases; justify-self: start; align-self: start; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px; }
+  #collection { grid-area: phases; justify-self: start; align-self: start; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px; max-width: calc(100% - 200px); }
   #phases { grid-area: phases; justify-self: end; align-self: start; width: 190px; }
   #phaseList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
   #phaseList li { padding: 4px 8px; border: 2px solid transparent; border-radius: 7px; color: var(--muted); font-size: 12.5px; line-height: 1.25; }
@@ -143,7 +143,7 @@
   #banner { grid-area: 1 / 1 / 2 / 4; place-self: center; text-align: center; max-width: 320px; }
   @media (max-width: 760px) {
     #ui { grid-template: "left" auto "bar" auto "right" 1fr "bottom" auto / 1fr; gap: 8px; }
-    #collection { grid-area: bar; }
+    #collection { grid-area: bar; max-width: 100%; }
     #right { align-self: end; justify-self: end; max-width: 100%; }
     #left .panel { padding: 8px 10px; } #date { font-size: 16px; }
     #stats, #diary, #hint, #phases, h1 i { display: none; }
@@ -184,6 +184,10 @@
     <button id="keep">Přidat do sbírky</button>
     <button id="shelfBtn">Moje sbírka</button>
     <button id="samplesBtn">Vzorová sbírka</button>
+    <select id="rules" aria-label="Verze pravidel růstu" title="Verze pravidel růstu. v1 = původní; v2 = miska strom uživí, slabé výhony se větví, seříznutý vrchol nahradí větev.">
+      <option value="2">Pravidla v2</option>
+      <option value="1">Pravidla v1</option>
+    </select>
   </div>
   <div class="panel" id="phases">
     <h2>Období roku</h2>

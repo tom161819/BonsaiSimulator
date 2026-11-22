@@ -113,6 +113,12 @@ Při ladění zahradníka se ukázaly a opravily tři slabiny modelu: strom v mi
 připadající na neživotaschopné pupeny se ztrácel (nově se přerozdělí mezi zbylé). Po seříznutí vrcholu navíc
 osu převezme nejsilnější boční větev a napřímí se.
 
+**Verze pravidel.** Protože strom je `f(semínko, zásahy, den)`, každá změna modelu růstu mění i už uložené
+stromy. Tři z výše uvedených oprav a náhrada vrcholu jsou proto vázané na verzi pravidel uloženou se hrou:
+v1 = původní chování, v2 = nové. Hry a stromy ve sbírce uložené před zavedením verzí rostou podle v1
+(ověřeno shodou s původním kódem), nová semínka podle v2; verzi lze u rozpracovaného stromu přepnout.
+Další změny modelu, které mají zachovat staré stromy, patří do nové verze pravidel.
+
 ## 4. Architektura
 
 ```

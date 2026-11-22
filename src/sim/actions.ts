@@ -33,6 +33,7 @@ function rotateSubtree(s: State, id: number, axis: Vec3, angle: number, skipOwnW
 /** Náhrada vrcholu: když osa přijde o své pokračování, převezme ji nejsilnější živá větev na tomtéž vrcholu.
  *  Stane se pokračováním osy (o řád níž i s celým svým větvením), takže se začne napřimovat jako vrchol. */
 function promoteSuccessor(s: State, parentId: number) {
+  if (s.rules < 2) return; // v původních pravidlech vrchol nikdo nepřevzal
   const tip = s.shoots.filter((x) => x.parent === parentId && x.attachT > 0.98 && !x.dead);
   if (!tip.length || tip.some((x) => x.isMain)) return;
   const best = tip.reduce((a, b) => (b.area * (1.2 + b.dir[1]) > a.area * (1.2 + a.dir[1]) ? b : a));
