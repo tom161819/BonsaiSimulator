@@ -7,6 +7,8 @@ import { MONTHS, dateOf } from './sim/climate';
 import { YEAR, bendLimit, breakRisk, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
 import { bendShoot } from './sim/actions';
+import samplesJson from './samples.json';
+import sampleThumbs from './sampleThumbs.json';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const SAVE = 'bonsai-simulator-v1';
@@ -502,7 +504,55 @@ $('keep').onclick = () => {
   flash('Strom je ve sbírce. Dál můžete pokračovat v pěstování.');
 };
 
+/** Vzorová sbírka: stromy vypěstované skriptem scripts/gardener.ts stejnými zásahy, jaké má hráč. */
+interface Sample { id: string; name: string; style: string; about: string; seed: number; day: number; height: number; trunk: number; actions: Action[] }
+const SAMPLES = samplesJson as unknown as Sample[];
+const THUMBS = sampleThumbs as Record<string, string>;
+
+function renderSamples() {
+  const bench = $('bench');
+  bench.innerHTML = '';
+  $('shelfTitle').textContent = 'Vzorová sbírka';
+  $('shelfEmpty').hidden = true;
+  $('shelfCount').textContent = 'stromy vypěstované ve hře, od semínka';
+  for (const k of SAMPLES) {
+    const el = document.createElement('div');
+    el.className = 'kept';
+    const img = document.createElement('img');
+    img.src = THUMBS[k.id] || ''; img.alt = `${k.name} – ${k.style}`;
+    const plank = document.createElement('div');
+    plank.className = 'plank';
+    const card = document.createElement('div');
+    card.className = 'card';
+    const title = document.createElement('b');
+    title.className = 'title'; title.textContent = `${k.name} · ${k.style}`;
+    const about = document.createElement('p');
+    about.textContent = k.about;
+    const info = document.createElement('small');
+    info.textContent = `${yearOf(k.day) + 1}. rok · ${cm(k.height)} · kmen ${k.trunk} mm · ${k.actions.length} zásahů`;
+    const row = document.createElement('div');
+    row.className = 'row';
+    const open = document.createElement('button');
+    open.textContent = 'Prohlédnout';
+    let armed = 0;
+    open.onclick = () => {
+      if (Date.now() - armed > 10000) { armed = Date.now(); open.textContent = 'Nahradit rozpracovaný strom?'; return; }
+      lastLogKey = '';
+      start({ seed: k.seed, actions: k.actions, day: k.day });
+      buildTrack(); persist();
+      $('shelf').hidden = true;
+      flash('Strom je načtený i s deníkem – posuvníkem času si projdete, jak vznikal.');
+    };
+    row.append(open);
+    card.append(title, about, info, row);
+    el.append(img, plank, card);
+    bench.appendChild(el);
+  }
+}
+$('samplesBtn').onclick = () => { playing = false; renderSamples(); $('shelf').hidden = false; refresh(); };
+
 function renderShelf() {
+  $('shelfTitle').textContent = 'Moje sbírka';
   const list = loadShelf();
   const bench = $('bench');
   bench.innerHTML = '';
@@ -552,6 +602,12 @@ function renderShelf() {
 $('shelfBtn').onclick = () => { playing = false; renderShelf(); $('shelf').hidden = false; refresh(); };
 $('shelfClose').onclick = () => { $('shelf').hidden = true; };
 syncShelfBtn();
+
+// háček pro skripty (tvorba vzorové sbírky, testy v prohlížeči): načtení hry a portrét z daného úhlu
+(window as any).bonsai = {
+  load: (save: Save) => { lastLogKey = ''; start(save); buildTrack(); },
+  capture: (theta?: number, w?: number, h?: number) => { if (theta !== undefined) view.theta = theta; return view.capture(w, h); },
+};
 
 let flashTimer = 0;
 function flash(text: string) {

@@ -24,13 +24,14 @@ Vývojový server běží na http://localhost:5173. `npm run build` vytvoří st
 | `npm test` | testy simulačního jádra (bez grafiky) |
 | `npm run calibrate -- 12` | tabulka růstu po letech pro půdu / nádobu / misku |
 | `npm run typecheck` | kontrola typů |
+| `npm run samples` | přepočítá vzorovou sbírku a její portréty (nutné po každé změně modelu růstu; potřebuje Playwright s Chromiem) |
 
 ## Ovládání
 
 - **Najetí myší** na výhon nebo pupen ukáže, co zásah udělá; **kliknutí** ho provede. Na dotykovém displeji ťuknutí vybere a tlačítko *Provést* potvrdí.
 - **Nástroj Drát:** posuvník *Tvar ohybu* volí ostrý zlom nebo plynulý oblouk; tažením za větev ji ohnete (zelený náhled = bezpečné, červený = hrozí prasknutí); kliknutí na nadrátovanou větev drát sundá.
 - **Přesadit…** otevře výběr z katalogu nádob (kelímek 0,5 l až kontejner 25 l, misky 0,2–12 l, volná půda), zakrácení kořenů, otočení a náklonu s živým náhledem.
-- **Přidat do sbírky** uloží strom v dnešním stavu; **Moje sbírka** ukáže uložené stromy na lavici, odkud jde v kterémkoli pokračovat. Sbírka se ukládá v prohlížeči.
+- **Přidat do sbírky** uloží strom v dnešním stavu; **Moje sbírka** ukáže uložené stromy na lavici, odkud jde v kterémkoli pokračovat. Sbírka se ukládá v prohlížeči. **Vzorová sbírka** obsahuje pět stromů v různých stylech, které hru „odehrál“ skript `scripts/gardener.ts`; každý jde otevřít a projít po časové ose.
 - Tažení mimo strom otáčí pohled, kolečko přibližuje, pravé tlačítko (nebo Shift + tažení) posouvá.
 - Mezerník spouští a zastavuje čas, Ctrl+Z vrací poslední zásah.
 - Posuvník času jde i dozadu. Zásah v minulosti přepíše pozdější zásahy v deníku.

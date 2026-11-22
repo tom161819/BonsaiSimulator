@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Timeline } from '../src/sim/timeline';
 import { YEAR, bendLimit, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
 import type { State, Vec3 } from '../src/sim/types';
+import samples from '../src/samples.json';
 
 const sig = (s: State) => JSON.stringify(s.shoots.map((x) => [x.id, x.parent, +x.len.toFixed(4), x.buds.length, x.dead]));
 const at = (y: number, doy: number) => y * YEAR + doy;
@@ -194,6 +195,26 @@ test('sundání všech drátů je jeden zásah a jde vrátit', () => {
   assert.equal(tl.state.shoots.filter((s) => s.wire).length, 0);
   tl.undo();
   assert.equal(tl.state.shoots.filter((s) => s.wire).length, 3);
+});
+
+test('po odstranění vrcholu převezme osu boční větev a napřímí se', () => {
+  const tl = new Timeline(3); tl.seek(at(5, 75));
+  const top = tl.state.shoots.filter((s) => s.order === 0 && s.isMain && !s.dead && s.bornYear === 4).pop()!;
+  tl.act({ type: 'cut', shoot: top.id, t: 0 });
+  const heir = tl.state.shoots.find((s) => s.parent === top.parent && s.isMain && !s.dead)!;
+  assert.ok(heir && heir.order === 0, 'větev se stala pokračováním kmene');
+  tl.seek(at(8, 300));
+  const lead = tl.state.shoots.filter((s) => s.order === 0 && s.isMain && !s.dead && s.bornYear === 8).pop()!;
+  assert.ok(lead.dir[1] > 0.9, `nový vrchol míří vzhůru (${lead.dir[1].toFixed(2)})`);
+});
+
+test('vzorová sbírka se přehraje do stejného stromu (po změně modelu růstu spusťte npm run samples)', () => {
+  assert.ok(samples.length >= 4);
+  for (const k of samples as { id: string; seed: number; day: number; height: number; actions: never[] }[]) {
+    const tl = new Timeline(k.seed, k.actions); tl.seek(k.day);
+    assert.equal(tl.state.stage, 'growing', k.id);
+    assert.ok(Math.abs(stats(tl.state).height - k.height) < 0.2, `${k.id}: výška ${stats(tl.state).height.toFixed(1)} místo ${k.height}`);
+  }
 });
 
 console.log(`\n${n} testů prošlo`);

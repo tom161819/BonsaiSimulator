@@ -30,6 +30,22 @@ function rotateSubtree(s: State, id: number, axis: Vec3, angle: number, skipOwnW
   }
 }
 
+/** Náhrada vrcholu: když osa přijde o své pokračování, převezme ji nejsilnější živá větev na tomtéž vrcholu.
+ *  Stane se pokračováním osy (o řád níž i s celým svým větvením), takže se začne napřimovat jako vrchol. */
+function promoteSuccessor(s: State, parentId: number) {
+  const tip = s.shoots.filter((x) => x.parent === parentId && x.attachT > 0.98 && !x.dead);
+  if (!tip.length || tip.some((x) => x.isMain)) return;
+  const best = tip.reduce((a, b) => (b.area * (1.2 + b.dir[1]) > a.area * (1.2 + a.dir[1]) ? b : a));
+  best.isMain = true;
+  const sub = new Set<number>();
+  for (const x of s.shoots) {
+    if (x.id !== best.id && !sub.has(x.parent)) continue;
+    sub.add(x.id);
+    x.order = Math.max(0, x.order - 1);
+    for (const b of x.buds) b.order = Math.max(0, b.order - 1);
+  }
+}
+
 /** Zaštípnutí svíčky / řez výhonu v místě t (0..1 jeho délky); t ≈ 0 odstraní celý výhon. */
 function cut(s: State, id: number, t: number) {
   const sh = s.shoots.find((x) => x.id === id);
@@ -42,6 +58,7 @@ function cut(s: State, id: number, t: number) {
   }
   if (t <= 0.02 && sh.parent >= 0) {
     removeSubtrees(s, new Set([id]));
+    if (sh.isMain) promoteSuccessor(s, sh.parent);
   } else {
     t = Math.max(t, 0.02);
     const gone = new Set<number>();
@@ -66,6 +83,8 @@ function cut(s: State, id: number, t: number) {
     sh.stimulus += 1;
   }
   updateDeath(s);
+  // pahýl bez jehlic odumřel – osu převezme větev pod ním
+  if (sh.dead && sh.isMain && sh.parent >= 0 && s.shoots.includes(sh)) promoteSuccessor(s, sh.parent);
 }
 
 /** Stočí vše, co na výhonu roste, o podíl úhlu podle místa nasazení na oblouku. */

@@ -101,6 +101,18 @@ fixace) jsou odhady zvolené tak, aby chování odpovídalo popsané praxi.
 
 Číselné hodnoty těchto čtyř jevů jsou odhady modelu, bez opory v rešerši.
 
+## 3d. Vzorová sbírka a „zahradník“
+
+`scripts/gardener.ts` hraje hru stejnými zásahy, jaké má hráč, podle postupu běžného u borovic:
+roky ve volné půdě, koruna držená od mládí kompaktní zaštipováním, kmen zesílený jednou obětní větví,
+výběr větví z přeslenů, drátování kmene a větví, přesazení do misky a pravidelné zakracování kořenů.
+Vzniklé uložené hry (semínko + deník) jsou ve `src/samples.json`; test hlídá, že se přehrají do stejného stromu.
+
+Při ladění zahradníka se ukázaly a opravily tři slabiny modelu: strom v misce chřadl i při rozumné péči
+(účinnost misky 0,5 → 0,75), slabé výhony se nevětvily (větev se větví už od 2 cm na boční výhon) a rozpočet
+připadající na neživotaschopné pupeny se ztrácel (nově se přerozdělí mezi zbylé). Po seříznutí vrcholu navíc
+osu převezme nejsilnější boční větev a napřímí se.
+
 ## 4. Architektura
 
 ```

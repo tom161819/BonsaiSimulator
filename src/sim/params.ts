@@ -101,8 +101,8 @@ export const P = {
  *  needle = vliv na délku jehlic. */
 export const POT: Record<PotType, { name: string; growth: number; needle: number }> = {
   ground: { name: 'Volná půda', growth: 1.0, needle: 1.0 },
-  training: { name: 'Pěstební nádoba', growth: 0.85, needle: 0.9 },
-  bonsai: { name: 'Bonsajová miska', growth: 0.5, needle: 0.72 },
+  training: { name: 'Pěstební nádoba', growth: 0.9, needle: 0.9 },
+  bonsai: { name: 'Bonsajová miska', growth: 0.75, needle: 0.72 },
 };
 
 /** Katalog nádob. Velikost se sama nemění – nádobu volí pěstitel při přesazení.

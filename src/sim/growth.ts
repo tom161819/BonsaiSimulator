@@ -138,25 +138,37 @@ function runBudSet(s: State) {
     sh.stimulus = 0;
   }
 
-  // Borchert–Honda: Q se sčítá od vrcholů ke kořeni, rozpočet se dělí od kořene k vrcholům
+  // Borchert–Honda: Q se sčítá od vrcholů ke kořeni, rozpočet se dělí od kořene k vrcholům.
+  // Vrcholy, na které vyjde méně než na životaschopný pupen, se vyřadí a rozpočet se rozdělí znovu mezi
+  // zbylé – slabé pupeny zakrní ve prospěch silnějších, místo aby se energie stromu rozplynula.
   const Q = new Float64Array(n), V = new Float64Array(n);
-  for (let i = n - 1; i >= 0; i--) {
-    for (const k of sinks[i]) Q[i] += k.w;
-    const sh = s.shoots[i];
-    if (sh.parent >= 0 && !sh.dead) Q[idx.get(sh.parent)!] += Q[i];
-  }
-  for (let i = 0; i < n; i++) {
-    const sh = s.shoots[i];
-    if (sh.dead) continue;
-    if (sh.parent < 0) V[i] = G;
-    const wKid = (c: number) => (s.shoots[c].isMain ? 1 - P.lambdaLateral : P.lambdaLateral) * Math.pow(Q[c], P.sinkExp);
-    const wSink = (k: Sink) => (k.kind === 'apex' ? 1 - P.lambdaLateral : P.lambdaLateral) * Math.pow(k.w, P.sinkExp);
-    let sum = 0;
-    for (const c of kids[i]) sum += wKid(c);
-    for (const k of sinks[i]) sum += wSink(k);
-    if (sum <= 0) continue;
-    for (const c of kids[i]) V[c] = (V[i] * wKid(c)) / sum;
-    for (const k of sinks[i]) k.v = (V[i] * wSink(k)) / sum;
+  for (let round = 0; round < 4; round++) {
+    Q.fill(0); V.fill(0);
+    for (let i = n - 1; i >= 0; i--) {
+      for (const k of sinks[i]) Q[i] += k.w;
+      const sh = s.shoots[i];
+      if (sh.parent >= 0 && !sh.dead) Q[idx.get(sh.parent)!] += Q[i];
+    }
+    for (let i = 0; i < n; i++) {
+      const sh = s.shoots[i];
+      if (sh.dead) continue;
+      if (sh.parent < 0) V[i] = G;
+      const wKid = (c: number) => (s.shoots[c].isMain ? 1 - P.lambdaLateral : P.lambdaLateral) * Math.pow(Q[c], P.sinkExp);
+      const wSink = (k: Sink) => (k.kind === 'apex' ? 1 - P.lambdaLateral : P.lambdaLateral) * Math.pow(k.w, P.sinkExp);
+      let sum = 0;
+      for (const c of kids[i]) sum += wKid(c);
+      for (const k of sinks[i]) sum += wSink(k);
+      if (sum <= 0) continue;
+      for (const c of kids[i]) V[c] = (V[i] * wKid(c)) / sum;
+      for (const k of sinks[i]) k.v = (V[i] * wSink(k)) / sum;
+    }
+    let dropped = 0;
+    if (round < 3) for (let i = 0; i < n; i++) {
+      const keep = sinks[i].filter((k) => k.v >= P.minShoot);
+      dropped += sinks[i].length - keep.length;
+      sinks[i] = keep;
+    }
+    if (!dropped) break;
   }
 
   for (let i = 0; i < n; i++) for (const k of sinks[i]) expandSink(s, s.shoots[i], k, year);
@@ -175,7 +187,7 @@ function expandSink(s: State, sh: Shoot, k: Sink, year: number) {
   if (k.kind === 'apex') {
     // terminální pupen + přeslen bočních; počet bočních roste s vitalitou vrcholu
     const maxN = o === 0 ? 6 : o === 1 ? 4 : 3;
-    const perN = o === 0 ? 3.0 : 3.5;
+    const perN = o === 0 ? 3.0 : 2.0; // i krátký výhon větve se větví – bez toho by v misce nevznikalo jemné větvení
     const rho = o === 0 ? P.whorlRatioTrunk : P.whorlRatioBranch;
     let nl = 0;
     while (nl < maxN && k.v / (1 + rho * (nl + 1)) >= perN * (nl + 1)) nl++;
@@ -192,7 +204,7 @@ function expandSink(s: State, sh: Shoot, k: Sink, year: number) {
     }
   } else if (k.kind === 'pinch') {
     // po zaštípnutí/řezu: několik rovnocenných pupenů ze svazečků jehlic u řezu, bez dominantního terminálu
-    const nb = k.v < 1.5 ? 1 : Math.min(4, 2 + Math.floor(k.v / 7));
+    const nb = k.v < 0.9 ? 1 : Math.min(4, 2 + Math.floor(k.v / 7));
     const l = Math.min(cap, k.v / nb);
     for (let i = 0; i < nb; i++) {
       const dir = nb === 1 ? terminalDir(s, sh, salt + 10) : lateralDir(s, sh, i, nb, 0.42, salt + 40);
