@@ -416,6 +416,13 @@ slider.oninput = () => { playing = false; go(Number(slider.value)); };
 for (const b of $('toolSeg').querySelectorAll('button')) {
   b.onclick = () => { tool = b.dataset.tool as 'cut' | 'wire'; canvas.style.cursor = tool === 'wire' ? 'grab' : 'crosshair'; setHover(null); refresh(); };
 }
+// najetí na tlačítko Drát nebo na řádek „Dráty“ zvýrazní všechny dráty na stromu
+for (const el of [$('tool-wire'), $('sWires'), $('sWires').previousElementSibling as HTMLElement]) {
+  el.addEventListener('pointerenter', () => view.showWires(true));
+  el.addEventListener('pointerleave', () => view.showWires(false));
+  el.addEventListener('focus', () => view.showWires(true));
+  el.addEventListener('blur', () => view.showWires(false));
+}
 let flashTimer = 0;
 function flash(text: string) {
   const el = $('banner');

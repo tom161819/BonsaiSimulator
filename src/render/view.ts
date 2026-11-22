@@ -76,6 +76,9 @@ export class TreeView {
   private needles = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
   private hi = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff3b1f, depthTest: false, transparent: true }));
   private marker = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ color: 0xff3b1f, depthTest: false, transparent: true }));
+  private wireLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd21f, depthTest: false, transparent: true }));
+  private wireDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: 0xffd21f, size: 7, sizeAttenuation: false, depthTest: false, transparent: true }));
+  private wiresOn = false;
   private potGroup = new THREE.Group();
   private tree = new THREE.Group();
   private potKey = '';
@@ -103,6 +106,9 @@ export class TreeView {
     sun.position.set(0.5, 1, 0.35);
     this.scene.add(sun);
     this.hi.renderOrder = 10; this.marker.renderOrder = 11;
+    this.wireLines.renderOrder = 8; this.wireDots.renderOrder = 9;
+    this.wireLines.visible = false; this.wireDots.visible = false;
+    this.scene.add(this.wireLines, this.wireDots);
     this.hi.visible = false; this.marker.visible = false;
     this.seedMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.8 }));
     this.seedMesh.scale.set(0.22, 0.12, 0.14);
@@ -225,6 +231,37 @@ export class TreeView {
   setState(s: State) {
     this.state = s;
     this.build();
+    if (this.wiresOn) this.showWires(true);
+  }
+
+  /** Zvýrazní všechny nadrátované výhony (svítivá čára s body podél drátu, viditelná i skrz jehlice). */
+  showWires(on: boolean) {
+    this.wiresOn = on;
+    const s = this.state, fr = this.frames;
+    const lines: number[] = [], dots: number[] = [];
+    if (on && s && fr) {
+      for (let i = 0; i < s.shoots.length; i++) {
+        const sh = s.shoots[i];
+        if (!sh.wire) continue;
+        const seg = Math.max(sh.arc ? 12 : 4, Math.min(24, Math.round(sh.len / 1.5)));
+        let p = [fr.base[i * 3], fr.base[i * 3 + 1], fr.base[i * 3 + 2]];
+        dots.push(...p);
+        for (let k = 1; k <= seg; k++) {
+          const q = shootPoint(sh, k / seg);
+          const n = [fr.base[i * 3] + q[0], fr.base[i * 3 + 1] + q[1], fr.base[i * 3 + 2] + q[2]];
+          lines.push(...p, ...n);
+          dots.push(...n);
+          p = n;
+        }
+      }
+    }
+    for (const [obj, pts] of [[this.wireLines, lines], [this.wireDots, dots]] as [THREE.Object3D & { geometry: THREE.BufferGeometry }, number[]][]) {
+      obj.geometry.dispose();
+      obj.geometry = new THREE.BufferGeometry();
+      obj.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      obj.visible = pts.length > 0;
+    }
+    this.needsRender = true;
   }
 
   private build() {
