@@ -1,0 +1,172 @@
+<title>Bonsai Simulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+  /* Rozvržení: celoplošná 3D scéna, nad ní plovoucí panely – vlevo stav stromu, vpravo deník, dole časová osa. */
+  :root {
+    --sky-a: #c9d9d8; --sky-b: #edf1ea;
+    --panel: rgba(248, 251, 248, 0.86); --panel-solid: #f8fbf8;
+    --fg: #17231d; --muted: #55655c; --line: rgba(23, 35, 29, 0.14);
+    --accent: #2c6a48; --accent-fg: #ffffff; --bark: #a9562a; --danger: #b8321c;
+    --spring: #9ccf6a; --summer: #f1c453; --autumn: #d9773a; --winter: #9db7d6;
+    --display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+    --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --sky-a: #0f1917; --sky-b: #22322c;
+      --panel: rgba(20, 30, 26, 0.84); --panel-solid: #141e1a;
+      --fg: #e6efe9; --muted: #9db0a5; --line: rgba(230, 239, 233, 0.16);
+      --accent: #74c79a; --accent-fg: #0d1a14; --bark: #e39a66; --danger: #ff8a70;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --sky-a: #0f1917; --sky-b: #22322c;
+    --panel: rgba(20, 30, 26, 0.84); --panel-solid: #141e1a;
+    --fg: #e6efe9; --muted: #9db0a5; --line: rgba(230, 239, 233, 0.16);
+    --accent: #74c79a; --accent-fg: #0d1a14; --bark: #e39a66; --danger: #ff8a70;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    background: linear-gradient(var(--sky-a), var(--sky-b)); color: var(--fg);
+    font: 14px/1.45 var(--body); overflow: hidden; position: relative;
+  }
+  #season { position: absolute; inset: 0; background: var(--season, transparent); opacity: 0.1; pointer-events: none; transition: background 1.2s; }
+  #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+  #ui {
+    position: absolute; inset: 0; pointer-events: none; display: grid; gap: 10px;
+    grid-template: "left . right" 1fr "bottom bottom bottom" auto / minmax(0, 300px) 1fr minmax(0, 270px);
+    padding-block: 12px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .panel {
+    pointer-events: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 12px 14px; min-width: 0;
+  }
+  #left { grid-area: left; align-self: start; display: flex; flex-direction: column; gap: 10px; }
+  #right { grid-area: right; align-self: start; display: flex; flex-direction: column; gap: 10px; max-height: 100%; min-height: 0; }
+  #bottom { grid-area: bottom; display: flex; flex-direction: column; gap: 8px; }
+  h1 { font: 600 17px/1.2 var(--display); margin: 0; letter-spacing: -0.01em; }
+  h1 i { font: 400 12px var(--body); color: var(--muted); display: block; margin-top: 2px; }
+  h2 { font: 600 11px var(--body); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 6px; }
+  #date { font: 600 20px/1.2 var(--display); font-variant-numeric: tabular-nums; }
+  #phase { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  #phase b { font-weight: 600; color: var(--accent); }
+  #hint { color: var(--muted); font-size: 12.5px; }
+  dl { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; margin: 0; font-variant-numeric: tabular-nums; }
+  dt { color: var(--muted); } dd { margin: 0; font-weight: 500; text-align: right; }
+  button, select {
+    font: 500 13px var(--body); color: var(--fg); background: transparent; border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 10px; cursor: pointer; min-height: 32px;
+  }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button[aria-pressed="true"], button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .seg { display: flex; } .seg button { border-radius: 0; flex: 1; padding-inline: 6px; }
+  .seg button:first-child { border-radius: 7px 0 0 7px; } .seg button:last-child { border-radius: 0 7px 7px 0; }
+  .seg button + button { border-left: 0; }
+  #log { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+  #log li button { width: 100%; text-align: left; border: 0; padding: 5px 6px; min-height: 0; font-weight: 400; }
+  #log li button span { display: block; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  #log li.future button { opacity: 0.45; }
+  #log li.empty { color: var(--muted); font-size: 12.5px; padding: 2px 0; }
+  #diary { display: flex; flex-direction: column; min-height: 0; }
+  #play { min-width: 44px; font-size: 15px; }
+  #track { position: relative; padding-bottom: 16px; }
+  #slider { width: 100%; margin: 0; accent-color: var(--accent); display: block; }
+  #years { position: absolute; left: 8px; right: 8px; bottom: 0; height: 14px; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
+  #years span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  #marks { position: absolute; left: 8px; right: 8px; top: -3px; height: 4px; pointer-events: none; }
+  #marks i { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: var(--bark); transform: translateX(-50%); }
+  #tip {
+    position: absolute; pointer-events: none; max-width: 260px; background: var(--panel-solid); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 6px; padding: 7px 10px; font-size: 12.5px; z-index: 5;
+  }
+  #tip.danger { border-left-color: var(--danger); }
+  #tip b { display: block; font-size: 13px; }
+  #tip em { font-style: normal; color: var(--danger); display: block; }
+  #tip button { pointer-events: auto; margin-top: 6px; }
+  #banner { grid-area: 1 / 1 / 2 / 4; place-self: center; text-align: center; max-width: 320px; }
+  @media (max-width: 760px) {
+    #ui { grid-template: "left" auto "right" 1fr "bottom" auto / 1fr; gap: 8px; }
+    #right { align-self: end; justify-self: end; max-width: 100%; }
+    #left .panel { padding: 8px 10px; } #date { font-size: 16px; }
+    #stats, #diary, #hint, h1 i { display: none; }
+    body.more #stats, body.more #diary, body.more #hint { display: grid; } body.more #diary { display: flex; max-height: 30vh; }
+    #banner { grid-area: 2 / 1; }
+  }
+  @media (min-width: 761px) { #moreBtn { display: none; } }
+  @media (prefers-reduced-motion: reduce) { #season { transition: none; } }
+</style>
+
+<div id="season"></div>
+<canvas id="scene" aria-label="3D pohled na strom"></canvas>
+<div id="ui">
+  <div id="left">
+    <div class="panel">
+      <h1>Borovice lesní <i>Pinus sylvestris · ze semínka</i></h1>
+    </div>
+    <div class="panel">
+      <div id="date">–</div>
+      <div id="phase"><b id="phaseName"></b></div>
+      <div id="hint"></div>
+    </div>
+    <div class="panel" id="stats">
+      <dl>
+        <dt>Výška</dt><dd id="sHeight">–</dd>
+        <dt>Průměr kmene u země</dt><dd id="sDia">–</dd>
+        <dt>Živé výhony</dt><dd id="sShoots">–</dd>
+        <dt>Pupeny</dt><dd id="sBuds">–</dd>
+        <dt>Jehlice</dt><dd id="sNeedles">–</dd>
+        <dt>Teplotní suma</dt><dd id="sGdd">–</dd>
+      </dl>
+    </div>
+  </div>
+  <div id="right">
+    <div class="panel">
+      <h2>Kde strom roste</h2>
+      <div class="seg" id="pots">
+        <button id="pot-ground" data-pot="ground">Půda</button>
+        <button id="pot-training" data-pot="training">Nádoba</button>
+        <button id="pot-bonsai" data-pot="bonsai">Miska</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="undo">Vrátit zásah</button>
+        <button id="center">Vycentrovat</button>
+        <button id="moreBtn">Více</button>
+        <button id="reset">Nové semínko</button>
+      </div>
+    </div>
+    <div class="panel" id="diary">
+      <h2>Deník zásahů</h2>
+      <ul id="log"></ul>
+    </div>
+  </div>
+  <div class="panel" id="banner" hidden></div>
+  <div class="panel" id="bottom">
+    <div class="row">
+      <button id="play" class="primary" aria-label="Spustit čas">▶</button>
+      <div class="seg" id="speeds">
+        <button id="sp-1" data-speed="1">den/s</button>
+        <button id="sp-7" data-speed="7">týden/s</button>
+        <button id="sp-30" data-speed="30">měsíc/s</button>
+        <button id="sp-180" data-speed="180">půlrok/s</button>
+      </div>
+      <button id="j-7" data-jump="7">+ týden</button>
+      <button id="j-30" data-jump="30">+ měsíc</button>
+      <button id="j-spring">Další jaro</button>
+      <button id="j-365" data-jump="365">+ rok</button>
+    </div>
+    <div id="track">
+      <div id="marks"></div>
+      <input type="range" id="slider" aria-label="Časová osa">
+      <div id="years"></div>
+    </div>
+  </div>
+</div>
+<div id="tip" hidden></div>
+<script src="app.js"></script>
