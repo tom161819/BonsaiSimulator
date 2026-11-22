@@ -226,7 +226,7 @@ export class TreeView {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBark = aBark;');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', 'varying float vBark;\n#include <common>')
-        .replace('#include <map_fragment>', '#ifdef USE_MAP\n diffuseColor.rgb *= mix(vec3(0.8), texture2D(map, vMapUv).rgb * 1.3, vBark);\n#endif')
+        .replace('#include <map_fragment>', '#ifdef USE_MAP\n diffuseColor.rgb *= mix(vec3(1.0), texture2D(map, vMapUv).rgb * 1.3, vBark);\n#endif')
         .replace('#include <normal_fragment_maps>', THREE.ShaderChunk.normal_fragment_maps.replace('dHdxy_fwd(), faceDirection', 'dHdxy_fwd() * vBark, faceDirection'));
     };
     this.bark = new THREE.Mesh(new THREE.BufferGeometry(), barkMat);
@@ -506,6 +506,16 @@ export class TreeView {
     const shedSeason = doy >= P.shedStartDoy && doy < P.shedEndDoy + 20;
     const R0 = n ? radiusOf(s.shoots[0]) : 0;
     const zone = 2.6 * R0 * smooth((R0 - 0.12) / 0.5);
+    // barva dřeva a síla borky každého výhonu; v kloubech se prolínají se sousedem, aby přechod nebyl skokem
+    const C = new Float32Array(n * 3), BK = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const sh = s.shoots[i];
+      woodColor(s, sh, col);
+      const ao = sh.dead ? 1 : 0.8 + 0.2 * sh.light;
+      C[i * 3] = col[0] * ao; C[i * 3 + 1] = col[1] * ao; C[i * 3 + 2] = col[2] * ao;
+      const ag = year - sh.bornYear;
+      BK[i] = sh.dead || ag < 2 ? 0 : smooth((ag - 1.5) / 5) * (0.6 + 0.4 * smooth(radiusOf(sh) / 1.2));
+    }
     const endTan = (sh: Shoot): Vec3 => (sh.arc ? rotate(sh.dir, sh.arc.axis, sh.arc.angle) : sh.dir);
     const nrm = (x: number, y: number, z: number): Vec3 => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
 
@@ -555,8 +565,16 @@ export class TreeView {
       let rb = radiusOf(sh);
       if (sh.elong && sh.targetLen > 0) rb *= 0.55 + 0.45 * (len / sh.targetLen);
       const rt = sh.dead ? rb * 0.6 : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
-      woodColor(s, sh, col);
-      const ao = sh.dead ? 1 : 0.8 + 0.2 * sh.light;
+      col[0] = C[i * 3]; col[1] = C[i * 3 + 1]; col[2] = C[i * 3 + 2];
+      // sousedé v ose: úsek, na který navazuji, a úsek, který navazuje na mě
+      const pj = sh.isMain && sh.attachT > 0.98 && sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;
+      const kj = mainKid[i];
+      const mixAt = (t: number, own: number, a: number, b: number) => {
+        const lo = pj >= 0 ? (own + a) / 2 : own, hi = kj >= 0 ? (own + b) / 2 : own;
+        return t < 0.5 ? lo + (own - lo) * smooth(t * 2) : own + (hi - own) * smooth(t * 2 - 1);
+      };
+      const colorAt = (t: number, ch: number) => mixAt(t, col[ch], pj >= 0 ? C[pj * 3 + ch] : 0, kj >= 0 ? C[kj * 3 + ch] : 0);
+      const barkAt = (t: number) => mixAt(t, BK[i], pj >= 0 ? BK[pj] : 0, kj >= 0 ? BK[kj] : 0);
       // kořenové náběhy u země a límec v nasazení větve
       const onTrunk = i === 0 || (sh.order === 0 && sh.isMain);
       const inZone = onTrunk && by < zone && zone > 0.2;
@@ -577,9 +595,8 @@ export class TreeView {
       };
 
       if (len > 0.01) {
-        const isBark = !sh.dead && age >= 2;
-        const barkAmt = isBark ? smooth((age - 1.5) / 5) * (0.6 + 0.4 * smooth(rb / 1.2)) : 0;
-        const B = isBark ? bb : wb;
+        const isBark = BK[i] > 0;
+        const B = bb; // všechno dřevo v jedné síti – hladké i rozpraskané se liší jen sílou borky ve vrcholech
         const RN = rb < 0.25 ? 6 : rb < 0.8 ? 8 : rb < 2 ? 12 : 16;
         const ts: number[] = [0];
         if (collar && tc > 0.02) ts.push(tc * 0.2, tc * 0.45, tc * 0.7, tc);
@@ -609,7 +626,7 @@ export class TreeView {
           let r = radiusAt(t);
           if (inZone && cy < zone) { const f = 1 - Math.max(0, cy) / zone; r *= 1 + 0.6 * f * f; }
           const stretch = collar && t < tc ? 0.9 * (1 - t / tc) * (1 - t / tc) : 0;
-          const shade = (isBark ? 1 : 0.9 + 0.2 * rnd(sh.id, 5, q)) * ao;
+          const c0 = colorAt(t, 0), c1 = colorAt(t, 1), c2 = colorAt(t, 2), bk = barkAt(t);
           const first = B.nv;
           for (let k = 0; k <= RN; k++) {
             const a = (k / RN) * 6.2832, km = k % RN;
@@ -617,8 +634,8 @@ export class TreeView {
             const rr = r * (1 + rough * (rnd(sh.id, km, q + 20) - 0.5) * 2);
             // protažení límce podél mateřské osy
             const al = stretch ? (nx * pd[0] + ny * pd[1] + nz * pd[2]) * rr * stretch : 0;
-            B.v(cx + nx * rr + pd[0] * al, cy + ny * rr + pd[1] * al, cz + nz * rr + pd[2] * al, nx, ny, nz, col[0] * shade, col[1] * shade, col[2] * shade);
-            B.t((k / RN) * tiles, v0 + (t * len) / (tile * 2), barkAmt);
+            B.v(cx + nx * rr + pd[0] * al, cy + ny * rr + pd[1] * al, cz + nz * rr + pd[2] * al, nx, ny, nz, c0, c1, c2);
+            B.t((k / RN) * tiles, v0 + (t * len) / (tile * 2), bk);
           }
           if (prev >= 0) for (let k = 0; k < RN; k++) {
             B.tri(prev + k, prev + k + 1, first + k); B.tri(prev + k + 1, first + k + 1, first + k);
@@ -627,8 +644,8 @@ export class TreeView {
         }
         const cut = sh.tipCut && !sh.elong ? 0.2 : 0.8;
         const c = B.v(cx + d[0] * rt * cut, cy + d[1] * rt * cut, cz + d[2] * rt * cut, d[0], d[1], d[2],
-          sh.tipCut ? 0.8 : col[0] * ao, sh.tipCut ? 0.7 : col[1] * ao, sh.tipCut ? 0.5 : col[2] * ao);
-        B.t(0.5, v0 + len / (tile * 2), barkAmt);
+          sh.tipCut ? 0.8 : colorAt(1, 0), sh.tipCut ? 0.7 : colorAt(1, 1), sh.tipCut ? 0.5 : colorAt(1, 2));
+        B.t(0.5, v0 + len / (tile * 2), sh.tipCut ? 0 : barkAt(1));
         for (let k = 0; k < RN; k++) B.tri(prev + k, prev + k + 1, c);
       }
 
