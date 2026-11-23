@@ -700,13 +700,17 @@ export class TreeView {
 
   /** Který nástroj na stole leží pod kurzorem (souřadnice plátna). */
   pickTool(x: number, y: number): 'cut' | 'wire' | null {
-    const W = this.canvas.clientWidth, Hh = this.canvas.clientHeight, v = new THREE.Vector3();
+    const W = this.canvas.clientWidth, Hh = this.canvas.clientHeight, v = new THREE.Vector3(), e = new THREE.Vector3();
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
     for (const [g, id] of [[this.toolScissors, 'cut'], [this.toolWire, 'wire']] as [THREE.Group, 'cut' | 'wire'][]) {
       if (!g.visible) continue;
       v.copy(g.position).project(this.camera);
-      if (v.z > 1) continue;
-      const rad = Math.max(22, ((g.scale.x * 0.45) / this.dist) * Hh * 1.75);
-      if (Math.hypot((v.x * 0.5 + 0.5) * W - x, (-v.y * 0.5 + 0.5) * Hh - y) < rad) return id;
+      if (v.z > 1 || v.z < -1) continue; // za kamerou nebo mimo dohled
+      const sx = (v.x * 0.5 + 0.5) * W, sy = (-v.y * 0.5 + 0.5) * Hh;
+      // skutečná velikost nástroje na obrazovce: promítnutý bod na jeho okraji
+      e.copy(g.position).addScaledVector(right, g.scale.x * 0.4).project(this.camera);
+      const rad = Math.min(90, Math.max(14, Math.abs((e.x * 0.5 + 0.5) * W - sx)));
+      if (Math.hypot(sx - x, sy - y) < rad) return id;
     }
     return null;
   }

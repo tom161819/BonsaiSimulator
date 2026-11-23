@@ -452,7 +452,8 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
   if (e.pointerType === 'mouse' && !repotOpen) {
-    const onTool = view.pickTool(e.offsetX, e.offsetY);
+    const pTree = view.pick(e.offsetX, e.offsetY);
+    const onTool = pTree ? null : view.pickTool(e.offsetX, e.offsetY);
     if (onTool) {
       setHover(null);
       canvas.style.cursor = 'pointer';
@@ -462,7 +463,7 @@ canvas.addEventListener('pointermove', (e) => {
       return;
     }
     canvas.style.cursor = tool === 'wire' ? 'grab' : 'crosshair';
-    const p = view.pick(e.offsetX, e.offsetY);
+    const p = pTree;
     setHover(p ? describe(p) : null, e.clientX, e.clientY);
   }
 });
@@ -488,9 +489,10 @@ const up = (e: PointerEvent) => {
   }
   bend = null;
   if (!wasTap || repotOpen) return;
-  const onTool = view.pickTool(e.offsetX, e.offsetY);
-  if (onTool) { setTool(onTool); return; }
   const p = view.pick(e.offsetX, e.offsetY);
+  // strom má přednost; nářadí na stole se volí jen tam, kde pod kurzorem není výhon ani pupen
+  const onTool = p ? null : view.pickTool(e.offsetX, e.offsetY);
+  if (onTool) { setTool(onTool); return; }
   const d = p ? describe(p) : null;
   if (e.pointerType === 'mouse') { if (d) doAction(d); }
   else setHover(d, e.clientX, e.clientY, true);
