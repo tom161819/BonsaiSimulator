@@ -304,4 +304,17 @@ test('v5: modřín ve velké nádobě je v pěti letech vyšší než metr; ve v
   assert.ok(h(4) < 60, `v4: ${h(4).toFixed(0)} cm`);
 });
 
+test('sundání zarůstajících drátů nechá ostatní dráty na místě', () => {
+  const tl = new Timeline(3, [], 3); tl.seek(at(5, 320));
+  const old = tl.state.shoots.find((s) => s.order === 1 && !s.dead && !s.elong)!;
+  tl.act({ type: 'wire', shoot: old.id, axis: [0, 0, 1], angle: 0.2 });
+  tl.seek(at(8, 320));
+  const fresh = tl.state.shoots.find((s) => s.order === 1 && !s.dead && !s.elong && !s.wire && s.bornYear === 7)!;
+  tl.act({ type: 'wire', shoot: fresh.id, axis: [0, 0, 1], angle: 0.2 });
+  assert.ok(tl.state.shoots.find((s) => s.id === old.id)!.scar, 'starý drát zarůstá');
+  tl.act({ type: 'unwireAll', only: 'biting' });
+  assert.equal(tl.state.shoots.find((s) => s.id === old.id)!.wire, null);
+  assert.ok(tl.state.shoots.find((s) => s.id === fresh.id)!.wire, 'nový drát zůstal');
+});
+
 console.log(`\n${n} testů prošlo`);

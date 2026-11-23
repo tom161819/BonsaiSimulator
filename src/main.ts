@@ -328,6 +328,12 @@ function refresh() {
   if (repotOpen) updateRepot();
   $('wireOpts').hidden = tool !== 'wire';
   $<HTMLButtonElement>('unwireAll').disabled = !s.shoots.some((x) => x.wire);
+  {
+    const nb = s.shoots.filter((x) => x.wire && x.scar).length;
+    const bb = $<HTMLButtonElement>('unwireBiting');
+    bb.disabled = nb === 0;
+    bb.textContent = nb ? `Sundat zarůstající dráty (${nb})` : 'Sundat zarůstající dráty';
+  }
   $('play').textContent = playing ? '❚❚' : '▶';
   $('play').setAttribute('aria-label', playing ? 'Pozastavit čas' : 'Spustit čas');
   const banner = $('banner');
@@ -532,6 +538,14 @@ for (const el of [$('tool-wire'), $('sWires'), $('sWires').previousElementSiblin
   el.addEventListener('focus', () => view.showWires(true));
   el.addEventListener('blur', () => view.showWires(false));
 }
+$('unwireBiting').onclick = () => {
+  const cnt = tl.state.shoots.filter((x) => x.wire && x.scar).length;
+  if (!cnt) return;
+  tl.act({ type: 'unwireAll', only: 'biting', label: `Sundány zarůstající dráty (${cnt})` });
+  lastLogKey = '';
+  persist();
+  refresh();
+};
 $('unwireAll').onclick = () => {
   const cnt = tl.state.shoots.filter((x) => x.wire).length;
   if (!cnt) return;
