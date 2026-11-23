@@ -869,7 +869,15 @@ export class TreeView {
     const col = [0, 0, 0];
     const shedSeason = doy >= P.shedStartDoy && doy < P.shedEndDoy + 20;
     const R0 = n ? radiusOf(s.shoots[0]) : 0;
-    const zone = 2.6 * R0 * smooth((R0 - 0.12) / 0.5);
+    const zone = 3.2 * R0 * smooth((R0 - 0.12) / 0.5);
+    // Pata kmene: u země se kmen rozšiřuje do náběhů mířících do směrů povrchových kořenů, takže kořen
+    // vybíhá z hřbetu kmene a ne z hladkého válce.
+    const lobeOf = (x: number, z: number) => {
+      const az = Math.atan2(z, x);
+      let best = 0;
+      for (const root of s.nebari) { const c = Math.cos(az - root.az); if (c > 0) best = Math.max(best, (root.thick / 0.45) * Math.pow(c, 7)); }
+      return best;
+    };
     // barva dřeva a síla borky každého výhonu; v kloubech se prolínají se sousedem, aby přechod nebyl skokem
     const C = new Float32Array(n * 3), BK = new Float32Array(n);
     for (let i = 0; i < n; i++) {
@@ -1003,8 +1011,9 @@ export class TreeView {
       if (len > 0.01) {
         const isBark = BK[i] > 0;
         const B = bb; // všechno dřevo v jedné síti – hladké i rozpraskané se liší jen sílou borky ve vrcholech
-        const RN = pIdx >= 0 && contKid[pIdx] === i && RNS[pIdx] ? RNS[pIdx] : rb < 0.25 ? 6 : rb < 0.8 ? 8 : rb < 2 ? 12 : 16;
+        const RN = pIdx >= 0 && contKid[pIdx] === i && RNS[pIdx] ? RNS[pIdx] : i === 0 && zone > 0.2 ? 20 : rb < 0.25 ? 6 : rb < 0.8 ? 8 : rb < 2 ? 12 : 16;
         RNS[i] = RN;
+        void 0;
         const ts: number[] = [0];
         if (collar && tc > 0.02) ts.push(tc * 0.2, tc * 0.45, tc * 0.7, tc);
         if (inZone) ts.push(0.15, 0.3, 0.5, 0.75);
@@ -1032,6 +1041,8 @@ export class TreeView {
           const g1 = ckTip ? guard(jointDir(i, ck), endTan(sh), jointR(i, ck)) : 0;
           const kept = ts.filter((t) => t === 0 || t === 1 || (t > g0 && t < 1 - g1));
           ts.length = 0; ts.push(...kept);
+          // kmen pokračuje pod povrch substrátu, aby u šikmo posazeného stromu nebyl vidět jeho rovný konec
+          if (i === 0 && zone > 0.2) { const tb = Math.min(1.5, (1.6 * rb) / len); ts.unshift(-tb, -tb * 0.45); }
         }
         const rough = isBark ? clamp((rb - 0.3) * 0.05, 0, 0.07) : 0;
         const tile = 2.4 + rb * 1.8; // silnější kmen má větší desky
@@ -1044,8 +1055,8 @@ export class TreeView {
           const t = ts[q];
           at(t * TE[i]);
           let r = radiusAt(t);
-          if (inZone && cy < zone) { const f = 1 - Math.max(0, cy) / zone; r *= 1 + 0.6 * f * f; }
-          const jStart = q === 0 && pIdx >= 0 && contKid[pIdx] === i;
+          const zf = inZone && cy < zone ? clamp(1 - cy / zone, 0, 1.2) : 0;
+          const jStart = q === 0 && pIdx >= 0 && contKid[pIdx] === i && ts[0] === 0;
           const jEnd = q === ts.length - 1 && ckTip;
           if (jStart || jEnd) {
             const J = jStart ? jointDir(pIdx, i) : jointDir(i, ck);
@@ -1087,7 +1098,7 @@ export class TreeView {
           for (let k = 0; k <= RN; k++) {
             const a = (k / RN) * 6.2832, km = k % RN;
             const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
-            const rr = r * (1 + (jStart || jEnd ? 0 : rough) * (rnd(sh.id, km, q + 20) - 0.5) * 2); // ve spoji bez nerovností, aby prstence splynuly
+            const rr = r * (1 + (jStart || jEnd ? 0 : rough) * (rnd(sh.id, km, q + 20) - 0.5) * 2) * (zf > 0 ? 1 + zf * zf * (0.25 + 0.75 * lobeOf(nx, nz)) : 1); // ve spoji bez nerovností, aby prstence splynuly
             // protažení límce podél mateřské osy
             const al = stretch ? (nx * pd[0] + ny * pd[1] + nz * pd[2]) * rr * stretch : 0;
             const ml = mk ? (nx * mx + ny * my + nz * mz) * rr * mk : 0;
@@ -1420,7 +1431,7 @@ export class TreeView {
           const y = R0 * 0.85 * Math.pow(1 - f, 2.1) - R0 * 0.35 * f * f;
           const lean = Math.pow(1 - f, 2) * R0 * 0.85;
           pts.push([Math.cos(az) * rho * (j === 0 ? 0 : 1) + leanX * lean, y, Math.sin(az) * rho * (j === 0 ? 0 : 1) + leanZ * lean]);
-          rad.push(thick * (Math.pow(1 - f, 0.8) * 0.85 + 0.15));
+          rad.push(thick * (Math.pow(1 - f, 0.8) * 0.85 + 0.15) * (1 + 0.5 * Math.pow(1 - f, 4)));
         }
         bb.reserve((SEG + 1) * (RN + 1) + 1, SEG * RN * 6);
         let uu: Vec3 = [0, 1, 0], prev = -1;
