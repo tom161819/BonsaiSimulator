@@ -878,6 +878,15 @@ export class TreeView {
       BK[i] = sh.dead || ag < 2 ? 0 : leafySp ? sp.barkRough * smooth((ag - sp.barkAge * 0.4) / sp.barkAge) : smooth((ag - 1.5) / 5) * (0.6 + 0.4 * smooth(radiusOf(sh) / 1.2));
     }
     const endTan = (sh: Shoot): Vec3 => (sh.arc ? rotate(sh.dir, sh.arc.axis, sh.arc.angle) : sh.dir);
+    // Nástupce vrcholu nasazený níž na seříznutém úseku (zpětný pupen, výhon z pahýlu): úsek se kreslí jen
+    // k němu a oba navazují společným prstencem, místo aby větev trčela z boku pahýlu s klínem u řezu.
+    const TE = new Float32Array(n).fill(1);
+    for (let i = 0; i < n; i++) {
+      const c = s.shoots[i];
+      if (c.dead || !c.isMain || c.parent < 0 || c.attachT > 0.98) continue;
+      const pi = fr.index.get(c.parent)!;
+      if (s.shoots[pi].tipCut && !s.shoots[pi].dead && contKid[pi] < 0) { contKid[pi] = i; TE[pi] = Math.max(0.05, c.attachT); }
+    }
     const VO = new Float32Array(n).fill(-1);
     const UE = new Float32Array(n * 3); // osa u posledního prstence každého úseku
     const RNS = new Uint8Array(n); // počet vrcholů prstence; navazující úsek ho dědí
@@ -898,7 +907,7 @@ export class TreeView {
       {
         // navazující úsek přebírá natočení průřezu od předchozího: vrcholy prstenců ve spoji pak leží přesně na sobě
         const pq = sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;
-        if (pq >= 0 && contKid[pq] === i && sh.attachT > 0.98 && UE[pq * 3] + UE[pq * 3 + 1] + UE[pq * 3 + 2] !== 0) {
+        if (pq >= 0 && contKid[pq] === i && UE[pq * 3] + UE[pq * 3 + 1] + UE[pq * 3 + 2] !== 0) {
           const k = UE[pq * 3] * d0[0] + UE[pq * 3 + 1] * d0[1] + UE[pq * 3 + 2] * d0[2];
           const x = UE[pq * 3] - d0[0] * k, y = UE[pq * 3 + 1] - d0[1] * k, z = UE[pq * 3 + 2] - d0[2] * k;
           if (Math.hypot(x, y, z) > 0.2) { u0 = nrm(x, y, z); wB = [-(d0[1] * u0[2] - d0[2] * u0[1]), -(d0[2] * u0[0] - d0[0] * u0[2]), -(d0[0] * u0[1] - d0[1] * u0[0])]; }
@@ -913,11 +922,11 @@ export class TreeView {
       // takže kmen neroste po zalomených tyčkách. Koncové body zůstávají tam, kde je má simulace.
       let T0: Vec3 = d0, T1: Vec3 = d0;
       if (!arc) {
-        if (sh.isMain && sh.attachT > 0.98 && sh.parent >= 0) {
+        if (sh.parent >= 0 && contKid[fr.index.get(sh.parent)!] === i) {
           const pe = endTan(s.shoots[fr.index.get(sh.parent)!]);
           T0 = nrm(pe[0] + d0[0], pe[1] + d0[1], pe[2] + d0[2]);
         }
-        const kc = contKid[i] >= 0 && s.shoots[contKid[i]].attachT > 0.98 ? contKid[i] : mainKid[i];
+        const kc = contKid[i] >= 0 ? contKid[i] : mainKid[i];
         if (kc >= 0) { const c = s.shoots[kc].dir; T1 = nrm(d0[0] + c[0], d0[1] + c[1], d0[2] + c[2]); }
         // krátký silný úsek se ohnout nedá – prstence by se překlopily přes sebe a vznikly by ostré hrany
         const soft = clamp(len / (7 * radiusOf(sh) + 0.01) - 0.15, 0, 1);
@@ -925,7 +934,7 @@ export class TreeView {
         T1 = nrm(d0[0] + (T1[0] - d0[0]) * soft, d0[1] + (T1[1] - d0[1]) * soft, d0[2] + (T1[2] - d0[2]) * soft);
       }
       const dot0 = T0[0] * d0[0] + T0[1] * d0[1] + T0[2] * d0[2], dot1 = T1[0] * d0[0] + T1[1] * d0[1] + T1[2] * d0[2];
-      const curved = !arc && len > 0.05 && (dot0 < 0.9995 || dot1 < 0.9995);
+      const curved = !arc && TE[i] === 1 && len > 0.05 && (dot0 < 0.9995 || dot1 < 0.9995);
 
       // místní soustava v bodě t výhonu: střed c a osy d (podél), u, w (napříč)
       let d: Vec3 = d0, u: Vec3 = u0, w: Vec3 = w0, cx = bx, cy = by, cz = bz;
@@ -951,7 +960,7 @@ export class TreeView {
       let rb = radiusOf(sh);
       if (sh.elong && sh.targetLen > 0) rb *= 0.55 + 0.45 * (len / sh.targetLen);
       const ck = contKid[i];
-      const ckTip = ck >= 0 && s.shoots[ck].attachT > 0.98;
+      const ckTip = ck >= 0; // pokračování osy (na vrcholu, nebo nástupce níž na pahýlu – pak se úsek kreslí jen k němu)
       const stump = sh.tipCut && !sh.elong && !ckTip && year > sh.bornYear;
       const rt = sh.dead && !ckTip ? rb * 0.6 : stump ? rb * 0.94 : ckTip ? Math.min(rb, radiusOf(s.shoots[ck]) * (s.shoots[ck].elong && s.shoots[ck].targetLen > 0 ? 0.55 + 0.45 * (s.shoots[ck].len / s.shoots[ck].targetLen) : 1)) : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
       col[0] = C[i * 3]; col[1] = C[i * 3 + 1]; col[2] = C[i * 3 + 2];
@@ -990,7 +999,7 @@ export class TreeView {
       if (len > 0.01) {
         const isBark = BK[i] > 0;
         const B = bb; // všechno dřevo v jedné síti – hladké i rozpraskané se liší jen sílou borky ve vrcholech
-        const RN = pIdx >= 0 && contKid[pIdx] === i && sh.attachT > 0.98 && RNS[pIdx] ? RNS[pIdx] : rb < 0.25 ? 6 : rb < 0.8 ? 8 : rb < 2 ? 12 : 16;
+        const RN = pIdx >= 0 && contKid[pIdx] === i && RNS[pIdx] ? RNS[pIdx] : rb < 0.25 ? 6 : rb < 0.8 ? 8 : rb < 2 ? 12 : 16;
         RNS[i] = RN;
         const ts: number[] = [0];
         if (collar && tc > 0.02) ts.push(tc * 0.2, tc * 0.45, tc * 0.7, tc);
@@ -1015,7 +1024,7 @@ export class TreeView {
             const c = clamp(jd[0] * tan[0] + jd[1] * tan[1] + jd[2] * tan[2], 0.2, 1);
             return (r * (Math.sqrt(1 - c * c) / c + 0.35)) / len;
           };
-          const g0 = pIdx >= 0 && contKid[pIdx] === i && sh.attachT > 0.98 ? guard(jointDir(pIdx, i), d0, jointR(pIdx, i)) : 0;
+          const g0 = pIdx >= 0 && contKid[pIdx] === i ? guard(jointDir(pIdx, i), d0, jointR(pIdx, i)) : 0;
           const g1 = ckTip ? guard(jointDir(i, ck), endTan(sh), jointR(i, ck)) : 0;
           const kept = ts.filter((t) => t === 0 || t === 1 || (t > g0 && t < 1 - g1));
           ts.length = 0; ts.push(...kept);
@@ -1024,15 +1033,15 @@ export class TreeView {
         const tile = 2.4 + rb * 1.8; // silnější kmen má větší desky
         const tiles = Math.max(1, Math.round((6.2832 * rb) / tile));
         const v0 = VO[i] >= 0 ? VO[i] : (sh.id % 7) * 0.13;
-        if (ck >= 0 && s.shoots[ck].attachT > 0.98) VO[ck] = v0 + len / (tile * 2); // kresba kůry pokračuje do navazujícího úseku
+        if (ck >= 0) VO[ck] = v0 + len / (tile * 2); // kresba kůry pokračuje do navazujícího úseku
         B.reserve(ts.length * (RN + 1) + 1, ts.length * RN * 6);
         let prev = -1;
         for (let q = 0; q < ts.length; q++) {
           const t = ts[q];
-          at(t);
+          at(t * TE[i]);
           let r = radiusAt(t);
           if (inZone && cy < zone) { const f = 1 - Math.max(0, cy) / zone; r *= 1 + 0.6 * f * f; }
-          const jStart = q === 0 && pIdx >= 0 && contKid[pIdx] === i && sh.attachT > 0.98;
+          const jStart = q === 0 && pIdx >= 0 && contKid[pIdx] === i;
           const jEnd = q === ts.length - 1 && ckTip;
           if (jStart || jEnd) {
             const J = jStart ? jointDir(pIdx, i) : jointDir(i, ck);
