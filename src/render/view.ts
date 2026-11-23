@@ -898,6 +898,7 @@ export class TreeView {
       const pi = fr.index.get(c.parent)!;
       if (s.shoots[pi].tipCut && !s.shoots[pi].dead && contKid[pi] < 0) { contKid[pi] = i; TE[pi] = Math.max(0.05, c.attachT); }
     }
+    const ONT = new Uint8Array(n);
     const VO = new Float32Array(n).fill(-1);
     const UE = new Float32Array(n * 3); // osa u posledního prstence každého úseku
     const RNS = new Uint8Array(n); // počet vrcholů prstence; navazující úsek ho dědí
@@ -989,8 +990,12 @@ export class TreeView {
       const colorAt = (t: number, ch: number) => mixAt(t, col[ch], pj >= 0 ? C[pj * 3 + ch] : 0, kj >= 0 ? C[kj * 3 + ch] : 0);
       const barkAt = (t: number) => mixAt(t, BK[i], pj >= 0 ? BK[pj] : 0, kj >= 0 ? BK[kj] : 0);
       // kořenové náběhy u země a límec v nasazení větve
-      const onTrunk = i === 0 || (sh.order === 0 && sh.isMain);
-      const inZone = onTrunk && by < zone && zone > 0.2;
+      // kmen = řetěz navazujících úseků od paty (včetně větve, která převzala vrchol); jen ten má náběhy,
+      // a obě strany každého spoje tak dostanou stejné rozšíření
+      const onTrunk = i === 0 || (sh.parent >= 0 && ONT[fr.index.get(sh.parent)!] === 1 && contKid[fr.index.get(sh.parent)!] === i);
+      if (onTrunk) ONT[i] = 1;
+      // rozšíření řídí jen výška bodu nad zemí (ne výška paty úseku), aby se obě strany spoje shodly
+      const inZone = onTrunk && zone > 0.2;
       const par = sh.parent >= 0 ? s.shoots[fr.index.get(sh.parent)!] : null;
       // límec v nasazení boční větve: rozšíření, které je protažené podél mateřské osy (jako u skutečné větve)
       // límec jen u skutečné boční větve; větev, která převzala osu, navazuje spojem a límec by spoj roztrhl
@@ -1016,7 +1021,7 @@ export class TreeView {
         void 0;
         const ts: number[] = [0];
         if (collar && tc > 0.02) ts.push(tc * 0.2, tc * 0.45, tc * 0.7, tc);
-        if (inZone) ts.push(0.15, 0.3, 0.5, 0.75);
+        if (inZone && by < zone) ts.push(0.15, 0.3, 0.5, 0.75);
         if (swellTip) ts.push(1 - Math.min(0.3, (1.5 * rt) / len), 1 - Math.min(0.15, (0.7 * rt) / len));
         if (swellBase) ts.push(Math.min(0.15, (0.7 * rb) / len), Math.min(0.3, (1.5 * rb) / len));
         ts.sort((a, b) => a - b);
