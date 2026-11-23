@@ -86,7 +86,8 @@ export interface State {
   species?: string;
   /** počet pupenů čekajících na druhý růst téže sezóny */
   pendingFlush?: number;
-  /** verze pravidel růstu: 1 = původní, 2 = po úpravě misek, větvení a náhrady vrcholu, 3 = navíc soběstačnost větví */
+  /** verze pravidel růstu: 1 = původní, 2 = po úpravě misek, větvení a náhrady vrcholu, 3 = navíc soběstačnost větví,
+   *  4 = pahýl listnáče obráží více pupeny po celé délce, ne jedním u řezu */
   rules: number;
   day: number; // absolutní den od 1. ledna roku 0
   gdd: number; // teplotní suma od začátku roku (°C·den nad +5 °C)

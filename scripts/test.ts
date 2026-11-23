@@ -286,4 +286,16 @@ test('habr po zaštípnutí vyraší ještě téhož léta, buk a borovice jen v
   assert.equal(again('pine'), 0);
 });
 
+test('v4: pahýl habru obrazí několika výhony po délce, ne jedním u řezu', () => {
+  const tl = new Timeline(4, [], 4, 'hornbeam'); tl.seek(at(6, 60));
+  const trunk = tl.state.shoots.filter((s) => s.order === 0 && s.isMain && !s.dead && s.kind === 'shoot');
+  const seg = trunk[1];
+  tl.act({ type: 'cut', shoot: seg.id, t: 0.6 });
+  for (const k of tl.state.shoots.filter((s) => s.parent === seg.id)) tl.act({ type: 'cut', shoot: k.id, t: 0 });
+  tl.seek(at(7, 200));
+  const kids = tl.state.shoots.filter((s) => s.parent === seg.id && !s.dead);
+  assert.ok(kids.length >= 3, `výhonů z pahýlu: ${kids.length}`);
+  assert.ok(kids.every((k) => k.attachT < 0.98) && Math.max(...kids.map((k) => k.attachT)) - Math.min(...kids.map((k) => k.attachT)) > 0.2, 'rozmístěné po délce, ne na řezné ploše');
+});
+
 console.log(`\n${n} testů prošlo`);

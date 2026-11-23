@@ -270,7 +270,9 @@ function leafySinks(s: State, sp: Species, sh: Shoot, i: number, kids: number[][
   if (sh.light < sp.lightDeath) { sh.dormant = 0; return; } // zastíněný úsek zakrní
   const canBud = (sh.dormant ?? 0) > 0;
   const tipFree = !kids[i].some((c) => s.shoots[c].attachT > 0.98) && !sh.buds.some((b) => b.t > 0.98);
-  if (tipFree && canBud && !(crowded && sh.light < 0.5)) {
+  // v4: pahýl, který už obrazil, další pupeny u řezu nezakládá – pokračují jeho nové výhony
+  const stubDone = s.rules >= 4 && !cur && sh.tipCut && kids[i].length > 0;
+  if (tipFree && canBud && !stubDone && !(crowded && sh.light < 0.5)) {
     const apex = cur && !sh.tipCut;
     // pahýl ochotně obrážejícího druhu vyraší, i když na něj podle síly vrcholů skoro nic nezbude
     const stub = !cur && sh.tipCut && sp.epicormic >= 0.5 ? 1.5 * sp.epicormic : undefined;
@@ -334,6 +336,21 @@ function expandLeafy(s: State, sp: Species, sh: Shoot, k: Sink, year: number) {
     }
     sh.dormant = Math.max(0, N - nl);
   } else if (k.kind === 'pinch') {
+    if (s.rules >= 4 && k.min) {
+      // pahýl (v4): ze spících pupenů vyrazí několik výhonů po celé délce pahýlu, nejsilnější nejblíž řezu;
+      // vyrůstají z boku, řezná plocha zůstává holá
+      const nbs = 2 + Math.round(3 * sp.epicormic);
+      const total = Math.max(k.v, nbs * 1.3 * sp.epicormic);
+      let wsum = 0;
+      for (let j = 0; j < nbs; j++) wsum += Math.pow(0.7, j);
+      for (let j = 0; j < nbs; j++) {
+        const t = clamp(0.94 - (j / nbs) * 0.62 - 0.06 * rnd(s.seed, sh.id, salt + 80 + j), 0.2, 0.94);
+        const dir = tilt(sh.dir, j === 0 ? 0.5 : sp.branchAngle * 0.85, j * 2.39996 + sh.id);
+        addBud(s, sh, 'pinch', t, dir, Math.min(cap, (total * Math.pow(0.7, j)) / wsum), j === 0 ? o : o + 1, j === 0);
+      }
+      sh.dormant = Math.max(0, N - nbs);
+      return;
+    }
     // po řezu vyraší nejvyšší zbylé pupeny; první převezme osu
     const nb = Math.min(N, k.v < 0.9 ? 1 : Math.min(3, 1 + Math.floor(k.v / 4)));
     const l = Math.min(cap, k.v / nb);

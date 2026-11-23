@@ -856,7 +856,9 @@ export class TreeView {
       let rb = radiusOf(sh);
       if (sh.elong && sh.targetLen > 0) rb *= 0.55 + 0.45 * (len / sh.targetLen);
       const ck = contKid[i];
-      const rt = sh.dead ? rb * 0.6 : ck >= 0 ? Math.min(rb, radiusOf(s.shoots[ck]) * (s.shoots[ck].elong && s.shoots[ck].targetLen > 0 ? 0.55 + 0.45 * (s.shoots[ck].len / s.shoots[ck].targetLen) : 1)) : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
+      const ckTip = ck >= 0 && s.shoots[ck].attachT > 0.98;
+      const stump = sh.tipCut && !sh.elong && !ckTip && year > sh.bornYear;
+      const rt = sh.dead ? rb * 0.6 : stump ? rb * 0.94 : ckTip ? Math.min(rb, radiusOf(s.shoots[ck]) * (s.shoots[ck].elong && s.shoots[ck].targetLen > 0 ? 0.55 + 0.45 * (s.shoots[ck].len / s.shoots[ck].targetLen) : 1)) : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
       col[0] = C[i * 3]; col[1] = C[i * 3 + 1]; col[2] = C[i * 3 + 2];
       // sousedé v ose: úsek, na který navazuji, a úsek, který navazuje na mě
       const pIdx = sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;
@@ -940,8 +942,8 @@ export class TreeView {
           prev = first;
         }
         // světlá řezná plocha jen tam, kde výhon opravdu končí řezem; zaštípnutý výhon, ze kterého osa pokračuje, ji nemá
-        const bareCut = sh.tipCut && contKid[i] < 0;
-        const cut = ck >= 0 ? 0 : bareCut && !sh.elong ? 0.2 : 0.8;
+        const bareCut = sh.tipCut && !ckTip;
+        const cut = ckTip ? 0 : stump ? 0.04 : bareCut && !sh.elong ? 0.2 : 0.8;
         const c = B.v(cx + d[0] * rt * cut, cy + d[1] * rt * cut, cz + d[2] * rt * cut, d[0], d[1], d[2],
           bareCut ? 0.8 : colorAt(1, 0), bareCut ? 0.7 : colorAt(1, 1), bareCut ? 0.5 : colorAt(1, 2));
         B.t(0.5, v0 + len / (tile * 2), bareCut ? 0 : barkAt(1));
@@ -1071,8 +1073,17 @@ export class TreeView {
           const nl2 = Math.hypot(nx, ny, nz) || 1, ux = nx / nl2, uy = Math.abs(ny / nl2), uz = nz / nl2;
           const W = L * sp.leafWidth;
           const cell = LEAF_CELL[cot ? 'ovate' : sp.leafShape];
-          const pet = L * 0.12;
+          const pet = L * 0.2;
           // čepel = 2 × 2 políčka; každý list je jinak natočený kolem řapíku, jinak prohnutý a zrcadlený
+          {
+            // řapík: úzký proužek od větvičky k čepeli (bílá buňka atlasu)
+            const pw = Math.max(0.03, W * 0.035), pr = r * 0.6, pg = gg * 0.62, pb = b * 0.45;
+            const q0 = nb.v(px - sx * pw, py, pz - sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.06, 0.25, 0);
+            nb.v(px + sx * pw, py, pz + sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.06, 0.25, 0);
+            nb.v(px + ld[0] * pet * 1.15 - sx * pw, py + ld[1] * pet * 1.15, pz + ld[2] * pet * 1.15 - sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.06, 0.25, 0);
+            nb.v(px + ld[0] * pet * 1.15 + sx * pw, py + ld[1] * pet * 1.15, pz + ld[2] * pet * 1.15 + sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.06, 0.25, 0);
+            nb.tri(q0, q0 + 1, q0 + 3); nb.tri(q0, q0 + 3, q0 + 2); nb.tri(q0, q0 + 3, q0 + 1); nb.tri(q0, q0 + 2, q0 + 3);
+          }
           const roll = (rnd(sh.id, k, 21) - 0.5) * 1.1, curl = (rnd(sh.id, k, 22) - 0.35) * 0.3, flip = rnd(sh.id, k, 23) < 0.5 ? -1 : 1;
           const cr2 = Math.cos(roll), sr2 = Math.sin(roll);
           const ax = sx * cr2 + ux * sr2, ay = uy * sr2, az2 = sz * cr2 + uz * sr2; // osa šířky po natočení
@@ -1094,7 +1105,7 @@ export class TreeView {
         };
         const tuft = sp.leafShape === 'tuft';
         const perNode = tuft ? (cur ? 4 : 12) : 1;
-        nb.reserve(Math.ceil(cnt / stride + 1) * perNode * (tuft ? 3 : 9), Math.ceil(cnt / stride + 1) * perNode * (tuft ? 6 : 48));
+        nb.reserve(Math.ceil(cnt / stride + 1) * perNode * (tuft ? 3 : 13), Math.ceil(cnt / stride + 1) * perNode * (tuft ? 6 : 60));
         for (let k = (sh.id * 7) % stride; k < cnt; k += stride) {
           const h = rnd(sh.id, k, 11);
           if (h >= sh.needleLive) continue;
