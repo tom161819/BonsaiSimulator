@@ -378,7 +378,9 @@ export class TreeView {
   readonly camera = new THREE.PerspectiveCamera(32, 1, 0.5, 20000);
   private wood = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, envMapIntensity: 0.3 }));
   private bark: THREE.Mesh;
-  private barkStyle: BarkStyle = 'pine';
+  private barkStyle: BarkStyle | '' = '';
+  private photoU = { value: 0 };
+  private photoCache = new Map<string, { d: THREE.Texture; n: THREE.Texture } | null>();
   private barkCache = new Map<BarkStyle, THREE.CanvasTexture>();
   private leafTex = leafAtlas();
   private needles = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 28, specular: 0x1c2a1c, map: this.leafTex, alphaTest: 0.4 }));
@@ -434,8 +436,10 @@ export class TreeView {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBark = aBark;');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', 'varying float vBark;\n#include <common>')
-        .replace('#include <map_fragment>', '#ifdef USE_MAP\n diffuseColor.rgb *= mix(vec3(1.0), texture2D(map, vMapUv).rgb * 1.3, vBark);\n#endif')
-        .replace('#include <normal_fragment_maps>', THREE.ShaderChunk.normal_fragment_maps.replace('dHdxy_fwd(), faceDirection', 'dHdxy_fwd() * vBark, faceDirection'));
+        .replace('#include <common>', 'uniform float uPhoto;\n#include <common>')
+        .replace('#include <map_fragment>', '#ifdef USE_MAP\n vec3 barkTex = texture2D(map, vMapUv).rgb;\n diffuseColor.rgb = uPhoto > 0.5 ? mix(diffuseColor.rgb, barkTex * 1.6, vBark) : diffuseColor.rgb * mix(vec3(1.0), barkTex * 1.3, vBark);\n#endif')
+        .replace('#include <normal_fragment_maps>', THREE.ShaderChunk.normal_fragment_maps.replace('dHdxy_fwd(), faceDirection', 'dHdxy_fwd() * vBark, faceDirection').replace('mapN.xy *= normalScale;', 'mapN.xy *= normalScale * vBark;'));
+      sh.uniforms.uPhoto = this.photoU;
     };
     this.bark = new THREE.Mesh(new THREE.BufferGeometry(), barkMat);
     this.addWind(barkMat, 'bark', false, false);
@@ -776,13 +780,41 @@ export class TreeView {
     const sp = speciesOf(s), leafySp = sp.kind === 'leafy';
     const style = (['pine', 'larch', 'maple', 'oak', 'birch', 'beech', 'hornbeam'] as BarkStyle[]).find((x) => x === sp.id) ?? 'pine';
     if (style !== this.barkStyle) {
-      // kůra druhu: textura se vytvoří při prvním použití a pak se jen přepíná
-      if (!this.barkCache.has(style)) this.barkCache.set(style, barkTexture(style));
-      const m = this.bark.material as THREE.MeshStandardMaterial;
-      m.map = m.bumpMap = this.barkCache.get(style)!;
-      m.bumpScale = BARK_BUMP[style];
-      m.needsUpdate = true;
       this.barkStyle = style;
+      const m = this.bark.material as THREE.MeshStandardMaterial;
+      const useProcedural = () => {
+        if (!this.barkCache.has(style)) this.barkCache.set(style, barkTexture(style));
+        m.map = m.bumpMap = this.barkCache.get(style)!;
+        m.normalMap = null;
+        m.bumpScale = BARK_BUMP[style];
+        this.photoU.value = 0;
+        m.needsUpdate = true;
+      };
+      const usePhoto = (t: { d: THREE.Texture; n: THREE.Texture }) => {
+        m.map = t.d; m.normalMap = t.n; m.bumpMap = null;
+        m.normalScale.set(1.4, 1.4);
+        this.photoU.value = 1;
+        m.needsUpdate = true;
+        this.needsRender = true;
+      };
+      // fotografická textura (assets/tex); dokud se nenačte, nebo když chybí, slouží kreslený vzor
+      const file = style === 'larch' ? 'pine' : style;
+      const cached = this.photoCache.get(file);
+      if (cached) usePhoto(cached);
+      else {
+        useProcedural();
+        if (cached === undefined) {
+          this.photoCache.set(file, null);
+          const loader = new THREE.TextureLoader();
+          const prep = (t: THREE.Texture, srgb: boolean) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+          loader.load(`tex/${file}_d.jpg`, (d) => loader.load(`tex/${file}_n.jpg`, (nn) => {
+            const t = { d: prep(d, true), n: prep(nn, false) };
+            this.photoCache.set(file, t);
+            const now = this.barkStyle === 'larch' ? 'pine' : this.barkStyle;
+            if (now === file) usePhoto(t);
+          }, undefined, () => undefined), undefined, () => undefined);
+        }
+      }
     }
     const budG = s.budSetYear === year ? 0.3 + 0.7 * smooth((s.gdd - s.budSetGdd) / P.budGrowGdd) : 1.1;
     const col = [0, 0, 0];
