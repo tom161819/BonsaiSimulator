@@ -29,3 +29,7 @@ Každý list je oříznutý na čepel, roztažený na políčko a barevně znorm
 # Substrát
 
 `soil_d.jpg` (barva), `soil_n.jpg` (normálová mapa, OpenGL) a `soil_h.jpg` (výšková mapa pro plastické zrno) jsou z Poly Haven, sada `brick_gravel` (drcená cihlová drť), licence CC0, zmenšeno na 768 px. Ve hře představuje zrnitý bonsajový substrát (akadama, láva).
+
+# Mech
+
+`moss_d.jpg` (barva), `moss_n.jpg` (normálová mapa, OpenGL) a `moss_h.jpg` (výšková mapa) jsou z ambientCG, sada `Moss002`, licence CC0, zmenšeno na 512 px.

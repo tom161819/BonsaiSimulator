@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Timeline } from '../src/sim/timeline';
 import { wholeBranch } from '../src/sim/actions';
-import { YEAR, bendLimit, breakRisk, computeFrames, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
+import { YEAR, bendLimit, breakRisk, computeFrames, mossCover, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
 import type { Action, State, Vec3 } from '../src/sim/types';
 import samples from '../src/samples.json';
 import { SPECIES_ORDER } from '../src/sim/species';
@@ -419,6 +419,23 @@ test('v8: druhé drátování počítá jen ohyb navíc a po sundání drátu z�
   assert.ok(!b.broke && Math.abs(b.after - b.kept) < 1e-6, `po sundání nového drátu zůstal starý tvar (${b.after} vs ${b.kept})`);
   const a = run(7);
   assert.ok(a.broke || a.after < a.kept * 0.5, 'v7 se chová postaru');
+});
+
+test('mech: po přesazení žádný, za rok třetina, za dva roky celá miska; jde vrátit, položit i odstranit', () => {
+  const tl = new Timeline(3, [], 3); tl.seek(at(4, 80));
+  tl.act({ type: 'repot', pot: 'bonsai', potId: 'b15', prune: 0.2 });
+  assert.equal(mossCover(tl.state), 0);
+  tl.seek(tl.day + 180); const half = mossCover(tl.state);
+  tl.seek(tl.day + 185); const one = mossCover(tl.state);
+  tl.seek(tl.day + 365); const two = mossCover(tl.state);
+  assert.ok(half > 0.05 && half < 0.2 && one > 0.25 && one < 0.45 && two === 1, `${half} ${one} ${two}`);
+  tl.act({ type: 'moss' });
+  assert.equal(mossCover(tl.state), 0);
+  tl.seek(tl.day + 365); const before = mossCover(tl.state);
+  tl.act({ type: 'repot', pot: 'bonsai', potId: 'b15', prune: 0.1, moss: 'keep' });
+  assert.equal(mossCover(tl.state), before);
+  tl.act({ type: 'repot', pot: 'bonsai', potId: 'b15', prune: 0, moss: 'full' });
+  assert.equal(mossCover(tl.state), 1);
 });
 
 console.log(`\n${n} testů prošlo`);

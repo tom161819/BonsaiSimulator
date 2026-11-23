@@ -4,7 +4,7 @@ import { Timeline } from './sim/timeline';
 import { TreeView, Pick, wireGauge } from './render/view';
 import { GLAZES, P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
-import { YEAR, bendLimit, bendStress, breakRisk, heldArc, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
+import { YEAR, bendLimit, bendStress, breakRisk, heldArc, mossCover, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
 import { bendShoot, deadwood, wholeBranch } from './sim/actions';
 import { SPECIES, SPECIES_ORDER, speciesOf } from './sim/species';
@@ -509,6 +509,13 @@ canvas.addEventListener('pointermove', (e) => {
     }
     canvas.style.cursor = tool === 'wire' ? 'grab' : 'crosshair';
     const p = pTree;
+    if (!p && tool === 'bud' && view.pickMoss(e.offsetX, e.offsetY)) {
+      setHover(null);
+      tip.hidden = false; tip.className = '';
+      tip.innerHTML = '<b>Odstranit mech</b><span>Sloupne mech z celé misky. Znovu naroste za 1–2 roky.</span>';
+      tip.style.left = `${Math.min(window.innerWidth - 270, e.clientX + 16)}px`; tip.style.top = `${Math.max(8, e.clientY - 44)}px`;
+      return;
+    }
     setHover(p ? describe(p) : null, e.clientX, e.clientY);
   }
 });
@@ -546,6 +553,11 @@ const up = (e: PointerEvent) => {
   bend = null;
   if (!wasTap || repotOpen) return;
   const p = view.pick(e.offsetX, e.offsetY, tool === 'bud');
+  if (!p && tool === 'bud' && view.pickMoss(e.offsetX, e.offsetY)) {
+    tl.act({ type: 'moss', label: 'Odstraněn mech' });
+    tip.hidden = true; lastLogKey = ''; persist(); refresh();
+    return;
+  }
   // strom má přednost; nářadí na stole se volí jen tam, kde pod kurzorem není výhon ani pupen
   const onTool = p ? null : view.pickTool(e.offsetX, e.offsetY);
   if (onTool) { setTool(onTool); return; }
@@ -785,7 +797,8 @@ let rPot = 't05';
   sel.onchange = () => { rPot = sel.value; updateRepot(); };
 }
 const rIn = (id: string) => $<HTMLInputElement>(id);
-const rVals = () => ({ prune: Number(rIn('rPrune').value) / 100, yaw: Number(rIn('rYaw').value), side: Number(rIn('rSide').value), fwd: Number(rIn('rFwd').value), spread: Number(rIn('rSpread').value) / 100, offX: Number(rIn('rOffX').value) / 100, offZ: Number(rIn('rOffZ').value) / 100, mound: Number(rIn('rMound').value) / 100, glaze: $<HTMLSelectElement>('rGlaze').value });
+const rVals = () => ({ prune: Number(rIn('rPrune').value) / 100, yaw: Number(rIn('rYaw').value), side: Number(rIn('rSide').value), fwd: Number(rIn('rFwd').value), spread: Number(rIn('rSpread').value) / 100, offX: Number(rIn('rOffX').value) / 100, offZ: Number(rIn('rOffZ').value) / 100, mound: Number(rIn('rMound').value) / 100, glaze: $<HTMLSelectElement>('rGlaze').value, moss: $<HTMLSelectElement>('rMoss').value as 'none' | 'keep' | 'full' });
+$<HTMLSelectElement>('rMoss').onchange = () => updateRepot();
 for (const g of GLAZES) { const o = document.createElement('option'); o.value = g.id; o.textContent = g.name; $('rGlaze').appendChild(o); }
 $<HTMLSelectElement>('rGlaze').onchange = () => updateRepot();
 
@@ -801,7 +814,8 @@ function updateRepot() {
   $('rFwdV').textContent = v.fwd ? `${Math.abs(v.fwd)}° ${v.fwd < 0 ? 'dozadu' : 'dopředu'}` : '0°';
   view.previewRotation(v.yaw, v.fwd, -v.side);
   view.previewRoots(v.spread, [v.offX, v.offZ]);
-  view.previewSoil({ mound: spec.type === 'ground' ? 0 : v.mound, glaze: v.glaze });
+  view.previewSoil({ mound: spec.type === 'ground' ? 0 : v.mound, glaze: v.glaze, moss: spec.type === 'ground' || v.moss === 'none' ? 0 : v.moss === 'full' ? 1 : mossCover(s) });
+  $<HTMLSelectElement>('rMoss').disabled = spec.type === 'ground';
   $('rMoundV').textContent = v.mound ? `${Math.round(v.mound * 100)} %` : 'rovný';
   rIn('rMound').disabled = spec.type === 'ground';
   $<HTMLSelectElement>('rGlaze').disabled = spec.type !== 'bonsai';
@@ -847,6 +861,7 @@ $('repotBtn').onclick = () => {
   rIn('rOffX').value = String(Math.round((tl.state.potOffset?.[0] ?? 0) * 100)); rIn('rOffZ').value = String(Math.round((tl.state.potOffset?.[1] ?? 0) * 100));
   rIn('rMound').value = String(Math.round((tl.state.mound ?? 0) * 100));
   $<HTMLSelectElement>('rGlaze').value = tl.state.glaze ?? '';
+  $<HTMLSelectElement>('rMoss').value = 'none';
   $('repot').hidden = false;
   view.front();
   setHover(null);
@@ -864,7 +879,8 @@ $('rOk').onclick = () => {
   if (v.spread) parts.push('kořeny rozprostřeny');
   if (v.offX || v.offZ) parts.push('mimo střed nádoby');
   if (v.mound && spec.type !== 'ground') parts.push('substrát navršen');
-  tl.act({ type: 'repot', pot: spec.type, potId: spec.id, prune: v.prune, yaw: v.yaw, tiltX: v.fwd, tiltZ: -v.side, spread: v.spread, offX: v.offX, offZ: v.offZ, mound: spec.type === 'ground' ? 0 : v.mound, glaze: v.glaze, label: `Přesazeno: ${parts.join(', ')}` });
+  if (v.moss !== 'none' && spec.type !== 'ground') parts.push(v.moss === 'full' ? 'položen mech' : 'mech vrácen');
+  tl.act({ type: 'repot', pot: spec.type, potId: spec.id, prune: v.prune, yaw: v.yaw, tiltX: v.fwd, tiltZ: -v.side, spread: v.spread, offX: v.offX, offZ: v.offZ, mound: spec.type === 'ground' ? 0 : v.mound, glaze: v.glaze, moss: v.moss, label: `Přesazeno: ${parts.join(', ')}` });
   lastLogKey = '';
   persist();
   closeRepot();

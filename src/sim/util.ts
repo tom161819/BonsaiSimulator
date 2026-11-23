@@ -180,6 +180,10 @@ export function bendLimit(s: State, sh: Shoot, z = 0): number {
   return (deg * Math.PI) / 180;
 }
 
+/** Pokryvnost mechu 0..1: po sezoně náznak (~10 %), po roce třetina, po dvou letech celá miska. */
+export const MOSS_FULL_DAYS = 730;
+export const mossCover = (s: State) => (s.pot === 'ground' ? 0 : Math.min(1, Math.pow((s.mossAge ?? 0) / MOSS_FULL_DAYS, 1.6)));
+
 /** Oblouk, který dřevo už samo drží: bez drátu celý, pod drátem jen zdřevnatělý podíl (od výchozího tvaru). */
 export function heldArc(sh: Shoot): { axis: Vec3; angle: number; z: number } | null {
   const a = sh.arc;

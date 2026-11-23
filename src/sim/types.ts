@@ -112,6 +112,7 @@ export interface State {
   nebari: SurfaceRoot[];
   /** posun stromu od středu nádoby, v podílu poloviny jejího rozměru (−1…1); jen vzhled */
   potOffset?: [number, number];
+  mossAge?: number; // dny, po které mech na substrátu nerušeně roste (jen vzhled)
   mound?: number; // 0..1 navršení substrátu ke kmeni (jen vzhled)
   glaze?: string; // barva misky z GLAZES (jen vzhled)
   /** stres z přesazení 0..1+ (>= 1 strom nepřežije) */
@@ -122,19 +123,21 @@ export interface State {
 export type Action =
   | { day: number; type: 'cut'; shoot: number; t: number; label?: string }
   | { day: number; type: 'bud'; shoot: number; bud: number; label?: string }
-  | { day: number; type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; spread?: number; offX?: number; offZ?: number; mound?: number; glaze?: string; label?: string }
+  | { day: number; type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; spread?: number; offX?: number; offZ?: number; mound?: number; glaze?: string; moss?: 'none' | 'keep' | 'full'; label?: string }
   | { day: number; type: 'wire'; shoot: number; axis: Vec3; angle: number; z?: number; label?: string }
   | { day: number; type: 'unwire'; shoot: number; label?: string }
   | { day: number; type: 'unwireAll'; only?: 'biting'; label?: string }
   | { day: number; type: 'cleanDead'; label?: string }
+  | { day: number; type: 'moss'; label?: string }
   | { day: number; type: 'cutMany'; cuts: { shoot: number; t: number }[]; label?: string };
 
 export type ActionInput =
   | { type: 'cut'; shoot: number; t: number; label?: string }
   | { type: 'bud'; shoot: number; bud: number; label?: string }
-  | { type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; spread?: number; offX?: number; offZ?: number; mound?: number; glaze?: string; label?: string }
+  | { type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; spread?: number; offX?: number; offZ?: number; mound?: number; glaze?: string; moss?: 'none' | 'keep' | 'full'; label?: string }
   | { type: 'wire'; shoot: number; axis: Vec3; angle: number; z?: number; label?: string }
   | { type: 'unwire'; shoot: number; label?: string }
   | { type: 'unwireAll'; only?: 'biting'; label?: string }
   | { type: 'cleanDead'; label?: string }
+  | { type: 'moss'; label?: string }
   | { type: 'cutMany'; cuts: { shoot: number; t: number }[]; label?: string };

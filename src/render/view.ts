@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { PotType, Shoot, State } from '../sim/types';
 import { GLAZES, P, potById } from '../sim/params';
+import { mossCover } from '../sim/util';
 import { LeafShape, speciesOf } from '../sim/species';
 import leafAtlasJson from '../leafAtlas.json';
 import type { Vec3 } from '../sim/types';
@@ -429,11 +430,16 @@ export class TreeView {
   private sun = new THREE.DirectionalLight(0xfff0d8, 2.3);
   private soilTex = soilTexture();
   private soilPhoto: { d: THREE.Texture; n: THREE.Texture; h: THREE.Texture } | null = null; // fotografický substrát (assets/tex/soil_*.jpg)
-  private soilPreview: { mound: number; glaze: string } | null = null;
+  private soilPreview: { mound: number; glaze: string; moss?: number } | null = null;
+  private mossPhoto: { d: THREE.Texture; n: THREE.Texture; h: THREE.Texture } | null = null; // fotografický mech (assets/tex/moss_*.jpg)
+  private mossMesh: THREE.Mesh | null = null;
+  private mossField: Float32Array | null = null; // šum, podle kterého mech postupně zarůstá (stejný pro masku i výběr myší)
+  private mossThr = 0;
+  private static MOSS_N = 256;
   private soilFn: (x: number, z: number) => number = () => 0; // výška substrátu vůči patě kmene (v souřadnicích stromu)
 
   /** Náhled navršení substrátu a barvy misky při přesazování. */
-  previewSoil(p: { mound: number; glaze: string } | null) {
+  previewSoil(p: { mound: number; glaze: string; moss?: number } | null) {
     if (JSON.stringify(p) === JSON.stringify(this.soilPreview)) return;
     this.soilPreview = p;
     if (this.state) this.build();
@@ -525,6 +531,16 @@ export class TreeView {
         for (const t of [d, nn, h]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; }
         d.colorSpace = THREE.SRGBColorSpace;
         this.soilPhoto = { d, n: nn, h };
+        this.potKey = '';
+        if (this.state) this.build();
+      })));
+    }
+    {
+      const L = new THREE.TextureLoader();
+      L.load('tex/moss_d.jpg', (d) => L.load('tex/moss_n.jpg', (nn) => L.load('tex/moss_h.jpg', (h) => {
+        for (const t of [d, nn, h]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; }
+        d.colorSpace = THREE.SRGBColorSpace;
+        this.mossPhoto = { d, n: nn, h };
         this.potKey = '';
         if (this.state) this.build();
       })));
@@ -790,13 +806,15 @@ export class TreeView {
     const h0 = hill(tx, tz);
     this.soilFn = (x, z) => hill(x + tx, z + tz) - h0;
     this.potGroup.position.y = -h0;
-    const key = [spec.id, spec.shape === 'ground' ? groundR : '', mound, glazeId, off[0], off[1], this.soilPhoto ? 1 : 0].join('|');
+    const moss = spec.shape === 'ground' ? 0 : this.soilPreview?.moss ?? (st ? mossCover(st) : 0);
+    const key = [spec.id, spec.shape === 'ground' ? groundR : '', mound, glazeId, off[0], off[1], this.soilPhoto ? 1 : 0, this.mossPhoto ? 1 : 0, Math.round(moss * 60)].join('|');
     if (key === this.potKey) return;
     this.potKey = key;
     for (const c of [...this.potGroup.children]) {
       this.potGroup.remove(c);
       (c as THREE.Mesh).geometry.dispose();
     }
+    this.mossMesh = null;
     const span = spec.shape === 'ground' ? groundR * 2 : Math.max(spec.a, spec.b);
     let soil: THREE.MeshStandardMaterial;
     const TILE = 16; // cm na jedno opakování fotografie (zrno 3–6 mm jako akadama)
@@ -809,12 +827,14 @@ export class TreeView {
       soil = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, envMapIntensity: 0.25 });
     }
     // povrch substrátu: hustá síť (kvůli plastickému zrnu a kopečku); u = poloha v cm / dlaždice
+    let yOff = 0, tileCm = TILE;
     const soilGeo = (pts: (i: number, j: number) => [number, number], NI: number, NJ: number, closeJ: boolean) => {
-      const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+      const pos: number[] = [], uv: number[] = [], uv1: number[] = [], idx: number[] = [];
       for (let i = 0; i <= NI; i++) for (let j = 0; j <= NJ; j++) {
         const [x, z] = pts(i, j);
-        pos.push(x, hill(x, z), z);
-        uv.push(this.soilPhoto ? x / TILE : x / span + 0.5, this.soilPhoto ? z / TILE : z / span + 0.5);
+        pos.push(x, hill(x, z) + yOff, z);
+        uv.push(this.soilPhoto ? x / tileCm : x / span + 0.5, this.soilPhoto ? z / tileCm : z / span + 0.5);
+        uv1.push(x / span + 0.5, z / span + 0.5);
       }
       const W = NJ + 1;
       for (let i = 0; i < NI; i++) for (let j = 0; j < NJ; j++) {
@@ -825,6 +845,7 @@ export class TreeView {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setAttribute('uv1', new THREE.Float32BufferAttribute(uv1, 2));
       g.setIndex(idx);
       g.computeVertexNormals();
       // normály musí mířit nahoru (pořadí vrcholů závisí na parametrizaci)
@@ -883,21 +904,40 @@ export class TreeView {
         add(new THREE.BoxGeometry(r * 0.3, footH, r * 0.22), wall, Math.cos(ang) * r * 0.62, -h - footH / 2, Math.sin(ang) * r * 0.62 * sz);
       }
     }
-    if (dish) {
-      // polštářky mechu na substrátu
-      const moss = new THREE.MeshStandardMaterial({ color: 0x4a6628, roughness: 1, envMapIntensity: 0.15, flatShading: true });
-      for (let c = 0; c < 4; c++) {
-        const ang = rnd(77, c, 1) * 6.2832, rad = 0.2 + 0.2 * rnd(77, c, 2);
-        const ox = Math.cos(ang) * a * rad, oz = Math.sin(ang) * b * rad;
-        const base = Math.min(a, b) * 0.028;
-        for (let k = 0; k < 7; k++) {
-          const mr = Math.max(0.35, base * (0.6 + 0.9 * rnd(77, c * 10 + k, 3)));
-          const m = add(new THREE.IcosahedronGeometry(mr, 1), moss,
-            ox + (rnd(77, c * 10 + k, 4) - 0.5) * base * 5, mr * 0.1 + hill(ox, oz), oz + (rnd(77, c * 10 + k, 5) - 0.5) * base * 5);
-          m.scale.set(1.2, 0.5 + 0.3 * rnd(77, c * 10 + k, 6), 1.2);
-          m.rotation.set(rnd(77, k, 7), rnd(77, k, 8) * 3, 0);
+    if (moss > 0.01) {
+      // Mech: druhá vrstva nad substrátem s fotografickou texturou. Kde už roste, určuje maska ze šumu –
+      // s pokryvností se ostrůvky rozrůstají, až se spojí v souvislý koberec.
+      const N = TreeView.MOSS_N;
+      if (!this.mossField) {
+        const f = new Float32Array(N * N);
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+          const u = x / N, v = y / N;
+          f[y * N + x] = 0.55 * tileNoise(u * 5, v * 5, 5, 5, 71) + 0.3 * tileNoise(u * 11, v * 11, 11, 11, 72) + 0.15 * tileNoise(u * 27, v * 27, 27, 27, 73);
         }
+        this.mossField = f;
       }
+      const f = this.mossField;
+      const sorted = Float32Array.from(f).sort();
+      const thr = moss >= 0.995 ? 2 : sorted[Math.min(N * N - 1, Math.floor(moss * N * N))];
+      this.mossThr = thr;
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = N;
+      const ctx = cv.getContext('2d')!, img = ctx.createImageData(N, N);
+      for (let q = 0; q < N * N; q++) {
+        const al = clamp((thr - f[q]) / 0.03 + 0.5, 0, 1) * 255;
+        img.data[q * 4] = img.data[q * 4 + 1] = img.data[q * 4 + 2] = al; img.data[q * 4 + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+      const mask = new THREE.CanvasTexture(cv);
+      mask.channel = 1; mask.flipY = false;
+      const mm = this.mossPhoto
+        ? new THREE.MeshStandardMaterial({ color: 0xb4bf98, map: this.mossPhoto.d, normalMap: this.mossPhoto.n, normalScale: new THREE.Vector2(1.4, 1.4), displacementMap: this.mossPhoto.h, displacementScale: 0.55, displacementBias: 0, alphaMap: mask, alphaTest: 0.5, roughness: 1, envMapIntensity: 0.2 })
+        : new THREE.MeshStandardMaterial({ color: 0x4a6628, alphaMap: mask, alphaTest: 0.5, roughness: 1, envMapIntensity: 0.15 });
+      yOff = 0.12; tileCm = 9;
+      const g = spec.shape === 'rect' ? rectGeo(a - Math.max(0.5, a * 0.03) * 2, b - Math.max(0.5, a * 0.03) * 2) : discGeo(a / 2 * 0.985, (a / 2) * 0.985 * (b / a));
+      this.mossMesh = add(g, mm);
+      this.mossMesh.castShadow = false;
+      yOff = 0; tileCm = TILE;
     }
     this.tableTop = -h - footH - 0.02 - h0;
   }
@@ -1882,6 +1922,19 @@ export class TreeView {
     }
     cam.position.copy(p0); cam.quaternion.copy(q0); cam.updateMatrixWorld(true); this.dist = dist0;
     return res;
+  }
+
+  /** Je pod kurzorem mech? (pro pinzetu) */
+  pickMoss(x: number, y: number): boolean {
+    if (!this.mossMesh || !this.mossField) return false;
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2((x / this.canvas.clientWidth) * 2 - 1, -(y / this.canvas.clientHeight) * 2 + 1), this.camera);
+    const hit = ray.intersectObject(this.mossMesh, false)[0];
+    const uv = hit && (hit as any).uv1 as THREE.Vector2 | undefined;
+    if (!uv) return false;
+    const N = TreeView.MOSS_N;
+    const px = Math.min(N - 1, Math.max(0, Math.floor(uv.x * N))), py = Math.min(N - 1, Math.max(0, Math.floor(uv.y * N)));
+    return this.mossField[py * N + px] < this.mossThr;
   }
 
   /** Řez podle linie na obrazovce: všechny výhony, které úsečka protíná, s místem řezu. Výhony, jejichž

@@ -567,6 +567,7 @@ function updateFoliage(s: State) {
 
 export function step(s: State) {
   s.day++;
+  s.mossAge = s.pot === 'ground' ? 0 : (s.mossAge ?? 0) + 1;
   const year = yearOf(s.day), doy = doyOf(s.day);
   if (doy === 0) s.gdd = 0;
   const dG = Math.max(0, temperature(s.seed, year, doy) - P.baseTemp);
