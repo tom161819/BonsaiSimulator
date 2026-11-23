@@ -29,6 +29,7 @@ export interface Species {
   spurLeaves: number; // listů na jeden krátký výhon; spurYears = kolik let krátké výhony na dřevě žijí
   spurYears: number;
   leafColor: [number, number, number]; springColor: [number, number, number]; autumnColor: [number, number, number];
+  flushColor: [number, number, number]; // právě rozvíjející se list na špičce výhonu (u habru, dubu a javoru bronzový)
   // --- fyziologie
   growthPerFoliage: number; lightDeath: number;
   thicken: number; // násobek tloušťkového přírůstu na jednotku olistění (listnáče mají olistění víc než borovice)
@@ -53,7 +54,7 @@ const leafy = (o: Partial<Species> & Pick<Species, 'id' | 'name' | 'latin' | 'ab
   internode: 2.5, phyllotaxis: 'spiral', tipCluster: 0.2, branchAngle: 0.95, lambdaLateral: 0.36,
   maxLaterals: 6, lateralRatio: 0.62, lateralDecay: 0.75, minLateral: 2.0, apicalUp: 0.3, sag: 1,
   leafShape: 'ovate', leafLen: 7, leafWidth: 0.55, leafUnits: 2.2, spurLeaves: 1.4, spurYears: 4,
-  leafColor: [0.25, 0.47, 0.2], springColor: [0.5, 0.68, 0.28], autumnColor: [0.85, 0.7, 0.2],
+  leafColor: [0.25, 0.47, 0.2], springColor: [0.36, 0.52, 0.16], autumnColor: [0.85, 0.7, 0.2], flushColor: [0.42, 0.52, 0.2],
   growthPerFoliage: 3.5, thicken: 0.22, lightDeath: 0.05, epicormic: 0.7, backbud: 0.7, reflush: 0.5, dieback: 0, repotStress: 1, wireBite: 1.45,
   maxLeader: 70, maxLateral: 45, twig0: 0.05, twigPerLen: 0.0045,
   twigColor: [0.42, 0.36, 0.26], barkColor: [0.5, 0.48, 0.44], oldBarkColor: [0.42, 0.4, 0.37], barkRough: 0.2, barkAge: 12,
@@ -86,7 +87,7 @@ export const SPECIES: Record<SpeciesId, Species> = {
     care: 'Nové výhony zkracovat na 2 listy, po zaštípnutí znovu vyraší. Suché listí drží přes zimu. Kůra je tenká – drát hlídat.',
     flushGdd: 115, elongSpanGdd: 800, colorDoy: 285, fallDoy: 312, marcescent: 0.55,
     internode: 2.2, phyllotaxis: 'distichous', branchAngle: 0.95, lambdaLateral: 0.4, leafShape: 'ovate', leafLen: 7, leafWidth: 0.52, leafUnits: 2.1,
-    leafColor: [0.24, 0.47, 0.19], autumnColor: [0.86, 0.7, 0.2], growthPerFoliage: 3.2, lightDeath: 0.03, epicormic: 0.85, backbud: 0.85, reflush: 0.6, repotStress: 0.9, wireBite: 1.25,
+    leafColor: [0.26, 0.5, 0.2], autumnColor: [0.86, 0.7, 0.2], flushColor: [0.5, 0.38, 0.2], growthPerFoliage: 3.2, lightDeath: 0.03, epicormic: 0.85, backbud: 0.85, reflush: 0.6, repotStress: 0.9, wireBite: 1.25,
     twigColor: [0.4, 0.33, 0.25], barkColor: [0.64, 0.64, 0.6], oldBarkColor: [0.58, 0.58, 0.55], barkRough: 0.7, barkAge: 6,
     budColor: [0.5, 0.36, 0.22], budLen: 0.5, budFat: 0.22, hypocotylLen: 3, epicotylLen: 6 }),
   beech: leafy({ id: 'beech', name: 'Buk lesní', latin: 'Fagus sylvatica',
@@ -94,7 +95,7 @@ export const SPECIES: Record<SpeciesId, Species> = {
     care: 'Jediný růst za rok: zaštípnout, když se pupeny otevírají, nechat 2–3 listy. Ze starého dřeva obráží neochotně – neřezat do holého.',
     flushGdd: 175, elongSpanGdd: 320, colorDoy: 280, fallDoy: 310, marcescent: 0.8,
     internode: 3, phyllotaxis: 'distichous', branchAngle: 1.05, lambdaLateral: 0.36, maxLaterals: 5, leafShape: 'beech', leafLen: 8, leafWidth: 0.62, leafUnits: 3.1,
-    spurYears: 8, leafColor: [0.22, 0.46, 0.18], springColor: [0.56, 0.72, 0.3], autumnColor: [0.72, 0.42, 0.16],
+    spurYears: 8, leafColor: [0.22, 0.46, 0.18], springColor: [0.38, 0.53, 0.18], autumnColor: [0.72, 0.42, 0.16],
     growthPerFoliage: 2.7, lightDeath: 0.025, epicormic: 0.3, backbud: 0.45, reflush: 0.3, wireBite: 1.2,
     twigColor: [0.4, 0.3, 0.22], barkColor: [0.74, 0.75, 0.73], oldBarkColor: [0.7, 0.71, 0.7], barkRough: 0.6, barkAge: 6,
     budColor: [0.55, 0.36, 0.2], budLen: 1.1, budFat: 0.16, cotyledonLen: 2.4, hypocotylLen: 6, epicotylLen: 5 }),
@@ -103,7 +104,7 @@ export const SPECIES: Record<SpeciesId, Species> = {
     care: 'Řez po vyzrání prvního růstu; obráží ochotně i ze starého dřeva. Raší pozdě. Listy se v misce zmenšují jen částečně.',
     flushGdd: 200, elongSpanGdd: 320, colorDoy: 290, fallDoy: 318, marcescent: 0.55,
     internode: 2.4, phyllotaxis: 'spiral', tipCluster: 0.85, branchAngle: 0.9, lambdaLateral: 0.42, maxLaterals: 5, lateralRatio: 0.7,
-    leafShape: 'lobed', leafLen: 10, leafWidth: 0.55, leafUnits: 3.4, leafColor: [0.23, 0.43, 0.18], springColor: [0.6, 0.62, 0.3], autumnColor: [0.62, 0.42, 0.18],
+    leafShape: 'lobed', leafLen: 10, leafWidth: 0.55, leafUnits: 3.4, leafColor: [0.23, 0.43, 0.18], springColor: [0.4, 0.5, 0.19], autumnColor: [0.62, 0.42, 0.18], flushColor: [0.5, 0.34, 0.2],
     growthPerFoliage: 2.7, lightDeath: 0.07, epicormic: 0.9, backbud: 0.8, reflush: 0.7,
     twigColor: [0.4, 0.36, 0.28], barkColor: [0.46, 0.42, 0.36], oldBarkColor: [0.38, 0.33, 0.29], barkRough: 1, barkAge: 12,
     budColor: [0.55, 0.4, 0.25], budLen: 0.45, budFat: 0.5, hypogeal: true, cotyledons: 0, hypocotylLen: 0.5, epicotylLen: 11 }),
@@ -112,7 +113,7 @@ export const SPECIES: Record<SpeciesId, Species> = {
     care: 'Řezat v listu, ne v předjaří (silně slzí). Větvičky po řezu rády zasychají a ze starého dřeva obráží špatně – nejtěžší druh ve hře.',
     flushGdd: 70, elongSpanGdd: 1100, colorDoy: 275, fallDoy: 302,
     internode: 2.6, phyllotaxis: 'spiral', branchAngle: 0.8, lambdaLateral: 0.3, maxLaterals: 6, lateralRatio: 0.55, apicalUp: 0.4, sag: 3,
-    leafShape: 'delta', leafLen: 5, leafWidth: 0.78, leafUnits: 1.3, spurYears: 5, leafColor: [0.3, 0.52, 0.2], springColor: [0.55, 0.74, 0.3], autumnColor: [0.92, 0.78, 0.2],
+    leafShape: 'delta', leafLen: 5, leafWidth: 0.78, leafUnits: 1.3, spurYears: 5, leafColor: [0.3, 0.52, 0.2], springColor: [0.38, 0.53, 0.18], autumnColor: [0.92, 0.78, 0.2],
     growthPerFoliage: 5.4, thicken: 0.35, lightDeath: 0.12, epicormic: 0.25, backbud: 0.35, reflush: 0.5, dieback: 0.22, maxLeader: 85, twig0: 0.04, twigPerLen: 0.0035,
     twigColor: [0.42, 0.26, 0.2], barkColor: [0.9, 0.89, 0.85], oldBarkColor: [0.86, 0.85, 0.82], barkRough: 1, barkAge: 7,
     budColor: [0.45, 0.33, 0.2], budLen: 0.35, budFat: 0.3, cotyledonLen: 0.6, hypocotylLen: 1.5, epicotylLen: 8 }),
@@ -121,7 +122,7 @@ export const SPECIES: Record<SpeciesId, Species> = {
     care: 'Zkracovat na 1–2 páry listů; obráží ochotně a po řezu roste znovu. Vstřícné pupeny dávají vidlice – jeden z páru odstraňovat.',
     flushGdd: 120, elongSpanGdd: 650, colorDoy: 285, fallDoy: 308,
     internode: 3, phyllotaxis: 'opposite', branchAngle: 0.85, lambdaLateral: 0.4, maxLaterals: 6, lateralRatio: 0.65,
-    leafShape: 'palmate', leafLen: 6, leafWidth: 1.0, leafUnits: 2.2, leafColor: [0.25, 0.48, 0.2], autumnColor: [0.9, 0.72, 0.18],
+    leafShape: 'palmate', leafLen: 6, leafWidth: 1.0, leafUnits: 2.2, leafColor: [0.25, 0.48, 0.2], autumnColor: [0.9, 0.72, 0.18], flushColor: [0.5, 0.33, 0.22],
     growthPerFoliage: 2.8, lightDeath: 0.05, epicormic: 0.85, backbud: 0.85, reflush: 0.7, repotStress: 0.7,
     twigColor: [0.45, 0.36, 0.24], barkColor: [0.6, 0.5, 0.38], oldBarkColor: [0.52, 0.44, 0.34], barkRough: 0.8, barkAge: 6,
     budColor: [0.5, 0.3, 0.22], budLen: 0.35, budFat: 0.35, cotyledonLen: 2.2, hypocotylLen: 4, epicotylLen: 6 }),

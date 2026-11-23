@@ -1141,10 +1141,23 @@ export class TreeView {
         if (g < 0.04) continue;
         const winter = doy >= sp.fallDoy - 2 || s.gdd < sp.flushGdd;
         const fall = winter ? 1 : smooth((doy - (sp.colorDoy - 10)) / 22);
-        const base = [0, 1, 2].map((q) => sp.springColor[q] + (sp.leafColor[q] - sp.springColor[q]) * smooth(g * 1.3));
-        const tone = winter ? [0.46, 0.31, 0.18] : [0, 1, 2].map((q) => base[q] + (sp.autumnColor[q] - base[q]) * fall);
+        // Stáří jednotlivého listu: na rostoucím výhonu jsou listy u špičky nejmladší. Rozvíjející se list je
+        // malý a má barvu rašení (u habru, dubu a javoru bronzovou), pak je světle žlutozelený a do léta tmavne.
+        const longShoot = sh.kind === 'shoot' && sh.bornYear === year;
+        const aBase = sh.kind !== 'shoot' ? g * 3 : (s.gdd - sp.flushGdd - (longShoot ? sh.delay : 0)) / sp.leafSpanGdd;
+        const lag = longShoot ? (sp.elongSpanGdd / sp.leafSpanGdd) * 0.75 : 0;
+        const tone = [0, 0, 0];
+        const setTone = (a: number) => {
+          if (winter) { tone[0] = 0.46; tone[1] = 0.31; tone[2] = 0.18; return; }
+          const k1 = smooth(a / 0.45), k2 = smooth((a - 0.9) / 2.4);
+          for (let q = 0; q < 3; q++) {
+            const young = sp.flushColor[q] + (sp.springColor[q] - sp.flushColor[q]) * k1;
+            const c = young + (sp.leafColor[q] - young) * k2;
+            tone[q] = c + (sp.autumnColor[q] - c) * fall;
+          }
+        };
         const cnt = sh.needleCount;
-        const L0 = sh.needleLen * (0.25 + 0.75 * g);
+        let L0 = sh.needleLen;
         const shade = 0.62 + 0.38 * sh.light;
         const cur = sh.bornYear === year || sh.kind !== 'shoot';
         const cot = sh.kind === 'hypocotyl';
@@ -1179,14 +1192,14 @@ export class TreeView {
           {
             // řapík: úzký proužek od větvičky k čepeli (bílá buňka atlasu)
             const GC = this.leafGrid.cols, GR = this.leafGrid.rows;
-            const pw = Math.max(0.03, W * 0.035), pr = r * 0.6, pg = gg * 0.62, pb = b * 0.45;
+            const pw = Math.max(0.02, W * 0.018), pr = r * 0.42, pg = gg * 0.45, pb = b * 0.3;
             const q0 = nb.v(px - sx * pw, py, pz - sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.5 / GC, 0.5 / GR, 0);
             nb.v(px + sx * pw, py, pz + sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.5 / GC, 0.5 / GR, 0);
             nb.v(px + ld[0] * pet * 1.15 - sx * pw, py + ld[1] * pet * 1.15, pz + ld[2] * pet * 1.15 - sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.5 / GC, 0.5 / GR, 0);
             nb.v(px + ld[0] * pet * 1.15 + sx * pw, py + ld[1] * pet * 1.15, pz + ld[2] * pet * 1.15 + sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.5 / GC, 0.5 / GR, 0);
             nb.tri(q0, q0 + 1, q0 + 3); nb.tri(q0, q0 + 3, q0 + 2); nb.tri(q0, q0 + 3, q0 + 1); nb.tri(q0, q0 + 2, q0 + 3);
           }
-          const roll = (rnd(sh.id, k, 21) - 0.5) * 1.1, curl = (rnd(sh.id, k, 22) - 0.35) * 0.3, flip = rnd(sh.id, k, 23) < 0.5 ? -1 : 1;
+          const roll = (rnd(sh.id, k, 21) - 0.5) * (flat ? 0.35 : 0.9), curl = (rnd(sh.id, k, 22) - 0.35) * 0.3, flip = rnd(sh.id, k, 23) < 0.5 ? -1 : 1;
           const cr2 = Math.cos(roll), sr2 = Math.sin(roll);
           const ax = sx * cr2 + ux * sr2, ay = uy * sr2, az2 = sz * cr2 + uz * sr2; // osa šířky po natočení
           const bxn = ux * cr2 - sx * sr2, byn = uy * cr2, bzn = uz * cr2 - sz * sr2; // normála po natočení
@@ -1213,7 +1226,12 @@ export class TreeView {
           if (h >= sh.needleLive) continue;
           const node = sp.phyllotaxis === 'opposite' ? Math.floor(k / 2) : k;
           const nodes = sp.phyllotaxis === 'opposite' ? Math.ceil(cnt / 2) : cnt;
-          at(cot ? 1 : 0.08 + 0.9 * ((node + 0.5) / nodes));
+          const tposN = (node + 0.5) / nodes;
+          const aLeaf = winter ? 9 : aBase - tposN * lag;
+          if (aLeaf < 0.04) continue; // list u špičky se ještě nerozvinul
+          setTone(aLeaf);
+          L0 = sh.needleLen * (0.3 + 0.7 * smooth(aLeaf));
+          at(cot ? 1 : 0.08 + 0.9 * tposN);
           let phi: number;
           if (cot) phi = (k / cnt) * 6.2832 + sh.id;
           else if (sp.phyllotaxis === 'opposite') phi = (k % 2) * Math.PI + (node % 2) * (Math.PI / 2) + sh.id;
@@ -1221,7 +1239,7 @@ export class TreeView {
           else phi = k * 2.39996 + sh.id;
           for (let q = 0; q < perNode; q++) {
             const a2 = tuft ? phi + q * 2.39996 : phi;
-            const tiltA = tuft ? (cur ? 1.0 : 0.35 + 0.9 * rnd(sh.id, k * 13 + q, 15)) : cot ? 1.25 : 1.05 + (h - 0.5) * 0.4;
+            const tiltA = tuft ? (cur ? 1.0 : 0.35 + 0.9 * rnd(sh.id, k * 13 + q, 15)) : cot ? 1.25 : flat ? 0.95 + (h - 0.5) * 0.2 : 1.05 + (h - 0.5) * 0.4;
             const sa = Math.sin(tiltA), ca = Math.cos(tiltA), cp = Math.cos(a2), spn = Math.sin(a2);
             // krátké výhony modřínu sedí na boku větve a míří ven; listy visí lehce dolů
             const ax0 = tuft && !cur ? u[0] * cp + w[0] * spn : d[0], ay0 = tuft && !cur ? u[1] * cp + w[1] * spn : d[1], az0 = tuft && !cur ? u[2] * cp + w[2] * spn : d[2];
@@ -1230,7 +1248,7 @@ export class TreeView {
             const rx = tuft && !cur ? d[0] * c3 + (u[0] * -spn + w[0] * cp) * s3 : u[0] * cp + w[0] * spn;
             const ry = tuft && !cur ? d[1] * c3 + (u[1] * -spn + w[1] * cp) * s3 : u[1] * cp + w[1] * spn;
             const rz = tuft && !cur ? d[2] * c3 + (u[2] * -spn + w[2] * cp) * s3 : u[2] * cp + w[2] * spn;
-            const ld = nrm(ax0 * ca + rx * sa, ay0 * ca + ry * sa - (tuft ? 0.05 : 0.22), az0 * ca + rz * sa);
+            const ld = nrm(ax0 * ca + rx * sa, ay0 * ca + ry * sa - (tuft ? 0.05 : flat ? 0.1 : 0.22), az0 * ca + rz * sa);
             emit(cx, cy, cz, ld, L0 * (tuft ? 0.85 + 0.3 * rnd(sh.id, k * 7 + q, 13) : 0.62 + 0.55 * rnd(sh.id, k * 7 + q, 13)), k * 5 + q);
           }
         }
