@@ -6,7 +6,7 @@ import { P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
 import { YEAR, bendLimit, breakRisk, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
-import { bendShoot, deadwood } from './sim/actions';
+import { bendShoot, deadwood, wholeBranch } from './sim/actions';
 import { SPECIES, SPECIES_ORDER, speciesOf } from './sim/species';
 import samplesJson from './samples.json';
 import sampleThumbs from './sampleThumbs.json';
@@ -168,10 +168,16 @@ function describeWire(p: Pick): Described | null {
 function describe(p: Pick): Described | null {
   if (tool === 'wire') return describeWire(p);
   const s = tl.state;
-  const sh = s.shoots.find((x) => x.id === p.shoot);
+  let sh = s.shoots.find((x) => x.id === p.shoot);
   if (!sh) return null;
+  // Ctrl: celá větev až k nejbližšímu rozvětvení (nebo ke kmeni)
+  if (p.type === 'shoot' && ctrlHeld && tool === 'cut') {
+    const w = wholeBranch(s, sh.id);
+    if (w) { sh = w; p = { type: 'shoot', shoot: w.id, t: 0 }; }
+  }
   if (p.type === 'bud') {
-    const b = sh.buds.find((x) => x.id === p.bud);
+    const pb = p.bud;
+    const b = sh.buds.find((x) => x.id === pb);
     if (!b) return null;
     const kind = b.kind === 'terminal' ? 'terminální' : b.kind === 'back' ? 'zpětný' : 'boční';
     const last = sh.buds.length === 1 && !(sh.needleCount > 0 && sh.needleLive > 0.02);
@@ -386,6 +392,20 @@ const pointers = new Map<number, { x: number; y: number }>();
 let downAt: { x: number; y: number; button: number } | null = null;
 let moved = 0;
 let pinch = 0;
+let ctrlHeld = false; // Ctrl při řezu = celá větev k rozvětvení
+let lastMouse: { ox: number; oy: number; cx: number; cy: number } | null = null;
+// Shift + tažení nůžkami = řez podle linie
+let cutLine: { x0: number; y0: number; cx0: number; cy0: number; cuts: { shoot: number; t: number }[] } | null = null;
+const lineEl = $('cutLine');
+function rehover() {
+  if (!lastMouse || downAt || repotOpen || tool === 'wire') return;
+  const p = view.pick(lastMouse.ox, lastMouse.oy, tool === 'bud');
+  setHover(p ? describe(p) : null, lastMouse.cx, lastMouse.cy);
+}
+for (const ev of ['keydown', 'keyup'] as const) window.addEventListener(ev, (e) => {
+  const c = e.ctrlKey || e.metaKey;
+  if (c !== ctrlHeld) { ctrlHeld = c; rehover(); }
+});
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 let bend: { id: number; axis: [number, number, number]; angle: number; z: number } | null = null;
@@ -404,6 +424,10 @@ canvas.addEventListener('pointerdown', (e) => {
   moved = 0;
   bend = null;
   if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
+  else if (tool === 'cut' && e.shiftKey && e.button === 0 && !repotOpen) {
+    cutLine = { x0: e.offsetX, y0: e.offsetY, cx0: e.clientX, cy0: e.clientY, cuts: [] };
+    setHover(null);
+  }
   else if (tool === 'wire' && e.button === 0 && !repotOpen) {
     // tažení za větev = ohyb drátem; tažení mimo strom otáčí pohled
     const p = view.pick(e.offsetX, e.offsetY);
@@ -426,6 +450,18 @@ canvas.addEventListener('pointermove', (e) => {
     moved += Math.abs(dx) + Math.abs(dy);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (moved <= 5) return;
+    if (cutLine) {
+      cutLine.cuts = view.lineCuts(cutLine.x0, cutLine.y0, e.offsetX, e.offsetY);
+      view.highlightCuts(cutLine.cuts);
+      const lx = e.clientX - cutLine.cx0, ly = e.clientY - cutLine.cy0;
+      lineEl.hidden = false;
+      lineEl.style.left = `${cutLine.cx0}px`; lineEl.style.top = `${cutLine.cy0}px`;
+      lineEl.style.width = `${Math.hypot(lx, ly)}px`; lineEl.style.transform = `rotate(${Math.atan2(ly, lx)}rad)`;
+      tip.hidden = false; tip.className = '';
+      tip.textContent = cutLine.cuts.length ? `Řez podle linie: ${cutLine.cuts.length} ${cutLine.cuts.length === 1 ? 'větev' : cutLine.cuts.length < 5 ? 'větve' : 'větví'}. Pusťte tlačítko pro řez.` : 'Řez podle linie: táhněte přes větve.';
+      tip.style.left = `${Math.min(window.innerWidth - 270, e.clientX + 16)}px`; tip.style.top = `${Math.max(8, e.clientY - 44)}px`;
+      return;
+    }
     if (bend) {
       const sh = tl.state.shoots.find((x) => x.id === bend!.id)!;
       const tgt = view.bendTarget(bend.id, e.offsetX, e.offsetY);
@@ -454,6 +490,8 @@ canvas.addEventListener('pointermove', (e) => {
     if (hover) setHover(null);
     return;
   }
+  ctrlHeld = e.ctrlKey || e.metaKey;
+  lastMouse = { ox: e.offsetX, oy: e.offsetY, cx: e.clientX, cy: e.clientY };
   if (e.pointerType === 'mouse' && !repotOpen) {
     const pTree = view.pick(e.offsetX, e.offsetY, tool === 'bud');
     const onTool = pTree ? null : view.pickTool(e.offsetX, e.offsetY);
@@ -475,6 +513,17 @@ const up = (e: PointerEvent) => {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinch = 0;
   if (!pointers.size) downAt = null;
+  if (cutLine) {
+    const cl = cutLine;
+    cutLine = null; lineEl.hidden = true; tip.hidden = true; view.highlight(null);
+    if (!wasTap && cl.cuts.length) {
+      const nCut = cl.cuts.length;
+      tl.act({ type: 'cutMany', cuts: cl.cuts, label: `Řez podle linie (${nCut} ${nCut === 1 ? 'větev' : nCut < 5 ? 'větve' : 'větví'})` });
+      lastLogKey = ''; persist(); refresh();
+    }
+    return;
+  }
+  ctrlHeld = e.ctrlKey || e.metaKey;
   if (bend && !wasTap) {
     const b = bend;
     bend = null;
@@ -501,7 +550,7 @@ const up = (e: PointerEvent) => {
   else setHover(d, e.clientX, e.clientY, true);
 };
 canvas.addEventListener('pointerup', up);
-canvas.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); downAt = null; bend = null; });
+canvas.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); downAt = null; bend = null; cutLine = null; lineEl.hidden = true; });
 canvas.addEventListener('pointerleave', () => { if (!pending) setHover(null); });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.zoom(Math.exp(e.deltaY * 0.0012)); }, { passive: false });
 window.addEventListener('resize', () => view.resize());

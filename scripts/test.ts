@@ -1,6 +1,7 @@
 // Testy simulačního jádra (bez grafiky): node scripts/run.mjs scripts/test.ts
 import assert from 'node:assert/strict';
 import { Timeline } from '../src/sim/timeline';
+import { wholeBranch } from '../src/sim/actions';
 import { YEAR, bendLimit, breakRisk, computeFrames, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
 import type { Action, State, Vec3 } from '../src/sim/types';
 import samples from '../src/samples.json';
@@ -364,6 +365,32 @@ test('v7: zkrácený kmen habru vyžene nový vrchol a spodní třetina tolik ne
   const a = run(6), b = run(7);
   assert.ok(b.lead > 4, `nový vrchol ve v7: ${b.lead.toFixed(1)} cm`);
   assert.ok(b.low < a.low * 0.9, `nových výhonů dole: v6 ${a.low}, v7 ${b.low}`);
+});
+
+test('celá větev k rozvětvení: z konce osy dojde k výhonu, který sedí na kmeni nebo ve vidlici', () => {
+  const tl = new Timeline(3, [], 3); tl.seek(at(9, 320));
+  const s = tl.state;
+  const by = new Map(s.shoots.map((x) => [x.id, x]));
+  let checked = 0;
+  for (const sh of s.shoots) {
+    if (sh.dead || sh.parent < 0 || s.shoots.some((x) => x.parent === sh.id)) continue; // jen koncové výhony
+    const w = wholeBranch(s, sh.id)!;
+    const par = by.get(w.parent)!;
+    const fork = w.attachT <= 0.98 || par.parent < 0 || par.buds.length > 0 || s.shoots.some((x) => x.parent === par.id && x.id !== w.id && !x.dead) || (par.order === 0 && par.isMain && !(w.order === 0 && w.isMain));
+    assert.ok(fork, `výhon ${w.id} nekončí v rozvětvení`);
+    checked++;
+  }
+  assert.ok(checked > 10);
+});
+
+test('řez podle linie: více řezů v jednom zásahu jde vrátit najednou', () => {
+  const tl = new Timeline(3, [], 3); tl.seek(at(8, 320));
+  const tips = tl.state.shoots.filter((s) => !s.dead && s.order === 1 && !tl.state.shoots.some((x) => x.parent === s.id)).slice(0, 4);
+  const before = tl.state.shoots.map((s) => s.len).join();
+  tl.act({ type: 'cutMany', cuts: tips.map((s) => ({ shoot: s.id, t: 0.5 })) });
+  for (const t of tips) assert.ok(tl.state.shoots.find((s) => s.id === t.id)!.tipCut);
+  tl.undo();
+  assert.equal(tl.state.shoots.map((s) => s.len).join(), before);
 });
 
 console.log(`\n${n} testů prošlo`);

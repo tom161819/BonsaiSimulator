@@ -122,7 +122,8 @@ export type Action =
   | { day: number; type: 'wire'; shoot: number; axis: Vec3; angle: number; z?: number; label?: string }
   | { day: number; type: 'unwire'; shoot: number; label?: string }
   | { day: number; type: 'unwireAll'; only?: 'biting'; label?: string }
-  | { day: number; type: 'cleanDead'; label?: string };
+  | { day: number; type: 'cleanDead'; label?: string }
+  | { day: number; type: 'cutMany'; cuts: { shoot: number; t: number }[]; label?: string };
 
 export type ActionInput =
   | { type: 'cut'; shoot: number; t: number; label?: string }
@@ -131,4 +132,5 @@ export type ActionInput =
   | { type: 'wire'; shoot: number; axis: Vec3; angle: number; z?: number; label?: string }
   | { type: 'unwire'; shoot: number; label?: string }
   | { type: 'unwireAll'; only?: 'biting'; label?: string }
-  | { type: 'cleanDead'; label?: string };
+  | { type: 'cleanDead'; label?: string }
+  | { type: 'cutMany'; cuts: { shoot: number; t: number }[]; label?: string };

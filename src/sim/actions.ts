@@ -210,6 +210,23 @@ export function deadwood(s: State): Set<number> {
   return new Set(s.shoots.filter((x) => x.dead && x.parent >= 0 && !live.has(x.id)).map((x) => x.id));
 }
 
+/** Celá větev k nejbližšímu rozvětvení: od zvoleného výhonu dolů po ose, dokud na ní neroste nic dalšího.
+ *  Vrací výhon, který se má odstranit u báze (u větve bez rozvětvení ten, který sedí na kmeni). */
+export function wholeBranch(s: State, id: number): Shoot | null {
+  const by = new Map<number, Shoot>(s.shoots.map((x) => [x.id, x]));
+  let cur = by.get(id);
+  if (!cur || cur.parent < 0) return null;
+  const trunk = (x: Shoot) => x.order === 0 && x.isMain;
+  for (;;) {
+    const par = by.get(cur.parent);
+    if (!par || par.parent < 0 || cur.attachT <= 0.98) break;
+    if (trunk(par) && !trunk(cur)) break;
+    if (s.shoots.some((x) => x.parent === par.id && x.id !== cur!.id && !x.dead) || par.buds.length) break;
+    cur = par;
+  }
+  return cur;
+}
+
 export function applyAction(s: State, a: Action) {
   if (a.type === 'cut') cut(s, a.shoot, a.t);
   else if (a.type === 'bud') {
@@ -220,6 +237,7 @@ export function applyAction(s: State, a: Action) {
   } else if (a.type === 'repot') repot(s, a);
   else if (a.type === 'wire') wire(s, a.shoot, a.axis, a.angle, a.z ?? 0);
   else if (a.type === 'unwire') unwire(s, a.shoot);
+  else if (a.type === 'cutMany') for (const c of a.cuts) cut(s, c.shoot, c.t);
   else if (a.type === 'cleanDead') removeSubtrees(s, deadwood(s));
   else if (a.type === 'unwireAll') for (const id of s.shoots.filter((x) => x.wire && (a.only !== 'biting' || x.scar)).map((x) => x.id)) unwire(s, id);
 }

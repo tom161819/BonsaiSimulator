@@ -1746,6 +1746,50 @@ export class TreeView {
     return res;
   }
 
+  /** Řez podle linie na obrazovce: všechny výhony, které úsečka protíná, s místem řezu. Výhony, jejichž
+   *  předek je seříznut také, se vynechají (odpadnou s ním). */
+  lineCuts(x0: number, y0: number, x1: number, y1: number): { shoot: number; t: number }[] {
+    const s = this.state, fr = this.frames;
+    if (!s || !fr) return [];
+    const W = this.canvas.clientWidth, Hh = this.canvas.clientHeight, v = new THREE.Vector3();
+    const proj = (a: Float32Array | Float64Array | number[], i: number): [number, number, number] => {
+      v.set(a[i * 3], a[i * 3 + 1], a[i * 3 + 2]).project(this.camera);
+      return [(v.x * 0.5 + 0.5) * W, (-v.y * 0.5 + 0.5) * Hh, v.z];
+    };
+    const rx = x1 - x0, ry = y1 - y0;
+    const hit = new Map<number, number>();
+    for (let i = 0; i < s.shoots.length; i++) {
+      const [ax, ay, az] = proj(fr.base as any, i), [bx, by, bz] = proj(fr.tip as any, i);
+      if (az > 1 || bz > 1) continue;
+      const sx = bx - ax, sy = by - ay, den = rx * sy - ry * sx;
+      if (Math.abs(den) < 1e-9) continue;
+      const u = ((ax - x0) * sy - (ay - y0) * sx) / den, t = ((ax - x0) * ry - (ay - y0) * rx) / den;
+      if (u >= 0 && u <= 1 && t >= 0 && t <= 1) hit.set(s.shoots[i].id, t);
+    }
+    const cutAbove = new Set<number>(); // výhony, které odpadnou s řezem předka
+    const out: { shoot: number; t: number }[] = [];
+    for (const sh of s.shoots) {
+      const pt = hit.get(sh.parent);
+      if (cutAbove.has(sh.parent) || (pt !== undefined && sh.attachT > pt)) { cutAbove.add(sh.id); continue; }
+      const t = hit.get(sh.id);
+      if (t !== undefined) out.push({ shoot: sh.id, t: sh.parent < 0 ? Math.max(0.15, t) : t < 0.1 ? 0 : Math.min(0.97, t) });
+    }
+    return out;
+  }
+
+  /** Zvýrazní řezy podle linie (část každého výhonu nad řezem). */
+  highlightCuts(cuts: { shoot: number; t: number }[]) {
+    const fr = this.frames; if (!fr) return;
+    const pts: number[] = [];
+    for (const c of cuts) {
+      const i = fr.index.get(c.shoot); if (i === undefined) continue;
+      const b = fr.base, tp = fr.tip;
+      pts.push(b[i * 3] + (tp[i * 3] - b[i * 3]) * c.t, b[i * 3 + 1] + (tp[i * 3 + 1] - b[i * 3 + 1]) * c.t, b[i * 3 + 2] + (tp[i * 3 + 2] - b[i * 3 + 2]) * c.t, tp[i * 3], tp[i * 3 + 1], tp[i * 3 + 2]);
+    }
+    this.setLines(pts, 0xff3b1f);
+    this.marker.visible = false;
+  }
+
   /** Kam by se větev ohnula, kdyby její špička šla za kurzorem (v rovině obrazovky procházející patou). */
   bendTarget(id: number, x: number, y: number): { axis: Vec3; angle: number } | null {
     const s = this.state, fr = this.frames;
