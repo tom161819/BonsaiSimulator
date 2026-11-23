@@ -32,9 +32,8 @@ let speed = 7;
 let acc = 0;
 let hover: Pick | null = null;
 let pending: Described | null = null;
-type Tool = 'cut' | 'wire';
+type Tool = 'cut' | 'bud' | 'wire'; // bud = pinzeta: zasahuje jen pupeny
 let tool: Tool = 'cut';
-let budsOnly = false; // nůžky zasahují jen pupeny (vyštipování)
 let repotOpen = false;
 
 const view = new TreeView($<HTMLCanvasElement>('scene'));
@@ -330,7 +329,6 @@ function refresh() {
   if (repotOpen) updateRepot();
   $('wireOpts').hidden = tool !== 'wire';
   $('cutOpts').hidden = tool !== 'cut';
-  $('budsOnly').setAttribute('aria-pressed', String(budsOnly));
   $<HTMLButtonElement>('cleanDead').disabled = !deadwood(s).size;
   $<HTMLButtonElement>('unwireAll').disabled = !s.shoots.some((x) => x.wire);
   {
@@ -457,7 +455,7 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
   if (e.pointerType === 'mouse' && !repotOpen) {
-    const pTree = view.pick(e.offsetX, e.offsetY, tool === 'cut' && budsOnly);
+    const pTree = view.pick(e.offsetX, e.offsetY, tool === 'bud');
     const onTool = pTree ? null : view.pickTool(e.offsetX, e.offsetY);
     if (onTool) {
       setHover(null);
@@ -494,7 +492,7 @@ const up = (e: PointerEvent) => {
   }
   bend = null;
   if (!wasTap || repotOpen) return;
-  const p = view.pick(e.offsetX, e.offsetY, tool === 'cut' && budsOnly);
+  const p = view.pick(e.offsetX, e.offsetY, tool === 'bud');
   // strom má přednost; nářadí na stole se volí jen tam, kde pod kurzorem není výhon ani pupen
   const onTool = p ? null : view.pickTool(e.offsetX, e.offsetY);
   if (onTool) { setTool(onTool); return; }
@@ -531,7 +529,7 @@ slider.oninput = () => { playing = false; go(Number(slider.value)); };
 function setTool(t: Tool) {
   tool = t;
   canvas.style.cursor = tool === 'wire' ? 'grab' : 'crosshair';
-  view.setActiveTool(t);
+  view.setActiveTool(t === 'wire' ? 'wire' : 'cut');
   setHover(null);
   refresh();
 }
@@ -553,7 +551,6 @@ $('unwireBiting').onclick = () => {
   persist();
   refresh();
 };
-$('budsOnly').onclick = () => { budsOnly = !budsOnly; setHover(null); refresh(); };
 $('cleanDead').onclick = () => {
   const cnt = deadwood(tl.state).size;
   if (!cnt) return;
