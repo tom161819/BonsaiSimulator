@@ -189,7 +189,7 @@ function leafAtlas(): THREE.CanvasTexture {
         const [x0, y0] = list[i], [x1, y1] = list[i + 1];
         const n = sp.teeth ? Math.max(1, Math.round((sp.teeth * Math.hypot(x1 - x0, y1 - y0)) / 1.3)) : 1;
         for (let k = 0; k < n; k++) {
-          const f = k / n, tooth = sp.teeth && k % 2 ? sp.amp : 0;
+          const f = k / n, tooth = sp.teeth && k % 2 ? sp.amp * (0.5 + rnd(62, i * 31 + k, sgn + 2)) : 0;
           const nx = y1 - y0, ny = -(x1 - x0), nl = Math.hypot(nx, ny) || 1;
           pts.push([sgn * (x0 + (x1 - x0) * f + (nx / nl) * tooth), y0 + (y1 - y0) * f + (ny / nl) * tooth]);
         }
@@ -219,16 +219,29 @@ function leafAtlas(): THREE.CanvasTexture {
       ctx.fill();
     }
     // žilky: světlá střední, tmavší stín vedle ní, postranní k okraji
-    const vein = (x0: number, y0: number, x1: number, y1: number, w: number) => {
-      ctx.strokeStyle = 'rgba(60,60,60,0.45)'; ctx.lineWidth = w + 3; ctx.beginPath(); ctx.moveTo(X(x0), Y(y0)); ctx.lineTo(X(x1), Y(y1)); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = w + 0.6; ctx.beginPath(); ctx.moveTo(X(x0), Y(y0)); ctx.lineTo(X(x1), Y(y1)); ctx.stroke();
+    // žilky: mírně prohnuté, nestejně rozmístěné, k okraji slábnou; mezi nimi jemná síť
+    const vein = (x0: number, y0: number, x1: number, y1: number, w: number, bend = 0) => {
+      const mx = (x0 + x1) / 2 - (y1 - y0) * bend, my = (y0 + y1) / 2 + (x1 - x0) * bend;
+      for (const [col, lw] of [['rgba(70,70,70,0.3)', w + 2.2], ['rgba(255,255,255,0.7)', w]] as [string, number][]) {
+        ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(X(x0), Y(y0)); ctx.quadraticCurveTo(X(mx), Y(my), X(x1), Y(y1)); ctx.stroke();
+      }
     };
-    if (sp.palm) for (const a of [-1.15, -0.6, 0, 0.6, 1.15]) vein(0, 0.08, Math.sin(a) * 0.5, 0.08 + Math.cos(a) * (a ? 0.6 : 0.9), a ? 2.2 : 3);
-    else {
-      vein(0, 0, 0, 0.98, 3);
-      for (let k = 1; k <= sp.veins; k++) {
-        const y = 0.06 + (0.84 * k) / (sp.veins + 1), reach = 0.5 * Math.sin(Math.PI * Math.min(1, y + 0.12));
-        for (const sgn of [-1, 1]) vein(0, y, sgn * reach, y + 0.16 + reach * 0.25, 1.4);
+    const net = (x: number, y: number) => {
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 0.7;
+      for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(X(x), Y(y)); ctx.lineTo(X(x + (rnd(63, cx * 9 + i, Math.round(y * 97)) - 0.5) * 0.16), Y(y + (rnd(64, cx * 9 + i, Math.round(x * 89)) - 0.3) * 0.12)); ctx.stroke(); }
+    };
+    if (sp.palm) for (const a of [-1.15, -0.6, 0, 0.6, 1.15]) {
+      const ex = Math.sin(a) * 0.5, ey = 0.08 + Math.cos(a) * (a ? 0.6 : 0.9);
+      vein(0, 0.08, ex, ey, a ? 1.6 : 2.4, a * 0.04);
+      for (let q = 1; q <= 4; q++) for (const sg of [-1, 1]) { const f = q / 5; vein(ex * f, 0.08 + (ey - 0.08) * f, ex * f + sg * 0.1 * Math.cos(a), 0.08 + (ey - 0.08) * f + 0.09 + sg * 0.05 * Math.sin(-a), 0.8, sg * 0.1); }
+    } else {
+      vein(0, 0, 0.01, 0.98, 2.4, 0.02);
+      for (let k = 1; k <= sp.veins; k++) for (const sgn of [-1, 1]) {
+        const jit = (rnd(65, cx * 7 + k, sgn + 2) - 0.5) * (0.5 / (sp.veins + 1));
+        const y = 0.06 + (0.84 * (k + (sgn > 0 ? 0.25 : 0))) / (sp.veins + 1) + jit, reach = 0.5 * Math.sin(Math.PI * Math.min(1, y + 0.12));
+        vein(0, y, sgn * reach, y + 0.14 + reach * 0.3 + jit, 1.1, -sgn * 0.12);
+        net(sgn * reach * 0.45, y + 0.1); net(sgn * reach * 0.75, y + 0.16);
       }
     }
     ctx.restore();
@@ -786,6 +799,7 @@ export class TreeView {
       const ag = year - sh.bornYear;
       BK[i] = sh.dead || ag < 2 ? 0 : leafySp ? sp.barkRough * smooth((ag - sp.barkAge * 0.4) / sp.barkAge) : smooth((ag - 1.5) / 5) * (0.6 + 0.4 * smooth(radiusOf(sh) / 1.2));
     }
+    const VO = new Float32Array(n).fill(-1);
     const endTan = (sh: Shoot): Vec3 => (sh.arc ? rotate(sh.dir, sh.arc.axis, sh.arc.angle) : sh.dir);
     const nrm = (x: number, y: number, z: number): Vec3 => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
 
@@ -793,7 +807,9 @@ export class TreeView {
       const sh = s.shoots[i];
       const bx = base[i * 3], by = base[i * 3 + 1], bz = base[i * 3 + 2];
       const d0 = sh.dir;
-      const [u0, w0] = basis(d0);
+      // osy průřezu volené tak, aby w = d × u – stěny trubky pak míří ven (jinak by se kreslil vnitřek)
+      const [u0, wB] = basis(d0);
+      const w0: Vec3 = [-wB[0], -wB[1], -wB[2]];
       const len = sh.len;
       const arc = sh.arc;
       const age = year - sh.bornYear;
@@ -806,7 +822,12 @@ export class TreeView {
           const pe = endTan(s.shoots[fr.index.get(sh.parent)!]);
           T0 = nrm(pe[0] + d0[0], pe[1] + d0[1], pe[2] + d0[2]);
         }
-        if (mainKid[i] >= 0) { const c = s.shoots[mainKid[i]].dir; T1 = nrm(d0[0] + c[0], d0[1] + c[1], d0[2] + c[2]); }
+        const kc = contKid[i] >= 0 && s.shoots[contKid[i]].attachT > 0.98 ? contKid[i] : mainKid[i];
+        if (kc >= 0) { const c = s.shoots[kc].dir; T1 = nrm(d0[0] + c[0], d0[1] + c[1], d0[2] + c[2]); }
+        // krátký silný úsek se ohnout nedá – prstence by se překlopily přes sebe a vznikly by ostré hrany
+        const soft = clamp(len / (7 * radiusOf(sh) + 0.01) - 0.15, 0, 1);
+        T0 = nrm(d0[0] + (T0[0] - d0[0]) * soft, d0[1] + (T0[1] - d0[1]) * soft, d0[2] + (T0[2] - d0[2]) * soft);
+        T1 = nrm(d0[0] + (T1[0] - d0[0]) * soft, d0[1] + (T1[1] - d0[1]) * soft, d0[2] + (T1[2] - d0[2]) * soft);
       }
       const dot0 = T0[0] * d0[0] + T0[1] * d0[1] + T0[2] * d0[2], dot1 = T1[0] * d0[0] + T1[1] * d0[1] + T1[2] * d0[2];
       const curved = !arc && len > 0.05 && (dot0 < 0.9995 || dot1 < 0.9995);
@@ -834,7 +855,8 @@ export class TreeView {
 
       let rb = radiusOf(sh);
       if (sh.elong && sh.targetLen > 0) rb *= 0.55 + 0.45 * (len / sh.targetLen);
-      const rt = sh.dead ? rb * 0.6 : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
+      const ck = contKid[i];
+      const rt = sh.dead ? rb * 0.6 : ck >= 0 ? Math.min(rb, radiusOf(s.shoots[ck]) * (s.shoots[ck].elong && s.shoots[ck].targetLen > 0 ? 0.55 + 0.45 * (s.shoots[ck].len / s.shoots[ck].targetLen) : 1)) : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
       col[0] = C[i * 3]; col[1] = C[i * 3 + 1]; col[2] = C[i * 3 + 2];
       // sousedé v ose: úsek, na který navazuji, a úsek, který navazuje na mě
       const pIdx = sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;
@@ -861,7 +883,7 @@ export class TreeView {
       // ztluštění v přeslenu: kmen je v místě nasazení větví mírně naběhlý
       const swellTip = whorl[i] > 0 && rb > 0.15, swellBase = !!par && sh.isMain && sh.attachT > 0.98 && whorl[fr.index.get(sh.parent)!] > 0 && rb > 0.15;
       const radiusAt = (t: number) => {
-        let r = rb + (rt - rb) * t;
+        let r = rt < rb * 0.7 ? rt + (rb - rt) * (1 - Math.pow(t, 2.4)) : rb + (rt - rb) * t;
         if (collar && t < tc) r *= 1 + 0.45 * (1 - t / tc) * (1 - t / tc);
         if (swellTip) { const x = ((1 - t) * len) / (1.4 * rt + 0.05); r *= 1 + 0.13 * Math.exp(-x * x); }
         if (swellBase) { const x = (t * len) / (1.4 * rb + 0.05); r *= 1 + 0.13 * Math.exp(-x * x); }
@@ -891,7 +913,8 @@ export class TreeView {
         const rough = isBark ? clamp((rb - 0.3) * 0.05, 0, 0.07) : 0;
         const tile = 2.4 + rb * 1.8; // silnější kmen má větší desky
         const tiles = Math.max(1, Math.round((6.2832 * rb) / tile));
-        const v0 = (sh.id % 7) * 0.13;
+        const v0 = VO[i] >= 0 ? VO[i] : (sh.id % 7) * 0.13;
+        if (ck >= 0 && s.shoots[ck].attachT > 0.98) VO[ck] = v0 + len / (tile * 2); // kresba kůry pokračuje do navazujícího úseku
         B.reserve(ts.length * (RN + 1) + 1, ts.length * RN * 6);
         let prev = -1;
         for (let q = 0; q < ts.length; q++) {
@@ -918,7 +941,7 @@ export class TreeView {
         }
         // světlá řezná plocha jen tam, kde výhon opravdu končí řezem; zaštípnutý výhon, ze kterého osa pokračuje, ji nemá
         const bareCut = sh.tipCut && contKid[i] < 0;
-        const cut = bareCut && !sh.elong ? 0.2 : 0.8;
+        const cut = ck >= 0 ? 0 : bareCut && !sh.elong ? 0.2 : 0.8;
         const c = B.v(cx + d[0] * rt * cut, cy + d[1] * rt * cut, cz + d[2] * rt * cut, d[0], d[1], d[2],
           bareCut ? 0.8 : colorAt(1, 0), bareCut ? 0.7 : colorAt(1, 1), bareCut ? 0.5 : colorAt(1, 2));
         B.t(0.5, v0 + len / (tile * 2), bareCut ? 0 : barkAt(1));
@@ -956,7 +979,8 @@ export class TreeView {
       const drawBud = (dir: Vec3, bl: number, off: number, fat = 0.3, tint: number[] | null = null) => {
         const br = bl * fat;
         const ox = cx + dir[0] * off, oy = cy + dir[1] * off, oz = cz + dir[2] * off;
-        const [bu, bw] = basis(dir);
+        const [bu, bwB] = basis(dir);
+        const bw: Vec3 = [-bwB[0], -bwB[1], -bwB[2]];
         wb.reserve(3 * RAD + 1, 3 * RAD * 6);
         let prev = -1;
         for (const [t, r, cr, cg, cb] of [[0, 0.7, 0.5, 0.3, 0.2], [0.4, 1, 0.62, 0.36, 0.24], [0.78, 0.55, 0.7, 0.5, 0.36]] as number[][]) {
@@ -1048,23 +1072,29 @@ export class TreeView {
           const W = L * sp.leafWidth;
           const cell = LEAF_CELL[cot ? 'ovate' : sp.leafShape];
           const pet = L * 0.12;
-          // čepel = 2 × 1 políčka s kresbou z atlasu; střed je níž než okraje (list je lehce do V)
+          // čepel = 2 × 2 políčka; každý list je jinak natočený kolem řapíku, jinak prohnutý a zrcadlený
+          const roll = (rnd(sh.id, k, 21) - 0.5) * 1.1, curl = (rnd(sh.id, k, 22) - 0.35) * 0.3, flip = rnd(sh.id, k, 23) < 0.5 ? -1 : 1;
+          const cr2 = Math.cos(roll), sr2 = Math.sin(roll);
+          const ax = sx * cr2 + ux * sr2, ay = uy * sr2, az2 = sz * cr2 + uz * sr2; // osa šířky po natočení
+          const bxn = ux * cr2 - sx * sr2, byn = uy * cr2, bzn = uz * cr2 - sz * sr2; // normála po natočení
+          const skew = (rnd(sh.id, k, 24) - 0.5) * 0.12;
           let row0 = -1;
-          for (let yy = 0; yy <= 1; yy++) for (let xx = -1; xx <= 1; xx++) {
-            const x = xx * 0.5, lift = Math.abs(x) * W * 0.24 - yy * L * 0.06;
-            const v = nb.v(px + ld[0] * (pet + L * yy) + sx * W * x + ux * lift, py + ld[1] * (pet + L * yy) + uy * lift, pz + ld[2] * (pet + L * yy) + sz * W * x + uz * lift,
-              ux + sx * x * 0.5, uy, uz + sz * x * 0.5, r, gg, b);
-            nb.t((cell[0] + 0.5 + x * 0.92) / 4, (cell[1] + 0.04 + yy * 0.92) / 2, yy);
+          for (let yi = 0; yi <= 2; yi++) for (let xx = -1; xx <= 1; xx++) {
+            const yy = yi / 2, x = xx * 0.5;
+            const lift = Math.abs(x) * W * 0.22 - curl * L * yy * yy;
+            const v = nb.v(px + ld[0] * (pet + L * yy) + ax * W * (x + skew * yy) + bxn * lift, py + ld[1] * (pet + L * yy) + ay * W * x + byn * lift, pz + ld[2] * (pet + L * yy) + az2 * W * (x + skew * yy) + bzn * lift,
+              bxn + ax * x * 0.5, Math.abs(byn) + 0.15, bzn + az2 * x * 0.5, r, gg, b);
+            nb.t((cell[0] + 0.5 + flip * x * 0.92) / 4, (cell[1] + 0.04 + yy * 0.92) / 2, yy);
             if (row0 < 0) row0 = v;
           }
-          for (let q = 0; q < 2; q++) {
-            const a0 = row0 + q, a1 = row0 + q + 1, b0 = row0 + 3 + q, b1 = row0 + 4 + q;
+          for (let yi = 0; yi < 2; yi++) for (let q = 0; q < 2; q++) {
+            const a0 = row0 + yi * 3 + q, a1 = a0 + 1, b0 = a0 + 3, b1 = a0 + 4;
             nb.tri(a0, a1, b1); nb.tri(a0, b1, b0); nb.tri(a0, b1, a1); nb.tri(a0, b0, b1);
           }
         };
         const tuft = sp.leafShape === 'tuft';
         const perNode = tuft ? (cur ? 4 : 12) : 1;
-        nb.reserve(Math.ceil(cnt / stride + 1) * perNode * (tuft ? 3 : 6), Math.ceil(cnt / stride + 1) * perNode * (tuft ? 6 : 24));
+        nb.reserve(Math.ceil(cnt / stride + 1) * perNode * (tuft ? 3 : 9), Math.ceil(cnt / stride + 1) * perNode * (tuft ? 6 : 48));
         for (let k = (sh.id * 7) % stride; k < cnt; k += stride) {
           const h = rnd(sh.id, k, 11);
           if (h >= sh.needleLive) continue;
@@ -1088,7 +1118,7 @@ export class TreeView {
             const ry = tuft && !cur ? d[1] * c3 + (u[1] * -spn + w[1] * cp) * s3 : u[1] * cp + w[1] * spn;
             const rz = tuft && !cur ? d[2] * c3 + (u[2] * -spn + w[2] * cp) * s3 : u[2] * cp + w[2] * spn;
             const ld = nrm(ax0 * ca + rx * sa, ay0 * ca + ry * sa - (tuft ? 0.05 : 0.22), az0 * ca + rz * sa);
-            emit(cx, cy, cz, ld, L0 * (0.85 + 0.3 * rnd(sh.id, k * 7 + q, 13)), k * 5 + q);
+            emit(cx, cy, cz, ld, L0 * (tuft ? 0.85 + 0.3 * rnd(sh.id, k * 7 + q, 13) : 0.62 + 0.55 * rnd(sh.id, k * 7 + q, 13)), k * 5 + q);
           }
         }
         continue;
@@ -1168,9 +1198,8 @@ export class TreeView {
     if (n && R0 > 0.2) {
       const root0 = s.shoots[0];
       const grow = smooth((R0 - 0.2) / 0.7);
-      woodColor(s, root0, col);
-      const rootAge = year - root0.bornYear;
-      const rootBark = root0.dead ? 0 : smooth((rootAge - 1.5) / 5) * (0.6 + 0.4 * smooth(R0 / 1.2));
+      col[0] = C[0]; col[1] = C[1]; col[2] = C[2];
+      const rootBark = BK[0];
       const SEG = 8, RN = 8;
       for (const root of s.nebari) {
         const k = root.id;
@@ -1182,7 +1211,7 @@ export class TreeView {
           const f = j / SEG;
           az += (rnd(s.seed, 505 + k, j) - 0.5) * 0.22;
           const rho = R0 * 0.15 + Lr * f;
-          pts.push([Math.cos(az) * rho, R0 * 1.0 * Math.pow(1 - f, 2.1) - R0 * 0.35 * f * f, Math.sin(az) * rho]);
+          pts.push([Math.cos(az) * rho, R0 * 0.85 * Math.pow(1 - f, 2.1) - R0 * 0.35 * f * f, Math.sin(az) * rho]);
           rad.push(thick * (Math.pow(1 - f, 0.8) * 0.85 + 0.15));
         }
         bb.reserve((SEG + 1) * (RN + 1) + 1, SEG * RN * 6);
