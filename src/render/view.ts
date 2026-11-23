@@ -403,6 +403,13 @@ function woodColor(s: State, sh: Shoot, out: number[]) {
   out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
 }
 
+/** Průměr měděného drátu v mm pro větev o poloměru r (cm): asi třetina průměru větve, z běžně prodávaných sil. */
+export function wireGauge(r: number): number {
+  const want = (r * 20) / 3;
+  const G = [1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6];
+  return G.reduce((a, b) => (Math.abs(b - want) < Math.abs(a - want) ? b : a));
+}
+
 export class TreeView {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -433,6 +440,8 @@ export class TreeView {
   private potKey = '';
   private seedMesh: THREE.Mesh;
   private wb = new Buf();
+  private mb = new Buf(); // drát (kovový materiál)
+  private wireMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.85, roughness: 0.36, envMapIntensity: 1.1 }));
   private nb = new Buf();
   private state: State | null = null;
   private frames: Frames | null = null;
@@ -478,9 +487,10 @@ export class TreeView {
     this.bark = new THREE.Mesh(new THREE.BufferGeometry(), barkMat);
     this.addWind(barkMat, 'bark', false, false);
     this.addWind(this.wood.material as THREE.Material, 'wood', false, false);
+    this.addWind(this.wireMesh.material as THREE.Material, 'wire', false, false);
     this.addWind(this.needles.material as THREE.Material, 'needles', true, true);
     this.sun.shadow.autoUpdate = false; // stín se přepočítá jen při změně stromu, ne při každém snímku s větrem
-    for (const m of [this.wood, this.bark, this.needles]) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; }
+    for (const m of [this.wood, this.bark, this.needles, this.wireMesh]) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; }
     // stůl: prkenná deska pod nádobou (u volné půdy skrytá)
     this.table = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.75, envMapIntensity: 0.35 }));
     this.table.receiveShadow = true;
@@ -522,7 +532,7 @@ export class TreeView {
     this.seedMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.8 }));
     this.seedMesh.scale.set(0.22, 0.12, 0.14);
     this.seedMesh.position.set(0, 0.1, 0);
-    this.tree.add(this.wood, this.bark, this.needles);
+    this.tree.add(this.wood, this.bark, this.needles, this.wireMesh);
     this.tree.rotation.order = 'ZXY';
     this.scene.add(this.tree, this.hi, this.marker, this.potGroup, this.seedMesh);
     this.resize();
@@ -863,7 +873,7 @@ export class TreeView {
     const year = yearOf(s.day), doy = doyOf(s.day);
     const { base, tip } = fr;
     const wb = this.wb, bb = this.bb, nb = this.nb;
-    wb.reset(); bb.reset(); nb.reset();
+    wb.reset(); bb.reset(); nb.reset(); this.mb.reset();
     this.jointEnds = {}; this.jointGap = { rel: 0, parent: -1, child: -1, info: '' }; this.attachGap = 0;
     this.builtDist = this.dist;
 
@@ -983,6 +993,7 @@ export class TreeView {
     for (let i = 0; i < n; i++) { const c = s.shoots[i]; if (c.parent >= 0 && c.attachT <= 0.98) MID[fr.index.get(c.parent)!] = 1; }
     const VO = new Float32Array(n).fill(-1);
     const UE = new Float32Array(n * 3); // osa u posledního prstence každého úseku
+    const wireSrc = new Int32Array(n).fill(-1), wirePhase = new Float32Array(n); // drát pokračující z nadrátovaného úseku dál po ose
     const RNS = new Uint8Array(n); // počet vrcholů prstence; navazující úsek ho dědí
     // Společný prstenec ve spoji dvou navazujících úseků: leží v rovině půlící úhel mezi nimi a má jeden
     // poloměr, takže konec jednoho úseku a začátek druhého na sebe přesně dosednou (žádné mezery ani zářezy).
@@ -1239,21 +1250,69 @@ export class TreeView {
         for (let k = 0; k < RN; k++) B.tri(prev + k, prev + k + 1, c);
       }
 
-      if ((sh.wire || sh.scar) && len > 0.3) {
-        // drát: měděná šroubovice o síle ~1/3 větve; po zarostlém drátu zůstane tmavá jizva
-        const wr = sh.wire ? Math.max(0.035, rb / 3) : 0.02;
-        const pitch = Math.max(0.5, rb * 4 + wr * 2);
+      // drát vede po celé ose větve: z nadrátovaného úseku pokračuje na navazující úseky, dokud nejsou tenčí než drát
+      const wsI = sh.wire ? i : wireSrc[i];
+      if (wsI >= 0 && ck >= 0 && !s.shoots[ck].wire && !s.shoots[ck].dead && radiusOf(s.shoots[ck]) > (wireGauge(radiusOf(s.shoots[wsI])) / 20) * 1.3) wireSrc[ck] = wsI;
+      if (wsI >= 0 && len > 0.3) {
+        const ws = s.shoots[wsI], wire = ws.wire!;
+        // Drát: kulatý měděný drát vinutý pod úhlem ~45°, síla podle větve (běžné průměry 1–6 mm, asi třetina
+        // průměru větve). Čerstvá měď je světlá a lesklá, s tím, jak dřevo tvar přebírá, tmavne (patina);
+        // úplně tmavý drát už zarůstá do kůry a je v ní zčásti utopený.
+        const wr = wireGauge(radiusOf(ws)) / 20; // poloměr drátu v cm
+        const set = wire.set, bite = ws.scar;
+        const k1 = Math.min(1, set / 0.9), k2 = bite ? 1 : Math.max(0, (set - 0.9) / 0.1) * 0.5;
+        const mixc = (a: number, b: number, c: number) => (a + (b - a) * k1) * (1 - k2) + c * k2;
+        const col = [mixc(0.95, 0.42, 0.13), mixc(0.56, 0.25, 0.09), mixc(0.34, 0.15, 0.07)]; // světlá měď → hnědá patina → skoro černá
+        const sink = bite ? -wr * 0.45 : wr * 0.92; // zarůstající drát je zpola v kůře
+        const turns = Math.max(1.5, (len * TE[i]) / (6.2832 * (rb + wr)));
+        const per = 14, SIDES = 6;
+        const steps = Math.min(600, Math.max(12, Math.round(turns * per)));
+        const mb = this.mb;
+        if (wireSrc[ck] === wsI) wirePhase[ck] = wirePhase[i] + (steps / per) * 6.2832;
+        mb.reserve((steps + 1) * SIDES + 2, steps * SIDES * 6 + SIDES * 6);
+        const WP: number[] = [], N: number[] = [];
+        for (let k = 0; k <= steps; k++) {
+          const t = (sh.wire ? 0.02 : 0) + (1 - (sh.wire ? 0.02 : 0) - (wireSrc[ck] === wsI ? 0 : 0.03)) * (k / steps), a = (k / per) * 6.2832 + ws.id + wirePhase[i];
+          at(t * TE[i]); // stejné zobrazení jako u kůry: zkrácený pahýl se kreslí jen po poslední živý výhon
+          const rr = radiusAt(t) + sink;
+          const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
+          WP.push(cx + nx * rr, cy + ny * rr, cz + nz * rr); N.push(nx, ny, nz);
+        }
+        let prev = -1;
+        for (let k = 0; k <= steps; k++) {
+          const i0 = Math.max(0, k - 1) * 3, i1 = Math.min(steps, k + 1) * 3;
+          let tx = WP[i1] - WP[i0], ty = WP[i1 + 1] - WP[i0 + 1], tz = WP[i1 + 2] - WP[i0 + 2];
+          const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+          const nx = N[k * 3], ny = N[k * 3 + 1], nz = N[k * 3 + 2];
+          const bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
+          const first = mb.nv;
+          for (let q = 0; q < SIDES; q++) {
+            const f = (q / SIDES) * 6.2832, c = Math.cos(f), si = Math.sin(f);
+            const ox = nx * c + bx * si, oy = ny * c + by * si, oz = nz * c + bz * si;
+            const shade = 0.9 + 0.1 * c; // spodek drátu u kůry o něco tmavší
+            mb.v(WP[k * 3] + ox * wr, WP[k * 3 + 1] + oy * wr, WP[k * 3 + 2] + oz * wr, ox, oy, oz, col[0] * shade, col[1] * shade, col[2] * shade);
+          }
+          if (prev >= 0) for (let q = 0; q < SIDES; q++) {
+            const q2 = (q + 1) % SIDES;
+            mb.tri(prev + q, prev + q2, first + q); mb.tri(prev + q2, first + q2, first + q);
+          }
+          prev = first;
+        }
+      } else if (sh.scar && len > 0.3) {
+        // po sundaném zarostlém drátu zůstane v kůře tmavá spirálová jizva
+        const wr = 0.02;
+        const pitch = Math.max(0.5, rb * 6.2832);
         const steps = Math.min(240, Math.max(8, Math.round((len / pitch) * 8)));
-        const [cr, cg, cb] = sh.wire ? (sh.scar ? [0.42, 0.26, 0.16] : [0.6, 0.36, 0.2]) : [0.3, 0.23, 0.19];
+        const [cr, cg, cb] = [0.3, 0.23, 0.19];
         wb.reserve((steps + 1) * 2, steps * 12);
         let prev = -1;
         for (let k = 0; k <= steps; k++) {
           const t = k / steps, a = (k / 8) * 6.2832 + sh.id;
-          at(t);
-          const rr = radiusAt(t) * (sh.wire && !sh.scar ? 1 : 1.03) + (sh.wire && !sh.scar ? wr * 0.7 : 0.025);
+          at(t * TE[i]);
+          const rr = radiusAt(t) * 1.03 + 0.025;
           const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
           const px = cx + nx * rr, py = cy + ny * rr, pz = cz + nz * rr;
-          const hw2 = wr * 0.55; // drát je tenký proužek, ne široký pás
+          const hw2 = wr * 0.55;
           const v0 = wb.v(px - d[0] * hw2, py - d[1] * hw2, pz - d[2] * hw2, nx, ny, nz, cr, cg, cb);
           wb.v(px + d[0] * hw2, py + d[1] * hw2, pz + d[2] * hw2, nx, ny, nz, cr, cg, cb);
           if (prev >= 0) {
@@ -1610,6 +1669,7 @@ export class TreeView {
     }
 
     wb.apply(this.wood.geometry, true);
+    this.mb.apply(this.wireMesh.geometry, true);
     bb.apply(this.bark.geometry, true);
     nb.apply(this.needles.geometry, true);
     this.seedMesh.visible = s.stage === 'seed';

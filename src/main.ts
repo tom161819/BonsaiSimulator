@@ -1,7 +1,7 @@
 // Aplikační vrstva: propojuje časovou osu (simulace) s 3D pohledem a ovládáním.
 
 import { Timeline } from './sim/timeline';
-import { TreeView, Pick } from './render/view';
+import { TreeView, Pick, wireGauge } from './render/view';
 import { P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
 import { YEAR, bendLimit, bendStress, breakRisk, heldArc, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
@@ -158,7 +158,7 @@ function describeWire(p: Pick): Described | null {
   const spring = s.gdd >= P.flushGdd && s.gdd < P.budSetGdd;
   return {
     title: 'Nadrátovat a ohnout', pick,
-    detail: `Táhněte větev tam, kam ji chcete ohnout. Bezpečný ohyb do ${deg(bendLimit(s, sh, arcZ()))}°, měděný drát ø ${(radiusOf(sh) * 20 / 3).toFixed(1).replace('.', ',')} mm.`,
+    detail: `Táhněte větev tam, kam ji chcete ohnout. Bezpečný ohyb do ${deg(bendLimit(s, sh, arcZ()))}°, měděný drát ø ${String(wireGauge(radiusOf(sh))).replace('.', ',')} mm.`,
     danger: spring ? 'Strom je v růstu a kůra se snadno odlupuje – větve teď praskají dřív. Lepší je podzim až předjaří.' : '',
     action: null,
   };
