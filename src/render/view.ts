@@ -1662,7 +1662,7 @@ export class TreeView {
   // ------------------------------------------------------------ výběr
 
   /** Najde pupen nebo výhon nejblíž kurzoru (v obrazovkových pixelech – tenké větvičky se dají trefit). */
-  pick(x: number, y: number): Pick | null {
+  pick(x: number, y: number, budsOnly = false): Pick | null {
     const s = this.state, fr = this.frames;
     if (!s || !fr) return null;
     const W = this.canvas.clientWidth, Hh = this.canvas.clientHeight;
@@ -1687,8 +1687,9 @@ export class TreeView {
         const wx = b[i * 3] + (tp[i * 3] - b[i * 3]) * bud.t + bud.dir[0] * 0.3, wy = b[i * 3 + 1] + (tp[i * 3 + 1] - b[i * 3 + 1]) * bud.t + bud.dir[1] * 0.3, wz = b[i * 3 + 2] + (tp[i * 3 + 2] - b[i * 3 + 2]) * bud.t + bud.dir[2] * 0.3;
         const [qx, qy] = proj(wx, wy, wz);
         const e = Math.hypot(qx - x, qy - y) - 6;
-        if (e < 5) hits.push({ p: { type: 'bud', shoot: sh.id, bud: bud.id }, e: Math.max(0, e), rpx: 1, d: Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z), R: 0.1 });
+        if (e < (budsOnly ? 12 : 5)) hits.push({ p: { type: 'bud', shoot: sh.id, bud: bud.id }, e: Math.max(0, e), rpx: 1, d: Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z), R: 0.1 });
       }
+      if (budsOnly) continue;
       const ex = cx - ax, ey = cy - ay, l2 = ex * ex + ey * ey;
       if (l2 < 1) continue;
       const t = clamp(((x - ax) * ex + (y - ay) * ey) / l2, 0, 1);
