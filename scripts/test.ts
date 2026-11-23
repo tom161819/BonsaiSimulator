@@ -1,7 +1,7 @@
 // Testy simulačního jádra (bez grafiky): node scripts/run.mjs scripts/test.ts
 import assert from 'node:assert/strict';
 import { Timeline } from '../src/sim/timeline';
-import { YEAR, bendLimit, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
+import { YEAR, bendLimit, breakRisk, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
 import type { State, Vec3 } from '../src/sim/types';
 import samples from '../src/samples.json';
 import { SPECIES_ORDER } from '../src/sim/species';
@@ -330,6 +330,19 @@ test('odstranění suchých větví nechá živé výhony beze změny', () => {
   assert.equal(tl.state.shoots.filter((s) => !s.dead).map((s) => s.id).join(), live);
   const ids = new Set(tl.state.shoots.map((s) => s.id));
   assert.ok(tl.state.shoots.every((s) => s.parent < 0 || ids.has(s.parent)), 'nic nevisí bez rodiče');
+});
+
+test('v6: silná větev snese větší ohyb a riziko roste pomaleji; v5 beze změny', () => {
+  const lim = (rules: number) => {
+    const tl = new Timeline(3, [], rules); tl.seek(at(12, 320));
+    const sh = tl.state.shoots.filter((s) => !s.dead && s.parent >= 0).sort((a, b) => b.area - a.area)[0];
+    const safe = bendLimit(tl.state, sh);
+    return { safe: (safe * 180) / Math.PI, risk: breakRisk(tl.state, sh, safe * 1.5) };
+  };
+  const a = lim(5), b = lim(6);
+  assert.ok(b.safe > a.safe * 1.3, `v5 ${a.safe.toFixed(0)}°, v6 ${b.safe.toFixed(0)}°`);
+  assert.equal(a.risk, 1);
+  assert.ok(Math.abs(b.risk - 0.5) < 1e-9);
 });
 
 console.log(`\n${n} testů prošlo`);

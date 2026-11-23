@@ -84,6 +84,8 @@ export const P = {
   bendMax: 80,
   bendArcMax: 150,
   bendStrain: 0.05, // oblouk: největší poměr poloměru větve k poloměru ohybu
+  // pravidla v6: tolerantnější drátování (i silnější větve jdou ohnout, riziko roste pomaleji)
+  bendK6: 45, bendMin6: 15, bendStrain6: 0.07, bendSpringFactor6: 0.8, bendRamp6: 1.0,
   bendSpringFactor: 0.6, // v době jarního růstu se kůra snadno odlupuje – menší bezpečný ohyb
 
   // --- prověšování větví vahou ---
@@ -114,7 +116,7 @@ export const POT: Record<PotType, { name: string; growth: number; needle: number
 };
 /** Účinnost stanoviště v původních pravidlech (v1): miska strom živila výrazně hůř. */
 export const POT_GROWTH_V1: Record<PotType, number> = { ground: 1.0, training: 0.85, bonsai: 0.5 };
-export const RULES_LATEST = 5;
+export const RULES_LATEST = 6;
 
 /** Katalog nádob. Velikost se sama nemění – nádobu volí pěstitel při přesazení.
  *  Objem v litrech určuje, kolik kořenů se vejde (P.rootPerLiter); rozměry v cm slouží vykreslení:

@@ -135,6 +135,9 @@ jen shora podle síly vrcholů. Ve v3 zůstává polovina rozpočtu ve větvi, k
 Ve v5 má malý stromek na jednotku olistění několikanásobně větší přírůst (podle druhu 1,2–4×, nejvíc bříza a modřín);
 výhoda mizí s velikostí koruny. Ve volné půdě vychází v pěti letech 1,6–3 m. Husté koruny se samy prosvětlují
 a tloušťkový přírůst je o 40 % menší. Borovice se nemění.
+**Pravidla v6 – tolerantnější drátování.** Růst je stejný jako ve v5. Bezpečný ohyb je asi o 60 % větší
+(45/(r+0,25)° místo 28, nejméně 15° místo 8°), v době růstu se snižuje jen na 80 % (dřív 60 %) a riziko prasknutí
+dosáhne 100 % až při dvojnásobku bezpečného ohybu (dřív při 1,5násobku). Herní ústupek, ne údaj z literatury.
 
 Ve v3 se také větev, která převzala vrchol, postupně zvedá ke svislici i ve stávajícím dřevě (tenká rychle,
 silná pomalu), a osu může převzít i větev nasazená níž na pahýlu bez jehlic.

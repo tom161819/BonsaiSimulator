@@ -171,17 +171,19 @@ export function rootBoundFactor(s: State): number {
 /** Bezpečný úhel ohybu výhonu drátem (rad): tenké dřevo se ohne hodně, silné málo. */
 export function bendLimit(s: State, sh: Shoot, z = 0): number {
   const r = radiusOf(sh);
-  let deg = clamp(P.bendK / (r + 0.25), P.bendMin, P.bendMax);
+  const v6 = s.rules >= 6;
+  const bMin = v6 ? P.bendMin6 : P.bendMin;
+  let deg = clamp((v6 ? P.bendK6 : P.bendK) / (r + 0.25), bMin, P.bendMax);
   // plynulý oblouk namáhá dřevo méně než zlom: mez určuje poloměr ohybu vůči síle větve
-  if (z > 0) deg = clamp(Math.max(deg, ((z * sh.len * P.bendStrain) / Math.max(r, 0.03)) * (180 / Math.PI)), P.bendMin, P.bendArcMax);
-  if (s.gdd >= P.flushGdd && s.gdd < P.budSetGdd) deg *= P.bendSpringFactor;
+  if (z > 0) deg = clamp(Math.max(deg, ((z * sh.len * (v6 ? P.bendStrain6 : P.bendStrain)) / Math.max(r, 0.03)) * (180 / Math.PI)), bMin, P.bendArcMax);
+  if (s.gdd >= P.flushGdd && s.gdd < P.budSetGdd) deg *= v6 ? P.bendSpringFactor6 : P.bendSpringFactor;
   return (deg * Math.PI) / 180;
 }
 
 /** Pravděpodobnost prasknutí při ohybu o daný úhel. */
 export const breakRisk = (s: State, sh: Shoot, angle: number, z = 0) => {
   const safe = bendLimit(s, sh, z);
-  return clamp((angle - safe) / (0.5 * safe), 0, 1);
+  return clamp((angle - safe) / ((s.rules >= 6 ? P.bendRamp6 : 0.5) * safe), 0, 1);
 };
 
 /** Sezónní násobek stresu z přesazení: nejšetrnější je předjaří při nalévání pupenů. */
