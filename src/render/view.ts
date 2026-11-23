@@ -70,8 +70,14 @@ function tileNoise(x: number, y: number, px: number, py: number, seed: number) {
 
 /** Borka borovice: podélně protažené šupinaté desky oddělené tmavými hlubokými prasklinami
  *  (dlaždicovatelný Voronoiův vzor). Slouží jako barva i jako reliéf. */
-function barkTexture(): THREE.CanvasTexture {
-  const W = 256, H = 512, GX = 8, GY = 4;
+type BarkStyle = 'pine' | 'larch' | 'maple' | 'oak' | 'birch' | 'beech' | 'hornbeam';
+const BARK_BUMP: Record<BarkStyle, number> = { pine: 6, larch: 6, maple: 5, oak: 9, birch: 2.5, beech: 1.5, hornbeam: 3 };
+
+/** Kůra podle druhu: šupinaté desky (borovice, modřín), korkové hranoly (babyka), hluboké podélné brázdy (dub),
+ *  bílá s tmavými čočinkami (bříza), hladká se skvrnami lišejníku (buk), hladká podélně žebrovaná (habr). */
+function barkTexture(style: BarkStyle = 'pine'): THREE.CanvasTexture {
+  const W = 256, H = 512;
+  const GX = style === 'maple' ? 5 : style === 'larch' ? 7 : 8, GY = style === 'maple' ? 7 : style === 'larch' ? 3 : 4;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d')!;
@@ -97,12 +103,37 @@ function barkTexture(): THREE.CanvasTexture {
     plate *= 0.72 + 0.28 * Math.min(1, fine * 3);
     const flake = tileNoise(u * 40, v * 24, 40, 24, 40), grain = tileNoise(u * 64, v * 6, 64, 6, 41);
     const top = 0.66 + 0.2 * rnd(33, id, 1) + 0.12 * (flake - 0.5) + 0.1 * (grain - 0.5);
-    const g = Math.max(0, Math.min(1, 0.24 + (top - 0.24) * Math.pow(plate, 0.6)));
+    let g = Math.max(0, Math.min(1, 0.24 + (top - 0.24) * Math.pow(plate, 0.6)));
+    if (style === 'oak') {
+      // dlouhé svislé hřebeny oddělené hlubokými brázdami
+      const wob = 0.05 * (tileNoise(u * 3, v * 5, 3, 5, 51) - 0.5);
+      const r1 = Math.abs(2 * tileNoise((u + wob) * 7, v * 1, 7, 1, 52) - 1), r2 = Math.abs(2 * tileNoise((u + wob) * 15, v * 3, 15, 3, 53) - 1);
+      const ridge = Math.min(1, (r1 * 0.75 + r2 * 0.35) * 1.9);
+      g = 0.16 + 0.6 * Math.pow(ridge, 0.5) + 0.12 * (grain - 0.5) + 0.06 * (flake - 0.5);
+    } else if (style === 'birch') g = 0.78 + 0.03 * (flake - 0.5); // bílá; čočinky se dokreslí níže
+    else if (style === 'beech') {
+      const lichen = tileNoise(u * 5, v * 7, 5, 7, 54) > 0.66 ? 0.07 : 0;
+      g = 0.72 + 0.1 * (tileNoise(u * 3, v * 4, 3, 4, 55) - 0.5) + lichen + 0.02 * (flake - 0.5);
+    } else if (style === 'hornbeam') g = 0.7 + 0.16 * (tileNoise(u * 5, v * 1, 5, 1, 56) - 0.5) + 0.05 * (grain - 0.5);
+    g = Math.max(0, Math.min(1, g));
     const o = (y * W + x) * 4;
     img.data[o] = img.data[o + 1] = img.data[o + 2] = Math.round(g * 255);
     img.data[o + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
+  if (style === 'birch') {
+    // vodorovné tmavé čočinky a několik černých kosočtverečných trhlin
+    for (let i = 0; i < 150; i++) {
+      const x = rnd(57, i, 1) * W, y = rnd(57, i, 2) * H, rx = 4 + 18 * rnd(57, i, 3), ry = 1 + 1.6 * rnd(57, i, 4);
+      ctx.fillStyle = `rgba(40,36,32,${0.35 + 0.4 * rnd(57, i, 5)})`;
+      for (const [dx, dy] of [[0, 0], [W, 0], [-W, 0], [0, H], [0, -H]]) { ctx.beginPath(); ctx.ellipse(x + dx, y + dy, rx, ry, 0, 0, 6.2832); ctx.fill(); }
+    }
+    for (let i = 0; i < 7; i++) {
+      const x = rnd(58, i, 1) * W, y = rnd(58, i, 2) * H, w = 8 + 14 * rnd(58, i, 3), h = 16 + 30 * rnd(58, i, 4);
+      ctx.fillStyle = 'rgba(25,22,20,0.85)';
+      ctx.beginPath(); ctx.moveTo(x, y - h); ctx.lineTo(x + w, y); ctx.lineTo(x, y + h); ctx.lineTo(x - w, y); ctx.closePath(); ctx.fill();
+    }
+  }
   const t = new THREE.CanvasTexture(cv);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 4;
@@ -168,7 +199,12 @@ function leafAtlas(): THREE.CanvasTexture {
     side(-1, half.slice().reverse().map(([x, y]) => [x, y] as [number, number]));
     ctx.save();
     ctx.beginPath();
-    pts.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
+    if (name === 'lobed') {
+      // zaoblené laloky: křivka vedená středy hran
+      const n = pts.length, mid = (i: number): [number, number] => [(pts[i % n][0] + pts[(i + 1) % n][0]) / 2, (pts[i % n][1] + pts[(i + 1) % n][1]) / 2];
+      ctx.moveTo(X(mid(0)[0]), Y(mid(0)[1]));
+      for (let i = 1; i <= n; i++) { const p = pts[i % n], m = mid(i); ctx.quadraticCurveTo(X(p[0]), Y(p[1]), X(m[0]), Y(m[1])); }
+    } else pts.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
     ctx.closePath();
     const g = ctx.createLinearGradient(X(-0.5), 0, X(0.5), 0);
     g.addColorStop(0, '#a9a9a9'); g.addColorStop(0.5, '#bdbdbd'); g.addColorStop(1, '#a6a6a6');
@@ -243,12 +279,13 @@ function backdropTexture(): THREE.CanvasTexture {
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d')!;
   const sky = ctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, '#9fc0dc'); sky.addColorStop(0.36, '#cfe0ea'); sky.addColorStop(0.5, '#e6ebe4');
-  sky.addColorStop(0.52, '#8fa57c'); sky.addColorStop(0.7, '#6f8a62'); sky.addColorStop(1, '#5b6f52');
+  // stromy v pozadí sahají nad obzor, aby byly vidět i při pohledu mírně shora
+  sky.addColorStop(0, '#8fb6d8'); sky.addColorStop(0.26, '#c3d9e8'); sky.addColorStop(0.36, '#dde7df');
+  sky.addColorStop(0.42, '#a3b98f'); sky.addColorStop(0.6, '#728c63'); sky.addColorStop(1, '#5b6f52');
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, H);
   for (let i = 0; i < 520; i++) { // rozostřené koruny a keře kolem obzoru
-    const x = rnd(81, i, 1) * W, y = H * (0.36 + 0.34 * Math.pow(rnd(81, i, 2), 0.7)), r = 18 + 60 * rnd(81, i, 3);
+    const x = rnd(81, i, 1) * W, y = H * (0.3 + 0.4 * Math.pow(rnd(81, i, 2), 0.8)), r = 18 + 60 * rnd(81, i, 3);
     const light = rnd(81, i, 4);
     const col = light < 0.25 ? '225,235,190' : light < 0.6 ? '120,150,95' : '70,100,70';
     for (const dx of [0, W, -W]) {
@@ -328,9 +365,11 @@ export class TreeView {
   readonly camera = new THREE.PerspectiveCamera(32, 1, 0.5, 20000);
   private wood = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, envMapIntensity: 0.3 }));
   private bark: THREE.Mesh;
+  private barkStyle: BarkStyle = 'pine';
+  private barkCache = new Map<BarkStyle, THREE.CanvasTexture>();
   private leafTex = leafAtlas();
   private needles = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 28, specular: 0x1c2a1c, map: this.leafTex, alphaTest: 0.4 }));
-  private backdrop = new THREE.Mesh(new THREE.SphereGeometry(9000, 48, 24), new THREE.MeshBasicMaterial({ map: backdropTexture(), side: THREE.BackSide, depthWrite: false, toneMapped: false, fog: false }));
+  private backdrop = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), new THREE.MeshBasicMaterial({ map: backdropTexture(), side: THREE.BackSide, depthWrite: false, toneMapped: false, fog: false }));
   private sunU = { uSunDir: { value: new THREE.Vector3(0, 1, 0) } };
   private sun = new THREE.DirectionalLight(0xfff0d8, 2.3);
   private soilTex = soilTexture();
@@ -373,6 +412,7 @@ export class TreeView {
     this.sun.shadow.bias = -0.0006;
     this.scene.add(this.sun, this.sun.target);
     const barkTex = barkTexture();
+    this.barkCache.set('pine', barkTex);
     const barkMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, map: barkTex, bumpMap: barkTex, bumpScale: 6, envMapIntensity: 0.3 });
     // síla borky je ve vrcholech (aBark 0..1): mladé dřevo hladké, staré hluboce rozpraskané, s plynulým přechodem
     barkMat.onBeforeCompile = (sh) => {
@@ -526,6 +566,7 @@ export class TreeView {
     if (this.state && Math.abs(Math.log(this.dist / this.builtDist)) > 0.25) this.build();
     if (this.windOn) { this.windU.uTime.value = performance.now() / 1000; this.needsRender = true; }
     this.backdrop.position.copy(this.camera.position);
+    this.backdrop.scale.setScalar(this.camera.far * 0.9); // koule pozadí musí zůstat uvnitř dohledu kamery
     this.sunU.uSunDir.value.copy(this.sun.position).sub(this.sun.target.position).normalize().transformDirection(this.camera.matrixWorldInverse);
     if (!this.needsRender) return;
     this.needsRender = false;
@@ -720,6 +761,16 @@ export class TreeView {
     const stride = Math.max(1, Math.ceil(total / MAX_FASCICLES));
     const nw = Math.max(0.09, this.dist * 0.0011 * Math.pow(stride, 0.4));
     const sp = speciesOf(s), leafySp = sp.kind === 'leafy';
+    const style = (['pine', 'larch', 'maple', 'oak', 'birch', 'beech', 'hornbeam'] as BarkStyle[]).find((x) => x === sp.id) ?? 'pine';
+    if (style !== this.barkStyle) {
+      // kůra druhu: textura se vytvoří při prvním použití a pak se jen přepíná
+      if (!this.barkCache.has(style)) this.barkCache.set(style, barkTexture(style));
+      const m = this.bark.material as THREE.MeshStandardMaterial;
+      m.map = m.bumpMap = this.barkCache.get(style)!;
+      m.bumpScale = BARK_BUMP[style];
+      m.needsUpdate = true;
+      this.barkStyle = style;
+    }
     const budG = s.budSetYear === year ? 0.3 + 0.7 * smooth((s.gdd - s.budSetGdd) / P.budGrowGdd) : 1.1;
     const col = [0, 0, 0];
     const shedSeason = doy >= P.shedStartDoy && doy < P.shedEndDoy + 20;
@@ -1053,9 +1104,9 @@ export class TreeView {
       let cr: number, cg: number, cb: number;
       if (sh.kind === 'hypocotyl') { cr = 0.42; cg = 0.6; cb = 0.3; }
       else if (sh.kind === 'epicotyl') { cr = 0.33; cg = 0.53; cb = 0.38; }
-      else if (age === 0) { const k = g; cr = 0.5 - 0.2 * k; cg = 0.66 - 0.16 * k; cb = 0.3 - 0.02 * k; }
-      else if (age === 1) { cr = 0.24; cg = 0.43; cb = 0.3; }
-      else { cr = 0.21; cg = 0.37; cb = 0.28; }
+      else if (age === 0) { const k = g; cr = 0.56 - 0.2 * k; cg = 0.76 - 0.16 * k; cb = 0.34 - 0.02 * k; }
+      else if (age === 1) { cr = 0.31; cg = 0.55; cb = 0.38; }
+      else { cr = 0.27; cg = 0.48; cb = 0.35; }
       const nao = 0.6 + 0.4 * sh.light;
       const dying = sh.needleLive < 1 && shedSeason;
       const bare = fasc ? P.bareBase : sh.kind === 'hypocotyl' ? 1 : 0.05;
