@@ -180,9 +180,32 @@ export function bendLimit(s: State, sh: Shoot, z = 0): number {
   return (deg * Math.PI) / 180;
 }
 
-/** Pravděpodobnost prasknutí při ohybu o daný úhel. */
-export const breakRisk = (s: State, sh: Shoot, angle: number, z = 0) => {
+/** Oblouk, který dřevo už samo drží: bez drátu celý, pod drátem jen zdřevnatělý podíl (od výchozího tvaru). */
+export function heldArc(sh: Shoot): { axis: Vec3; angle: number; z: number } | null {
+  const a = sh.arc;
+  if (!a) return null;
+  const w = sh.wire;
+  if (!w || w.z <= 0) return a;
+  const f = w.from, k = w.set;
+  const v: Vec3 = [0, 1, 2].map((i) => (f ? f.axis[i] * f.angle * (1 - k) : 0) + a.axis[i] * a.angle * k) as Vec3;
+  const ang = Math.hypot(v[0], v[1], v[2]);
+  if (ang < 1e-4) return null;
+  return { axis: [v[0] / ang, v[1] / ang, v[2] / ang], angle: ang, z: f ? f.z + (a.z - f.z) * k : a.z };
+}
+
+/** Namáhání dřeva při ohybu obloukem (v8): počítá se jen změna proti tvaru, který větev už drží.
+ *  Zarostlý ohyb z dřívějšího drátování je nový výchozí stav. */
+export function bendStress(s: State, sh: Shoot, axis: Vec3, angle: number, z: number): number {
+  if (s.rules < 8 || z <= 0) return angle;
+  const h = heldArc(sh);
+  if (!h) return angle;
+  return Math.hypot(axis[0] * angle - h.axis[0] * h.angle, axis[1] * angle - h.axis[1] * h.angle, axis[2] * angle - h.axis[2] * h.angle);
+}
+
+/** Pravděpodobnost prasknutí při ohybu o daný úhel (s osou: v8 počítá jen ohyb navíc proti drženému tvaru). */
+export const breakRisk = (s: State, sh: Shoot, angle: number, z = 0, axis?: Vec3) => {
   const safe = bendLimit(s, sh, z);
+  if (axis) angle = bendStress(s, sh, axis, angle, z);
   return clamp((angle - safe) / ((s.rules >= 6 ? P.bendRamp6 : 0.5) * safe), 0, 1);
 };
 

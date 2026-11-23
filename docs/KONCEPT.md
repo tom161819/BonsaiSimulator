@@ -146,6 +146,11 @@ produkce; (2) slabé vrcholy ve spodních patrech pupen nezaloží a zůstanou k
 bočních pupenů; (3) zkrácený kmen vyrazí nový vůdčí výhon, i když pod řezem větve jsou, a ten táhne aspoň jako
 2 % všech vrcholů. Výsledek na stejném habru: dole 36 %, nahoře 29 %, počet nových výhonů dole 285 → 165;
 po zkrácení kmene roste nový vrchol 6–12 cm ročně. Borovice se nemění. Hodnoty jsou odhad laděný měřením.
+**Pravidla v8 – opakované drátování.** Růst je stejný jako ve v7. Ve v1–v7 se při druhém drátování obloukem
+počítalo riziko prasknutí z celého ohybu od rovné větve a po předčasném sundání drátu se větev vracela k rovné,
+i když první ohyb už zdřevnatěl. Ve v8 je výchozím stavem tvar, který dřevo drží (zarostlý oblouk plus
+zdřevnatělý podíl ohybu pod drátem): riziko se počítá jen ze změny proti němu, nový drát fixuje jen tuto změnu
+a po sundání se větev vrací k drženému tvaru. Změna poloměru oblouku se do namáhání nepočítá (zjednodušení).
 
 Ve v3 se také větev, která převzala vrchol, postupně zvedá ke svislici i ve stávajícím dřevě (tenká rychle,
 silná pomalu), a osu může převzít i větev nasazená níž na pahýlu bez jehlic.

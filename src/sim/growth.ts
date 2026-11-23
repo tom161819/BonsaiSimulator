@@ -549,6 +549,7 @@ function sag(s: State) {
     for (const b of sh.buds) b.dir = norm(mul(m, b.dir));
     if (sh.wire) sh.wire.axis = norm(mul(m, sh.wire.axis));
     if (sh.arc) sh.arc.axis = norm(mul(m, sh.arc.axis));
+    if (sh.wire?.from) sh.wire.from.axis = norm(mul(m, sh.wire.from.axis));
   }
 }
 

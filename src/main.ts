@@ -4,7 +4,7 @@ import { Timeline } from './sim/timeline';
 import { TreeView, Pick } from './render/view';
 import { P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
-import { YEAR, bendLimit, breakRisk, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
+import { YEAR, bendLimit, bendStress, breakRisk, heldArc, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
 import { bendShoot, deadwood, wholeBranch } from './sim/actions';
 import { SPECIES, SPECIES_ORDER, speciesOf } from './sim/species';
@@ -470,8 +470,12 @@ canvas.addEventListener('pointermove', (e) => {
         const safe = bendLimit(tl.state, sh, z);
         bend.axis = tgt.axis;
         // kurzor určuje směr špičky; u oblouku je celkové stočení větší než úhel tětivy
-        bend.angle = Math.min(tgt.angle / (1 - z / 2), safe * 1.5);
-        const risk = breakRisk(tl.state, sh, bend.angle, z);
+        // strop tažení: kde riziko dosáhne 100 % (ve v8 se počítá od tvaru, který větev už drží)
+        const held = tl.state.rules >= 8 && z > 0 ? heldArc(sh)?.angle ?? 0 : 0;
+        bend.angle = Math.min(tgt.angle / (1 - z / 2), held + safe * (tl.state.rules >= 6 ? 2 : 1.5));
+        const risk = breakRisk(tl.state, sh, bend.angle, z, bend.axis);
+        const extra = bendStress(tl.state, sh, bend.axis, bend.angle, z);
+        const more = Math.abs(extra - bend.angle) > 0.02 ? `, z toho nově ${deg(extra)}°` : '';
         const tmp = structuredClone(tl.state);
         bendShoot(tmp, bend.id, bend.axis, bend.angle, z);
         view.previewState(tmp, bend.id, risk > 0);
@@ -479,8 +483,8 @@ canvas.addEventListener('pointermove', (e) => {
         tip.hidden = false;
         tip.className = risk > 0 ? 'danger' : '';
         tip.textContent = risk > 0
-          ? `Ohyb ${deg(bend.angle)}°${radius} · riziko prasknutí ${Math.round(risk * 100)} % (bezpečně do ${deg(safe)}°)`
-          : `Ohyb ${deg(bend.angle)}°${radius} · bezpečně do ${deg(safe)}°`;
+          ? `Ohyb ${deg(bend.angle)}°${more}${radius} · riziko prasknutí ${Math.round(risk * 100)} % (bezpečně do ${deg(safe)}°)`
+          : `Ohyb ${deg(bend.angle)}°${more}${radius} · bezpečně do ${deg(safe)}°${more ? ' navíc' : ''}`;
         tip.style.left = `${Math.min(window.innerWidth - 270, e.clientX + 16)}px`;
         tip.style.top = `${Math.max(8, e.clientY - 44)}px`;
       }

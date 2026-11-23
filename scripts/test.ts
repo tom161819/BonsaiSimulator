@@ -393,4 +393,32 @@ test('řez podle linie: více řezů v jednom zásahu jde vrátit najednou', () 
   assert.equal(tl.state.shoots.map((s) => s.len).join(), before);
 });
 
+test('v8: druhé drátování počítá jen ohyb navíc a po sundání drátu zůstane zarostlý tvar', () => {
+  const run = (rules: number) => {
+    const tl = new Timeline(3, [], rules); tl.seek(at(6, 320));
+    const id = tl.state.shoots.filter((s) => s.order === 1 && !s.dead && !s.elong).sort((a, b) => b.area - a.area)[0].id;
+    const get = () => tl.state.shoots.find((s) => s.id === id)!;
+    const axis: Vec3 = norm(cross(get().dir, [0, 1, 0]));
+    const first = bendLimit(tl.state, get(), 0.7) * 0.9;
+    tl.act({ type: 'wire', shoot: id, axis, angle: first, z: 0.7 });
+    tl.seek(at(12, 320));
+    assert.ok(get().wire!.set > 0.99, `tvar drží z ${get().wire!.set}`);
+    tl.act({ type: 'unwire', shoot: id });
+    const kept = get().arc!.angle;
+    assert.ok(Math.abs(kept - first) < 1e-6, 'zarostlý ohyb po sundání drátu zůstal');
+    const ax2 = get().arc!.axis;
+    const more = bendLimit(tl.state, get(), 0.7) * 0.5;
+    const risk = breakRisk(tl.state, get(), kept + more, 0.7, ax2);
+    tl.act({ type: 'wire', shoot: id, axis: ax2, angle: kept + more, z: 0.7 });
+    const broke = get().dead;
+    if (!broke) tl.act({ type: 'unwire', shoot: id }); // hned zase dolů: nic nového nezdřevnatělo
+    return { kept, risk, broke, after: get().arc?.angle ?? 0 };
+  };
+  const b = run(8);
+  assert.equal(b.risk, 0, 'ohyb o půl meze navíc je bezpečný');
+  assert.ok(!b.broke && Math.abs(b.after - b.kept) < 1e-6, `po sundání nového drátu zůstal starý tvar (${b.after} vs ${b.kept})`);
+  const a = run(7);
+  assert.ok(a.broke || a.after < a.kept * 0.5, 'v7 se chová postaru');
+});
+
 console.log(`\n${n} testů prošlo`);

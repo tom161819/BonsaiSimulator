@@ -34,6 +34,8 @@ export interface Wire {
   z: number; // 0 = ostrý ohyb v nasazení, jinak podíl délky, přes který jde oblouk
   set: number; // 0..1 jak moc už dřevo nový tvar drží
   area0: number; // průřez při nasazení (pro zarůstání drátu)
+  /** v8: oblouk, který dřevo drželo už před tímto drátováním – po sundání drátu se větev vrací k němu, ne k rovné */
+  from?: { axis: Vec3; angle: number; z: number } | null;
 }
 
 /** Roční přírůstek (růstová jednotka) – základní stavební prvek stromu. */

@@ -3,7 +3,7 @@
 import type { Action, Shoot, State, Vec3 } from './types';
 import { P, defaultPotId, potById } from './params';
 import { updateDeath } from './growth';
-import { breakRisk, doyOf, norm, potCapFor, spreadNebari, repotStress, rnd, rotate, tilt as tiltDir, yearOf } from './util';
+import { breakRisk, heldArc, doyOf, norm, potCapFor, spreadNebari, repotStress, rnd, rotate, tilt as tiltDir, yearOf } from './util';
 import { speciesOf } from './species';
 
 function removeSubtrees(s: State, roots: Set<number>) {
@@ -28,6 +28,7 @@ function rotateSubtree(s: State, id: number, axis: Vec3, angle: number, skipOwnW
     for (const b of sh.buds) b.dir = norm(rotate(b.dir, axis, angle));
     if (sh.wire && !(skipOwnWire && sh.id === id)) sh.wire.axis = norm(rotate(sh.wire.axis, axis, angle));
     if (sh.arc) sh.arc.axis = norm(rotate(sh.arc.axis, axis, angle));
+    if (sh.wire?.from) sh.wire.from.axis = norm(rotate(sh.wire.from.axis, axis, angle));
   }
 }
 
@@ -145,7 +146,7 @@ function wire(s: State, id: number, axis: Vec3, angle: number, z: number) {
   const sh = s.shoots.find((x) => x.id === id);
   if (!sh || sh.dead || sh.elong) return;
   axis = norm(axis);
-  if (rnd(s.seed, id, s.day) < breakRisk(s, sh, angle, z)) {
+  if (rnd(s.seed, id, s.day) < breakRisk(s, sh, angle, z, axis)) {
     rotateSubtree(s, id, axis, angle * 0.5);
     const year = yearOf(s.day);
     const dead = new Set<number>();
@@ -155,6 +156,13 @@ function wire(s: State, id: number, axis: Vec3, angle: number, z: number) {
       x.dead = true; x.deadYear = year; x.elong = false; x.needleLive = 0; x.buds = []; x.wire = null;
     }
     updateDeath(s);
+    return;
+  }
+  if (s.rules >= 8 && z > 0) {
+    // v8: co dřevo drží z dřívějška, je výchozí tvar; nový drát fixuje jen změnu proti němu
+    const from = heldArc(sh);
+    bendShoot(s, id, axis, angle, z);
+    sh.wire = { day: s.day, axis, angle, z, set: 0, area0: sh.wire ? sh.wire.area0 : sh.area, from };
     return;
   }
   bendShoot(s, id, axis, angle, z);
@@ -167,6 +175,15 @@ function unwire(s: State, id: number) {
   const sh = s.shoots.find((x) => x.id === id);
   if (!sh || !sh.wire) return;
   const w = sh.wire;
+  if (s.rules >= 8 && w.z > 0 && sh.arc) {
+    // v8: větev se vrátí k tomu, co dřevo drží (dřívější zarostlý oblouk + zdřevnatělý podíl nového ohybu)
+    const h = heldArc(sh);
+    sh.wire = null;
+    turnAlongArc(s, sh, sh.arc.axis, -sh.arc.angle, sh.arc.z);
+    sh.arc = h && Math.abs(h.angle) >= 1e-3 ? h : null;
+    if (sh.arc) turnAlongArc(s, sh, sh.arc.axis, sh.arc.angle, sh.arc.z);
+    return;
+  }
   sh.wire = null;
   const back = -w.angle * (1 - w.set);
   if (w.z > 0 && sh.arc) {
