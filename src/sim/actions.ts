@@ -3,7 +3,7 @@
 import type { Action, Shoot, State, Vec3 } from './types';
 import { P, defaultPotId, potById } from './params';
 import { updateDeath } from './growth';
-import { breakRisk, doyOf, norm, potCapFor, repotStress, rnd, rotate, tilt as tiltDir, yearOf } from './util';
+import { breakRisk, doyOf, norm, potCapFor, spreadNebari, repotStress, rnd, rotate, tilt as tiltDir, yearOf } from './util';
 import { speciesOf } from './species';
 
 function removeSubtrees(s: State, roots: Set<number>) {
@@ -189,15 +189,9 @@ function repot(s: State, a: Extract<Action, { type: 'repot' }>) {
   const rad = Math.PI / 180;
   rotateSubtree(s, -1, [0, 1, 0], (a.yaw ?? 0) * rad);
   // kořeny se otáčejí se stromem; při přesazení je lze rozprostřít rovnoměrně do stran
-  const spread = Math.min(1, Math.max(0, a.spread ?? 0));
-  const sorted = s.nebari.slice().sort((x, y) => x.az - y.az);
-  const meanLen = sorted.reduce((t, r) => t + r.len, 0) / Math.max(1, sorted.length);
-  sorted.forEach((r, k) => {
-    const even = sorted[0].az + (k / sorted.length) * 6.2832;
-    r.az += (even - r.az) * spread;
-    r.len += (meanLen - r.len) * spread * 0.6;
-    r.az -= (a.yaw ?? 0) * rad; // otočení kolem svislé osy (stejný smysl jako u výhonů)
-  });
+  s.nebari = spreadNebari(s.nebari, a.spread ?? 0);
+  for (const r of s.nebari) r.az -= (a.yaw ?? 0) * rad; // otočení kolem svislé osy (stejný smysl jako u výhonů)
+  if (a.offX !== undefined || a.offZ !== undefined) s.potOffset = [Math.max(-0.85, Math.min(0.85, a.offX ?? 0)), Math.max(-0.85, Math.min(0.85, a.offZ ?? 0))];
   rotateSubtree(s, -1, [1, 0, 0], (a.tiltX ?? 0) * rad);
   rotateSubtree(s, -1, [0, 0, 1], (a.tiltZ ?? 0) * rad);
   if (s.stress >= 1 && s.stage === 'growing') {

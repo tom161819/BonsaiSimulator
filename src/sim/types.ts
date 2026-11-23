@@ -107,6 +107,8 @@ export interface State {
   potCap: number;
   potId: string; // nádoba z katalogu POTS
   nebari: SurfaceRoot[];
+  /** posun stromu od středu nádoby, v podílu poloviny jejího rozměru (−1…1); jen vzhled */
+  potOffset?: [number, number];
   /** stres z přesazení 0..1+ (>= 1 strom nepřežije) */
   stress: number;
   repotDay: number;
@@ -115,7 +117,7 @@ export interface State {
 export type Action =
   | { day: number; type: 'cut'; shoot: number; t: number; label?: string }
   | { day: number; type: 'bud'; shoot: number; bud: number; label?: string }
-  | { day: number; type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; spread?: number; label?: string }
+  | { day: number; type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; spread?: number; offX?: number; offZ?: number; label?: string }
   | { day: number; type: 'wire'; shoot: number; axis: Vec3; angle: number; z?: number; label?: string }
   | { day: number; type: 'unwire'; shoot: number; label?: string }
   | { day: number; type: 'unwireAll'; only?: 'biting'; label?: string };
@@ -123,7 +125,7 @@ export type Action =
 export type ActionInput =
   | { type: 'cut'; shoot: number; t: number; label?: string }
   | { type: 'bud'; shoot: number; bud: number; label?: string }
-  | { type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; spread?: number; label?: string }
+  | { type: 'repot'; pot: PotType; potId?: string; prune?: number; yaw?: number; tiltX?: number; tiltZ?: number; spread?: number; offX?: number; offZ?: number; label?: string }
   | { type: 'wire'; shoot: number; axis: Vec3; angle: number; z?: number; label?: string }
   | { type: 'unwire'; shoot: number; label?: string }
   | { type: 'unwireAll'; only?: 'biting'; label?: string };

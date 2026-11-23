@@ -8,7 +8,7 @@ import { P, potById } from '../sim/params';
 import { LeafShape, speciesOf } from '../sim/species';
 import leafAtlasJson from '../leafAtlas.json';
 import type { Vec3 } from '../sim/types';
-import { Frames, basis, clamp, computeFrames, doyOf, needleGrowth, radiusOf, rnd, rotate, shootPoint, smooth, yearOf } from '../sim/util';
+import { Frames, basis, clamp, computeFrames, spreadNebari, doyOf, needleGrowth, radiusOf, rnd, rotate, shootPoint, smooth, yearOf } from '../sim/util';
 
 export type Pick =
   | { type: 'bud'; shoot: number; bud: number }
@@ -717,6 +717,15 @@ export class TreeView {
   jointGap = { rel: 0, parent: -1, child: -1, info: '' };
   private potOverride: string | null = null;
   /** Náhled jiné nádoby v dialogu přesazení (null = skutečná nádoba stromu). */
+  private spreadPreview = 0;
+  private offsetPreview: [number, number] | null = null;
+  /** Náhled při přesazení: rozprostření kořenů (0–1) a posun stromu v nádobě (null = skutečný stav). */
+  previewRoots(spread: number, offset: [number, number] | null) {
+    if (this.spreadPreview === spread && JSON.stringify(this.offsetPreview) === JSON.stringify(offset)) return;
+    this.spreadPreview = spread; this.offsetPreview = offset;
+    if (this.state) this.build();
+  }
+
   previewPot(id: string | null) {
     if (this.potOverride === id) return;
     this.potOverride = id;
@@ -924,10 +933,11 @@ export class TreeView {
     const zone = 2.4 * R0 * smooth((R0 - 0.12) / 0.5);
     // Pata kmene: u země se kmen rozšiřuje do náběhů mířících do směrů povrchových kořenů, takže kořen
     // vybíhá z hřbetu kmene a ne z hladkého válce.
+    const nebari = this.spreadPreview > 0 ? spreadNebari(s.nebari, this.spreadPreview) : s.nebari;
     const lobeOf = (x: number, z: number) => {
       const az = Math.atan2(z, x);
       let best = 0;
-      for (const root of s.nebari) { const c = Math.cos(az - root.az); if (c > 0) best = Math.max(best, (root.thick / 0.45) * Math.pow(c, 12)); }
+      for (const root of nebari) { const c = Math.cos(az - root.az); if (c > 0) best = Math.max(best, (root.thick / 0.45) * Math.pow(c, 12)); }
       return best;
     };
     // barva dřeva a síla borky každého výhonu; v kloubech se prolínají se sousedem, aby přechod nebyl skokem
@@ -1166,7 +1176,9 @@ export class TreeView {
               const ox = vx - cx, oz = vz - cz, ol = Math.hypot(ox, oz);
               if (ol > 1e-4) {
                 const f = clamp(1 - vy / zone, 0, 1.15);
-                const push = R0 * (0.3 * Math.pow(f, 3) + 1.5 * Math.pow(f, 5) * lobeOf(ox, oz));
+                // pod povrchem substrátu se rozšíření zase stahuje, aby u kraje misky neprošlo její stěnou
+                const under = vy < 0 ? Math.max(0, 1 + vy / (0.8 * R0)) : 1, fc = Math.min(1, f);
+                const push = R0 * under * (0.3 * Math.pow(fc, 3) + 1.5 * Math.pow(fc, 5) * lobeOf(ox, oz));
                 vx += (ox / ol) * push; vz += (oz / ol) * push;
               }
             }
@@ -1504,10 +1516,26 @@ export class TreeView {
       const rootBark = BK[0];
       const SEG = 8, RN = 8;
       const dy0 = Math.max(0.35, root0.dir[1]), leanX = root0.dir[0] / dy0, leanZ = root0.dir[2] / dy0;
-      for (const root of s.nebari) {
+      for (const root of nebari) {
         const k = root.id;
         let az = root.az;
-        const Lr = R0 * root.len * (0.5 + 0.5 * grow);
+        // kořen nesmí projít stěnou nádoby: délka se omezí vzdáleností k jejímu okraji ve směru kořene
+        let Lr = R0 * root.len * (0.5 + 0.5 * grow);
+        {
+          const pr = potById(this.potOverride ?? s.potId);
+          if (pr.shape !== 'ground') {
+            const off = this.offsetPreview ?? s.potOffset ?? [0, 0];
+            const px = off[0] * (pr.a / 2) * 0.8, pz = off[1] * (pr.b / 2) * 0.8; // poloha stromu vůči středu nádoby
+            const dx = Math.cos(root.az), dz = Math.sin(root.az), ha = pr.a / 2 * 0.94, hb = pr.b / 2 * 0.94;
+            let reach: number;
+            if (pr.shape === 'rect') reach = Math.min(dx > 0 ? (ha - px) / dx : dx < 0 ? (-ha - px) / dx : 1e9, dz > 0 ? (hb - pz) / dz : dz < 0 ? (-hb - pz) / dz : 1e9);
+            else {
+              const A = (dx * dx) / (ha * ha) + (dz * dz) / (hb * hb), Bq = 2 * ((px * dx) / (ha * ha) + (pz * dz) / (hb * hb)), Cq = (px * px) / (ha * ha) + (pz * pz) / (hb * hb) - 1;
+              reach = (-Bq + Math.sqrt(Math.max(0, Bq * Bq - 4 * A * Cq))) / (2 * A);
+            }
+            Lr = Math.max(R0 * 0.6, Math.min(Lr, reach - R0 * 0.3));
+          }
+        }
         const thick = Math.min(R0 * root.thick * (0.55 + 0.45 * grow), R0 * 0.6);
         const pts: number[][] = [], rad: number[] = [];
         for (let j = 0; j <= SEG; j++) {
@@ -1559,6 +1587,12 @@ export class TreeView {
     nb.apply(this.needles.geometry, true);
     this.seedMesh.visible = s.stage === 'seed';
     this.updatePot(s.potId, H);
+    // strom stojí v počátku; posun ke kraji misky se dělá posunem nádoby a stolu opačným směrem
+    const off = this.offsetPreview ?? s.potOffset ?? [0, 0];
+    const psO = potById(this.potOverride ?? s.potId);
+    const ox = psO.shape === 'ground' ? 0 : -off[0] * (psO.a / 2) * 0.8, oz = psO.shape === 'ground' ? 0 : -off[1] * (psO.b / 2) * 0.8;
+    this.potGroup.position.set(ox, 0, oz);
+    this.table.position.x = ox; this.table.position.z = oz;
     // podložka musí pojmout nádobu i stín stromu
     const ps = potById(this.potOverride ?? s.potId);
     {
@@ -1571,7 +1605,7 @@ export class TreeView {
       for (const [g, sx, id] of [[this.toolScissors, -1, 'cut'], [this.toolWire, 1, 'wire']] as [THREE.Group, number, string][]) {
         g.visible = this.table.visible;
         g.scale.setScalar(size * (id === 'wire' ? 0.75 : 1));
-        g.position.set(sx * (ps.a / 2 + size * 0.75), this.tableTop + (this.activeTool === id ? size * 0.12 : 0), ps.b * 0.35 * -sx); // z výchozího pohledu nůžky vlevo, drát vpravo
+        g.position.set(ox + sx * (ps.a / 2 + size * 0.75), this.tableTop + (this.activeTool === id ? size * 0.12 : 0), oz + ps.b * 0.35 * -sx); // z výchozího pohledu nůžky vlevo, drát vpravo
         g.rotation.set(0, id === 'cut' ? 0.9 : 0.3, this.activeTool === id ? 0.12 : 0);
       }
       (this.table.material as THREE.MeshStandardMaterial).map!.repeat.set(wdt / 60, dep / 60);

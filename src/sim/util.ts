@@ -1,4 +1,4 @@
-import type { Shoot, State, Vec3 } from './types';
+import type { Shoot, State, SurfaceRoot, Vec3 } from './types';
 import { P, potById } from './params';
 import { speciesOf } from './species';
 
@@ -147,6 +147,16 @@ export function computeFrames(s: State): Frames {
 
 /** Kolik kořenů pojme nádoba z katalogu (podle objemu v litrech). */
 export const potCapFor = (potId: string) => Math.max(1, potById(potId).liters * P.rootPerLiter);
+
+/** Rozprostření povrchových kořenů: rovnoměrnější rozestupy kolem kmene a vyrovnanější délky. Vrací kopie. */
+export function spreadNebari(list: SurfaceRoot[], spread: number): SurfaceRoot[] {
+  const k = clamp(spread, 0, 1);
+  const sorted = list.map((r) => ({ ...r })).sort((x, y) => x.az - y.az);
+  if (!sorted.length || k === 0) return sorted;
+  const a0 = sorted[0].az, mean = sorted.reduce((t, r) => t + r.len, 0) / sorted.length;
+  sorted.forEach((r, i) => { r.az += (a0 + (i / sorted.length) * 6.2832 - r.az) * k; r.len += (mean - r.len) * k * 0.6; });
+  return sorted;
+}
 
 /** Zaplnění nádoby kořeny (1 = plná). */
 export const rootFill = (s: State) => (s.pot === 'ground' ? 0 : s.roots / Math.max(1, s.potCap));
