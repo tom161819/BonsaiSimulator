@@ -1043,6 +1043,15 @@ export class TreeView {
             d = J; u = nrm(src[0] - J[0] * kk, src[1] - J[1] * kk, src[2] - J[2] * kk);
             w = [J[1] * u[2] - J[2] * u[1], J[2] * u[0] - J[0] * u[2], J[0] * u[1] - J[1] * u[0]];
           }
+          // Pokosový řez: průřez válce šikmou rovinou je elipsa. Prstenec ve spoji se proto v rovině ohybu
+          // protáhne o 1/cos(polovina úhlu) – jinak by se kmen v ostrém ohybu přiškrtil a rohy by trčely.
+          let mx = 0, my = 0, mz = 0, mk = 0;
+          if (jStart || jEnd) {
+            const a = jStart ? d0 : endTan(sh); // směr tohoto úseku u spoje
+            const c = clamp(a[0] * d[0] + a[1] * d[1] + a[2] * d[2], 0.42, 1);
+            const ex = a[0] - d[0] * c, ey = a[1] - d[1] * c, ez = a[2] - d[2] * c, el = Math.hypot(ex, ey, ez);
+            if (el > 1e-3 && c < 0.999) { mx = ex / el; my = ey / el; mz = ez / el; mk = 1 / c - 1; }
+          }
           if (q === ts.length - 1) { UE[i * 3] = u[0]; UE[i * 3 + 1] = u[1]; UE[i * 3 + 2] = u[2]; }
           // boční větev nesmí být u nasazení silnější než mateřský úsek, jinak by z něj na druhé straně trčela
           const sideBase = q === 0 && pIdx >= 0 && !jStart;
@@ -1066,7 +1075,8 @@ export class TreeView {
             const rr = r * (1 + (jStart || jEnd ? 0 : rough) * (rnd(sh.id, km, q + 20) - 0.5) * 2); // ve spoji bez nerovností, aby prstence splynuly
             // protažení límce podél mateřské osy
             const al = stretch ? (nx * pd[0] + ny * pd[1] + nz * pd[2]) * rr * stretch : 0;
-            B.v(cx + nx * rr + pd[0] * al, cy + ny * rr + pd[1] * al, cz + nz * rr + pd[2] * al, nx, ny, nz, c0, c1, c2);
+            const ml = mk ? (nx * mx + ny * my + nz * mz) * rr * mk : 0;
+            B.v(cx + nx * rr + pd[0] * al + mx * ml, cy + ny * rr + pd[1] * al + my * ml, cz + nz * rr + pd[2] * al + mz * ml, nx, ny, nz, c0, c1, c2);
             B.t((k / RN) * tiles, v0 + (t * len) / (tile * 2), bk);
           }
           if (q === 0 && pIdx >= 0 && !jStart) {
@@ -1373,17 +1383,22 @@ export class TreeView {
       col[0] = C[0]; col[1] = C[1]; col[2] = C[2];
       const rootBark = BK[0];
       const SEG = 8, RN = 8;
+      const dy0 = Math.max(0.35, root0.dir[1]), leanX = root0.dir[0] / dy0, leanZ = root0.dir[2] / dy0;
       for (const root of s.nebari) {
         const k = root.id;
         let az = root.az;
         const Lr = R0 * root.len * (0.5 + 0.5 * grow);
-        const thick = R0 * root.thick * (0.55 + 0.45 * grow);
+        const thick = Math.min(R0 * root.thick * (0.55 + 0.45 * grow), R0 * 0.6);
         const pts: number[][] = [], rad: number[] = [];
         for (let j = 0; j <= SEG; j++) {
           const f = j / SEG;
           az += (rnd(s.seed, 505 + k, j) - 0.5) * 0.22;
           const rho = R0 * 0.15 + Lr * f;
-          pts.push([Math.cos(az) * rho, R0 * 0.85 * Math.pow(1 - f, 2.1) - R0 * 0.35 * f * f, Math.sin(az) * rho]);
+          // kořen vychází ze středu kmene i u šikmo posazeného stromu: počátek sleduje osu kmene a k zemi se
+          // posun ztrácí
+          const y = R0 * 0.85 * Math.pow(1 - f, 2.1) - R0 * 0.35 * f * f;
+          const lean = Math.pow(1 - f, 2) * R0 * 0.85;
+          pts.push([Math.cos(az) * rho * (j === 0 ? 0 : 1) + leanX * lean, y, Math.sin(az) * rho * (j === 0 ? 0 : 1) + leanZ * lean]);
           rad.push(thick * (Math.pow(1 - f, 0.8) * 0.85 + 0.15));
         }
         bb.reserve((SEG + 1) * (RN + 1) + 1, SEG * RN * 6);
@@ -1405,6 +1420,13 @@ export class TreeView {
             const e = j / SEG, c0 = 0.8 * (1 - e), c1 = e;
             bb.v(pts[j][0] + nx * rr, pts[j][1] + ny * rr, pts[j][2] + nz * rr, nx, ny, nz, col[0] * c0 + 0.34 * c1, col[1] * c0 + 0.27 * c1, col[2] * c0 + 0.21 * c1);
             bb.t((q / RN) * tiles, (j / SEG) * (Lr / (tile * 2)) + k * 0.37, rootBark);
+          }
+          if (j === 0) {
+            // uzavřený začátek (leží uvnitř kmene, ale při pohledu zblízka nesmí být vidět dovnitř)
+            bb.reserve(1, RN * 3);
+            const cc = bb.v(pts[0][0] - dd[0] * rad[0] * 0.4, pts[0][1] - dd[1] * rad[0] * 0.4, pts[0][2] - dd[2] * rad[0] * 0.4, -dd[0], -dd[1], -dd[2], col[0] * 0.8, col[1] * 0.8, col[2] * 0.8);
+            bb.t(0.5, k * 0.37, rootBark);
+            for (let q = 0; q < RN; q++) bb.tri(first + q + 1, first + q, cc);
           }
           if (prev >= 0) for (let q = 0; q < RN; q++) { bb.tri(prev + q, prev + q + 1, first + q); bb.tri(prev + q + 1, first + q + 1, first + q); }
           prev = first;
