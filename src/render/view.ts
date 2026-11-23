@@ -141,6 +141,36 @@ function barkTexture(style: BarkStyle = 'pine'): THREE.CanvasTexture {
   return t;
 }
 
+/** Mladá větvička: jemné podélné rýhování, světlé čočinky a tmavší skvrnky. Šedá textura, kterou se
+ *  násobí barva výhonu; kde už je borka, postupně mizí. */
+function twigTexture(): THREE.CanvasTexture {
+  const N = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = N;
+  const ctx = cv.getContext('2d')!;
+  const img = ctx.createImageData(N, N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N;
+    const streak = tileNoise(u * 48, v * 3, 48, 3, 91) - 0.5, broad = tileNoise(u * 6, v * 2, 6, 2, 92) - 0.5, speck = tileNoise(u * 40, v * 40, 40, 40, 93) - 0.5;
+    const g = Math.max(0, Math.min(1, 0.74 + 0.2 * streak + 0.12 * broad + 0.07 * speck));
+    const o = (y * N + x) * 4;
+    img.data[o] = img.data[o + 1] = img.data[o + 2] = Math.round(g * 255);
+    img.data[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  for (let i = 0; i < 70; i++) { // čočinky: světlé protáhlé tečky s tmavším lemem
+    const x = rnd(94, i, 1) * N, y = rnd(94, i, 2) * N, rx = 2 + 2.5 * rnd(94, i, 3), ry = 4 + 7 * rnd(94, i, 4);
+    for (const [dx, dy] of [[0, 0], [N, 0], [-N, 0], [0, N], [0, -N]]) {
+      ctx.fillStyle = 'rgba(60,50,40,0.35)'; ctx.beginPath(); ctx.ellipse(x + dx, y + dy, rx + 1.5, ry + 1.5, 0, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = 'rgba(255,246,225,0.85)'; ctx.beginPath(); ctx.ellipse(x + dx, y + dy, rx, ry, 0, 0, 6.2832); ctx.fill();
+    }
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+}
+
 /** Substrát: zrnitá směs (akadama, pemza, láva). */
 function soilTexture(): THREE.CanvasTexture {
   const N = 256;
@@ -439,10 +469,11 @@ export class TreeView {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBark = aBark;');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', 'varying float vBark;\n#include <common>')
-        .replace('#include <common>', 'uniform float uPhoto;\n#include <common>')
-        .replace('#include <map_fragment>', '#ifdef USE_MAP\n vec3 barkTex = texture2D(map, vMapUv).rgb;\n diffuseColor.rgb = uPhoto > 0.5 ? mix(diffuseColor.rgb, barkTex * 1.6, vBark) : diffuseColor.rgb * mix(vec3(1.0), barkTex * 1.3, vBark);\n#endif')
+        .replace('#include <common>', 'uniform float uPhoto;\nuniform sampler2D uTwig;\n#include <common>')
+        .replace('#include <map_fragment>', '#ifdef USE_MAP\n vec3 barkTex = texture2D(map, vMapUv).rgb;\n diffuseColor.rgb *= mix(texture2D(uTwig, vMapUv * vec2(1.0, 3.0)).rgb * 1.3, vec3(1.0), smoothstep(0.0, 0.6, vBark));\n diffuseColor.rgb = uPhoto > 0.5 ? mix(diffuseColor.rgb, barkTex * 1.6, vBark) : diffuseColor.rgb * mix(vec3(1.0), barkTex * 1.3, vBark);\n#endif')
         .replace('#include <normal_fragment_maps>', THREE.ShaderChunk.normal_fragment_maps.replace('dHdxy_fwd(), faceDirection', 'dHdxy_fwd() * vBark, faceDirection').replace('mapN.xy *= normalScale;', 'mapN.xy *= normalScale * vBark;'));
       sh.uniforms.uPhoto = this.photoU;
+      sh.uniforms.uTwig = { value: twigTexture() };
     };
     this.bark = new THREE.Mesh(new THREE.BufferGeometry(), barkMat);
     this.addWind(barkMat, 'bark', false, false);
@@ -1017,7 +1048,17 @@ export class TreeView {
           const sideBase = q === 0 && pIdx >= 0 && !jStart;
           if (sideBase) r = Math.min(r, rEff(pIdx) * 0.92);
           const stretch = collar && t < tc ? 0.3 * (1 - t / tc) * (1 - t / tc) : 0;
-          const c0 = colorAt(t, 0), c1 = colorAt(t, 1), c2 = colorAt(t, 2), bk = barkAt(t);
+          let c0 = colorAt(t, 0), c1 = colorAt(t, 1), c2 = colorAt(t, 2);
+          const bk = barkAt(t);
+          if (leafySp && age === 0 && !sh.dead && sh.kind === 'shoot') {
+            // letorost dřevnatí od báze: špička zůstává přes léto zelená, na podzim celý zhnědne
+            const gk = 0.85 * smooth(t * 1.4 - 0.1) * (1 - smooth((s.gdd - 900) / 900));
+            c0 += (0.4 - c0) * gk; c1 += (0.52 - c1) * gk; c2 += (0.24 - c2) * gk;
+          } else if (!sh.dead && bk < 0.3) {
+            // mladé dřevo je na osluněné straně teplejší, na spodní tmavší
+            const k = 0.9 + 0.2 * rnd(sh.id, q, 31);
+            c0 *= k; c1 *= k; c2 *= k;
+          }
           const first = B.nv;
           for (let k = 0; k <= RN; k++) {
             const a = (k / RN) * 6.2832, km = k % RN;
