@@ -765,7 +765,7 @@ export class TreeView {
         const pi = fr.index.get(sh.parent)!;
         const r = radiusOf(sh);
         if (sh.isMain) mainKid[pi] = i; else if (!sh.dead) whorl[pi]++;
-        if (!sh.dead) {
+        if (!sh.dead || s.shoots[pi].dead) { // suchá větev navazuje na suchou
           const cur = contKid[pi];
           if (cur < 0 || (sh.isMain && !s.shoots[cur].isMain) || (sh.isMain === s.shoots[cur].isMain && r > radiusOf(s.shoots[cur]))) contKid[pi] = i;
         }
@@ -831,8 +831,14 @@ export class TreeView {
       const ag = year - sh.bornYear;
       BK[i] = sh.dead || ag < 2 ? 0 : leafySp ? sp.barkRough * smooth((ag - sp.barkAge * 0.4) / sp.barkAge) : smooth((ag - 1.5) / 5) * (0.6 + 0.4 * smooth(radiusOf(sh) / 1.2));
     }
-    const VO = new Float32Array(n).fill(-1);
     const endTan = (sh: Shoot): Vec3 => (sh.arc ? rotate(sh.dir, sh.arc.axis, sh.arc.angle) : sh.dir);
+    const VO = new Float32Array(n).fill(-1);
+    // Společný prstenec ve spoji dvou navazujících úseků: leží v rovině půlící úhel mezi nimi a má jeden
+    // poloměr, takže konec jednoho úseku a začátek druhého na sebe přesně dosednou (žádné mezery ani zářezy).
+    const rEff = (j: number) => radiusOf(s.shoots[j]) * (s.shoots[j].elong && s.shoots[j].targetLen > 0 ? 0.55 + 0.45 * (s.shoots[j].len / s.shoots[j].targetLen) : 1);
+    const jointDir = (pi: number, ci: number): Vec3 => { const a = endTan(s.shoots[pi]), b = s.shoots[ci].dir; return nrm(a[0] + b[0], a[1] + b[1], a[2] + b[2]); };
+    const jointR = (pi: number, ci: number) => Math.min(rEff(pi), rEff(ci)) * (whorl[pi] > 0 && rEff(pi) > 0.15 ? 1.1 : 1);
+
     const nrm = (x: number, y: number, z: number): Vec3 => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
 
     for (let i = 0; i < n; i++) {
@@ -890,7 +896,7 @@ export class TreeView {
       const ck = contKid[i];
       const ckTip = ck >= 0 && s.shoots[ck].attachT > 0.98;
       const stump = sh.tipCut && !sh.elong && !ckTip && year > sh.bornYear;
-      const rt = sh.dead ? rb * 0.6 : stump ? rb * 0.94 : ckTip ? Math.min(rb, radiusOf(s.shoots[ck]) * (s.shoots[ck].elong && s.shoots[ck].targetLen > 0 ? 0.55 + 0.45 * (s.shoots[ck].len / s.shoots[ck].targetLen) : 1)) : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
+      const rt = sh.dead && !ckTip ? rb * 0.6 : stump ? rb * 0.94 : ckTip ? Math.min(rb, radiusOf(s.shoots[ck]) * (s.shoots[ck].elong && s.shoots[ck].targetLen > 0 ? 0.55 + 0.45 * (s.shoots[ck].len / s.shoots[ck].targetLen) : 1)) : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
       col[0] = C[i * 3]; col[1] = C[i * 3 + 1]; col[2] = C[i * 3 + 2];
       // sousedé v ose: úsek, na který navazuji, a úsek, který navazuje na mě
       const pIdx = sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;
@@ -956,6 +962,15 @@ export class TreeView {
           at(t);
           let r = radiusAt(t);
           if (inZone && cy < zone) { const f = 1 - Math.max(0, cy) / zone; r *= 1 + 0.6 * f * f; }
+          const jStart = q === 0 && pIdx >= 0 && contKid[pIdx] === i && sh.attachT > 0.98;
+          const jEnd = q === ts.length - 1 && ckTip;
+          if (jStart || jEnd) {
+            const J = jStart ? jointDir(pIdx, i) : jointDir(i, ck);
+            r = jStart ? jointR(pIdx, i) : jointR(i, ck);
+            const kk = u[0] * J[0] + u[1] * J[1] + u[2] * J[2];
+            d = J; u = nrm(u[0] - J[0] * kk, u[1] - J[1] * kk, u[2] - J[2] * kk);
+            w = [J[1] * u[2] - J[2] * u[1], J[2] * u[0] - J[0] * u[2], J[0] * u[1] - J[1] * u[0]];
+          }
           const stretch = collar && t < tc ? 0.3 * (1 - t / tc) * (1 - t / tc) : 0;
           const c0 = colorAt(t, 0), c1 = colorAt(t, 1), c2 = colorAt(t, 2), bk = barkAt(t);
           const first = B.nv;
@@ -993,7 +1008,7 @@ export class TreeView {
         for (let k = 0; k <= steps; k++) {
           const t = k / steps, a = (k / 8) * 6.2832 + sh.id;
           at(t);
-          const rr = radiusAt(t) + (sh.wire && !sh.scar ? wr * 0.7 : 0.012);
+          const rr = radiusAt(t) * (sh.wire && !sh.scar ? 1 : 1.03) + (sh.wire && !sh.scar ? wr * 0.7 : 0.025);
           const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
           const px = cx + nx * rr, py = cy + ny * rr, pz = cz + nz * rr;
           const hw2 = wr * 0.55; // drát je tenký proužek, ne široký pás
