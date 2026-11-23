@@ -341,7 +341,7 @@ test('v6: silná větev snese větší ohyb a riziko roste pomaleji; v5 beze zm�
   };
   const a = lim(5), b = lim(6);
   assert.ok(b.safe > a.safe * 1.3, `v5 ${a.safe.toFixed(0)}°, v6 ${b.safe.toFixed(0)}°`);
-  assert.equal(a.risk, 1);
+  assert.ok(Math.abs(a.risk - 1) < 1e-9);
   assert.ok(Math.abs(b.risk - 0.5) < 1e-9);
 });
 
