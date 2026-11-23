@@ -661,6 +661,8 @@ export class TreeView {
   }
 
   private tableTop = 0;
+  private jointEnds: Record<number, number[]> = {};
+  jointGap = { rel: 0, parent: -1, child: -1, info: '' };
   private potOverride: string | null = null;
   /** Náhled jiné nádoby v dialogu přesazení (null = skutečná nádoba stromu). */
   previewPot(id: string | null) {
@@ -796,6 +798,7 @@ export class TreeView {
     const { base, tip } = fr;
     const wb = this.wb, bb = this.bb, nb = this.nb;
     wb.reset(); bb.reset(); nb.reset();
+    this.jointEnds = {}; this.jointGap = { rel: 0, parent: -1, child: -1, info: '' };
     this.builtDist = this.dist;
 
     // pokračující výhon určuje poloměr na vrcholu a směr, kterým osa plynule navazuje
@@ -982,7 +985,8 @@ export class TreeView {
       const inZone = onTrunk && by < zone && zone > 0.2;
       const par = sh.parent >= 0 ? s.shoots[fr.index.get(sh.parent)!] : null;
       // límec v nasazení boční větve: rozšíření, které je protažené podél mateřské osy (jako u skutečné větve)
-      const collar = par && !sh.isMain && rb > 0.1 && len > 0;
+      // límec jen u skutečné boční větve; větev, která převzala osu, navazuje spojem a límec by spoj roztrhl
+      const collar = par && !sh.isMain && rb > 0.1 && len > 0 && contKid[fr.index.get(sh.parent)!] !== i;
       const pd: Vec3 = par ? endTan(par) : d0;
       const rp = par ? radiusOf(par) * (sh.attachT > 0.98 ? 0.75 : 1) : 0;
       const tc = collar ? Math.min(0.6, (rp * 1.2 + 2.6 * rb) / len) : 0;
@@ -1057,9 +1061,11 @@ export class TreeView {
           let mx = 0, my = 0, mz = 0, mk = 0;
           if (jStart || jEnd) {
             const a = jStart ? d0 : endTan(sh); // směr tohoto úseku u spoje
-            const c = clamp(a[0] * d[0] + a[1] * d[1] + a[2] * d[2], 0.42, 1);
+            // směr protažení z nezkrácené hodnoty (musí být přesně kolmý na rovinu spoje a na obou stranách
+            // spoje stejný); omezuje se jen velikost protažení u extrémně ostrých ohybů
+            const c = a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
             const ex = a[0] - d[0] * c, ey = a[1] - d[1] * c, ez = a[2] - d[2] * c, el = Math.hypot(ex, ey, ez);
-            if (el > 1e-3 && c < 0.999) { mx = ex / el; my = ey / el; mz = ez / el; mk = 1 / c - 1; }
+            if (el > 1e-3 && c < 0.999) { mx = ex / el; my = ey / el; mz = ez / el; mk = 1 / Math.max(0.42, c) - 1; }
           }
           if (q === ts.length - 1) { UE[i * 3] = u[0]; UE[i * 3 + 1] = u[1]; UE[i * 3 + 2] = u[2]; }
           // boční větev nesmí být u nasazení silnější než mateřský úsek, jinak by z něj na druhé straně trčela
@@ -1087,6 +1093,12 @@ export class TreeView {
             const ml = mk ? (nx * mx + ny * my + nz * mz) * rr * mk : 0;
             B.v(cx + nx * rr + pd[0] * al + mx * ml, cy + ny * rr + pd[1] * al + my * ml, cz + nz * rr + pd[2] * al + mz * ml, nx, ny, nz, c0, c1, c2);
             B.t((k / RN) * tiles, v0 + (t * len) / (tile * 2), bk);
+            if (jEnd || jStart) {
+              // kontrola spojů: konec úseku a začátek navazujícího musí mít totožné vrcholy
+              const o = (B.nv - 1) * 3, key = jEnd ? i : pIdx;
+              if (jEnd) { (this.jointEnds[key] ??= []).push(B.pos[o], B.pos[o + 1], B.pos[o + 2]); }
+              else { const e = this.jointEnds[key]; const g = e && e.length > k * 3 + 2 ? Math.hypot(e[k * 3] - B.pos[o], e[k * 3 + 1] - B.pos[o + 1], e[k * 3 + 2] - B.pos[o + 2]) : 99; if (g / Math.max(0.05, r) > this.jointGap.rel) this.jointGap = { rel: g / Math.max(0.05, r), parent: s.shoots[pIdx].id, child: sh.id, info: `RN ${RN}/${RNS[pIdx]} verts ${e ? e.length / 3 : -1} TEp ${TE[pIdx]} aT ${sh.attachT} arcP ${!!s.shoots[pIdx].arc} arcC ${!!arc}` }; }
+            }
           }
           if (q === 0 && pIdx >= 0 && !jStart) {
             // uzavřený začátek boční větve

@@ -656,6 +656,7 @@ syncShelfBtn();
 // háček pro skripty (tvorba vzorové sbírky, testy v prohlížeči): načtení hry a portrét z daného úhlu
 (window as any).bonsai = {
   load: (save: Save) => { lastLogKey = ''; start(save); buildTrack(); },
+  jointGap: () => view.jointGap,
   capture: (theta?: number, w?: number, h?: number) => { if (theta !== undefined) view.theta = theta; return view.capture(w, h); },
 };
 
