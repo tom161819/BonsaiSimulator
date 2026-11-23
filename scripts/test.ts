@@ -317,4 +317,19 @@ test('sundání zarůstajících drátů nechá ostatní dráty na místě', () 
   assert.ok(tl.state.shoots.find((s) => s.id === fresh.id)!.wire, 'nový drát zůstal');
 });
 
+test('odstranění suchých větví nechá živé výhony beze změny', () => {
+  const tl = new Timeline(3, [], 3); tl.seek(at(12, 200));
+  // řez do holého dřeva: pahýl bez jehlic u borovice odumře
+  for (const b of tl.state.shoots.filter((s) => s.order === 1 && !s.dead && s.needleLive === 0).slice(0, 3)) tl.act({ type: 'cut', shoot: b.id, t: 0.5 });
+  tl.seek(at(13, 200));
+  const dead = tl.state.shoots.filter((s) => s.dead && s.parent >= 0).length;
+  const live = tl.state.shoots.filter((s) => !s.dead).map((s) => s.id).join();
+  assert.ok(dead > 0, 'strom má suché větve');
+  tl.act({ type: 'cleanDead' });
+  assert.equal(tl.state.shoots.filter((s) => s.dead && s.parent >= 0).length, 0);
+  assert.equal(tl.state.shoots.filter((s) => !s.dead).map((s) => s.id).join(), live);
+  const ids = new Set(tl.state.shoots.map((s) => s.id));
+  assert.ok(tl.state.shoots.every((s) => s.parent < 0 || ids.has(s.parent)), 'nic nevisí bez rodiče');
+});
+
 console.log(`\n${n} testů prošlo`);

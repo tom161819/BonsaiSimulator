@@ -201,6 +201,14 @@ function repot(s: State, a: Extract<Action, { type: 'repot' }>) {
   }
 }
 
+/** Suché větve, které jdou odstranit: odumřelé výhony, na nichž už nic živého neroste (kmen zůstává). */
+export function deadwood(s: State): Set<number> {
+  const live = new Set<number>();
+  const idx = new Map<number, Shoot>(s.shoots.map((x) => [x.id, x]));
+  for (const sh of s.shoots) if (!sh.dead) for (let p: Shoot | undefined = sh; p && !live.has(p.id); p = idx.get(p.parent)) live.add(p.id);
+  return new Set(s.shoots.filter((x) => x.dead && x.parent >= 0 && !live.has(x.id)).map((x) => x.id));
+}
+
 export function applyAction(s: State, a: Action) {
   if (a.type === 'cut') cut(s, a.shoot, a.t);
   else if (a.type === 'bud') {
@@ -211,5 +219,6 @@ export function applyAction(s: State, a: Action) {
   } else if (a.type === 'repot') repot(s, a);
   else if (a.type === 'wire') wire(s, a.shoot, a.axis, a.angle, a.z ?? 0);
   else if (a.type === 'unwire') unwire(s, a.shoot);
+  else if (a.type === 'cleanDead') removeSubtrees(s, deadwood(s));
   else if (a.type === 'unwireAll') for (const id of s.shoots.filter((x) => x.wire && (a.only !== 'biting' || x.scar)).map((x) => x.id)) unwire(s, id);
 }

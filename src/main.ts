@@ -6,7 +6,7 @@ import { P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
 import { YEAR, bendLimit, breakRisk, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
-import { bendShoot } from './sim/actions';
+import { bendShoot, deadwood } from './sim/actions';
 import { SPECIES, SPECIES_ORDER, speciesOf } from './sim/species';
 import samplesJson from './samples.json';
 import sampleThumbs from './sampleThumbs.json';
@@ -327,6 +327,8 @@ function refresh() {
   for (const b of $('toolSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.tool === tool));
   if (repotOpen) updateRepot();
   $('wireOpts').hidden = tool !== 'wire';
+  $('cutOpts').hidden = tool !== 'cut';
+  $<HTMLButtonElement>('cleanDead').disabled = !deadwood(s).size;
   $<HTMLButtonElement>('unwireAll').disabled = !s.shoots.some((x) => x.wire);
   {
     const nb = s.shoots.filter((x) => x.wire && x.scar).length;
@@ -548,6 +550,14 @@ $('unwireBiting').onclick = () => {
   persist();
   refresh();
 };
+$('cleanDead').onclick = () => {
+  const cnt = deadwood(tl.state).size;
+  if (!cnt) return;
+  tl.act({ type: 'cleanDead', label: `Odstraněny suché větve (${cnt})` });
+  lastLogKey = '';
+  persist();
+  refresh();
+};
 $('unwireAll').onclick = () => {
   const cnt = tl.state.shoots.filter((x) => x.wire).length;
   if (!cnt) return;
@@ -691,6 +701,7 @@ syncShelfBtn();
 // háček pro skripty (tvorba vzorové sbírky, testy v prohlížeči): načtení hry a portrét z daného úhlu
 (window as any).bonsai = {
   load: (save: Save) => { lastLogKey = ''; start(save); buildTrack(); },
+  pickCheck: (d?: number, f?: number, sh?: boolean) => view.pickCheck(d, f, sh),
   jointGap: () => ({ ...view.jointGap, attach: view.attachGap }),
   capture: (theta?: number, w?: number, h?: number) => { if (theta !== undefined) view.theta = theta; return view.capture(w, h); },
 };

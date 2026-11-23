@@ -1706,6 +1706,45 @@ export class TreeView {
     return pool[0].p;
   }
 
+  /** MĚŘENÍ: tenké výhony na silném dřevě. Kamera se postaví šikmo před každý z nich (rodič ~40 px silný)
+   *  a zkouší se, co výběr vrátí uprostřed viditelné části výhonu. */
+  pickCheck(deg = 45, off = 0, short = false) {
+    const s = this.state!, fr = this.frames!;
+    const W = this.canvas.clientWidth, Hh = this.canvas.clientHeight, cam = this.camera;
+    const p0 = cam.position.clone(), q0 = cam.quaternion.clone(), dist0 = this.dist;
+    const v = new THREE.Vector3();
+    const res = { n: 0, self: 0, kin: 0, parent: 0, other: 0, none: 0 };
+    const byId = new Map<number, number>(); s.shoots.forEach((q, i) => byId.set(q.id, i));
+    for (let i = 0; i < s.shoots.length; i++) {
+      const sh = s.shoots[i]; const pi = byId.get(sh.parent); if (pi === undefined || sh.dead) continue;
+      const par = s.shoots[pi]; const R = radiusOf(sh), RP = radiusOf(par);
+      if (RP < R * 2.5 || sh.len < RP * 1.15 || (short && sh.len > RP * 2.5)) continue;
+      const B = new THREE.Vector3(fr.base[i*3], fr.base[i*3+1], fr.base[i*3+2]);
+      const T = new THREE.Vector3(fr.tip[i*3], fr.tip[i*3+1], fr.tip[i*3+2]);
+      const dir = T.clone().sub(B).normalize();
+      const pd = new THREE.Vector3(fr.tip[pi*3]-fr.base[pi*3], fr.tip[pi*3+1]-fr.base[pi*3+1], fr.tip[pi*3+2]-fr.base[pi*3+2]).normalize();
+      const side = new THREE.Vector3().crossVectors(dir, pd); if (side.length() < 0.2) continue; side.normalize();
+      // bod na výhonu těsně za povrchem rodiče
+      const t = short ? (RP + (sh.len - RP) * 0.5) / sh.len : Math.min(0.9, (RP * 1.5) / sh.len);
+      const Pt = B.clone().lerp(T, t);
+      const a = (deg * Math.PI) / 180;
+      const view = dir.clone().multiplyScalar(Math.cos(a)).add(side.multiplyScalar(Math.sin(a)));
+      const D = (RP * Hh) / (40 * 2 * Math.tan((cam.fov * Math.PI) / 360));
+      this.dist = D; cam.position.copy(Pt).addScaledVector(view, D); cam.lookAt(Pt); cam.updateMatrixWorld(true);
+      v.copy(Pt).project(cam);
+      v.copy(T).project(cam); const tx = (v.x*0.5+0.5)*W, ty = (-v.y*0.5+0.5)*Hh; v.copy(Pt).project(cam);
+      let x = (v.x*0.5+0.5)*W, y = (-v.y*0.5+0.5)*Hh; { const ux = tx - x, uy = ty - y, ul = Math.hypot(ux, uy) || 1; x += (-uy / ul) * off; y += (ux / ul) * off; }
+      res.n++;
+      const p = this.pick(x, y);
+      if (!p) { res.none++; continue; }
+      if (p.shoot === sh.id) res.self++;
+      else if (p.shoot === par.id) res.parent++;
+      else { const k = s.shoots[byId.get(p.shoot)!]; if (radiusOf(k) < R * 2) res.kin++; else res.other++; }
+    }
+    cam.position.copy(p0); cam.quaternion.copy(q0); cam.updateMatrixWorld(true); this.dist = dist0;
+    return res;
+  }
+
   /** Kam by se větev ohnula, kdyby její špička šla za kurzorem (v rovině obrazovky procházející patou). */
   bendTarget(id: number, x: number, y: number): { axis: Vec3; angle: number } | null {
     const s = this.state, fr = this.frames;
