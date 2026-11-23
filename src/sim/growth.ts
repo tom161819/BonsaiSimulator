@@ -141,11 +141,14 @@ function runBudSet(s: State) {
   const auto = s.rules >= 3 ? P.branchAutonomy : 0;
   s.production = prod;
   const sp = speciesOf(s), leafy = sp.kind === 'leafy';
-  const G = prod * (leafy ? sp.growthPerFoliage : P.growthPerFoliage) * potGrowth(s)
+  // v5: semenáček a mladý stromek mají na jednotku olistění výrazně větší přírůst; s velikostí koruny výhoda mizí
+  const juv = leafy && s.rules >= 5 ? 1 + sp.juvenile / (1 + prod / P.juvenileScale) : 1;
+  const G = prod * (leafy ? sp.growthPerFoliage : P.growthPerFoliage) * juv * potGrowth(s)
     * rootBoundFactor(s) * (1 - P.stressGrowthLoss * Math.min(1, s.stress));
   s.budget = G;
 
-  const crowded = n > P.maxShoots;
+  // hustá koruna: zastíněné vrcholy přestávají zakládat pupeny (ve v5 dřív, kvůli plynulosti hry)
+  const crowded = n > (s.rules >= 5 ? 3500 : P.maxShoots);
   const lam = leafy ? sp.lambdaLateral : P.lambdaLateral;
   const sinks: Sink[][] = Array.from({ length: n }, () => []);
   for (let i = 0; i < n; i++) {
@@ -272,7 +275,9 @@ function leafySinks(s: State, sp: Species, sh: Shoot, i: number, kids: number[][
   const tipFree = !kids[i].some((c) => s.shoots[c].attachT > 0.98) && !sh.buds.some((b) => b.t > 0.98);
   // v4: pahýl, který už obrazil, další pupeny u řezu nezakládá – pokračují jeho nové výhony
   const stubDone = s.rules >= 4 && !cur && sh.tipCut && kids[i].length > 0;
-  if (tipFree && canBud && !stubDone && !(crowded && sh.light < 0.5)) {
+  // čím hustší koruna, tím víc světla vrchol potřebuje, aby založil pupen (velké stromy se samy prosvětlují)
+  const need = s.rules >= 5 ? 0.5 + 0.42 * Math.min(1, (s.shoots.length - 3500) / 5000) : 0.5;
+  if (tipFree && canBud && !stubDone && !(crowded && sh.light < need)) {
     const apex = cur && !sh.tipCut;
     // pahýl ochotně obrážejícího druhu vyraší, i když na něj podle síly vrcholů skoro nic nezbude
     const stub = !cur && sh.tipCut && sp.epicormic >= 0.5 ? 1.5 * sp.epicormic : undefined;
@@ -563,7 +568,7 @@ export function step(s: State) {
   if (cambium && (s.day % 7 === 0 || s.shoots[0].fol === 0)) updateFoliage(s);
   const shedding = doy >= P.shedStartDoy && doy < P.shedEndDoy;
   const shedRate = 1 / (P.shedEndDoy - P.shedStartDoy - 5);
-  const kArea = (P.areaPerFoliage * (speciesOf(s).kind === 'leafy' ? speciesOf(s).thicken : 1) * dG) / (P.cambiumEndGdd - P.cambiumStartGdd);
+  const kArea = (P.areaPerFoliage * (speciesOf(s).kind === 'leafy' ? speciesOf(s).thicken * (s.rules >= 5 ? 0.6 : 1) : 1) * dG) / (P.cambiumEndGdd - P.cambiumStartGdd);
 
   if (cambium) {
     // kořeny rostou s olistěním, dokud je v nádobě místo; stres z přesazení postupně odeznívá

@@ -32,6 +32,7 @@ export const P = {
   growthPerFoliage: 2.0, // cm nového výhonu na jednotku osluněného olistění
   lambdaLateral: 0.22, // apikální kontrola: váha bočních os proti hlavní
   sinkExp: 0.95, // síla jímky ~ Q^exp; <1 tlumí převahu mohutných spodních větví nad terminálem
+  juvenileScale: 60, // olistění, při kterém je mladistvá výhoda poloviční
   branchAutonomy: 0.5, // pravidla v3: podíl rozpočtu, který zůstává ve větvi, jež ho vyrobila
   weightPinch: 0.7, // pupeny po zaštípnutí jsou slabší jímka než terminál
   weightBack: 0.3, // zpětné pupeny na starším dřevě
@@ -113,7 +114,7 @@ export const POT: Record<PotType, { name: string; growth: number; needle: number
 };
 /** Účinnost stanoviště v původních pravidlech (v1): miska strom živila výrazně hůř. */
 export const POT_GROWTH_V1: Record<PotType, number> = { ground: 1.0, training: 0.85, bonsai: 0.5 };
-export const RULES_LATEST = 4;
+export const RULES_LATEST = 5;
 
 /** Katalog nádob. Velikost se sama nemění – nádobu volí pěstitel při přesazení.
  *  Objem v litrech určuje, kolik kořenů se vejde (P.rootPerLiter); rozměry v cm slouží vykreslení:

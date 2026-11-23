@@ -131,6 +131,11 @@ Ověřeno jen z úryvků ve výsledcích vyhledávání (stránky nebyly dostupn
 **Pravidla v3 – soběstačnost větví.** Při stavbě podle pravidel spodní větve stále slábly: rozpočet se dělil
 jen shora podle síly vrcholů. Ve v3 zůstává polovina rozpočtu ve větvi, která ji svým jehličím vyrobila
 (princip uhlíkové autonomie větví), zbytek se dělí jako dřív. Hodnota 0,5 je odhad.
+**Pravidla v5 – mladistvá vitalita.** Listnáče a modřín ve v3–v4 startovaly příliš pomalu (modřín 29 cm v pěti letech).
+Ve v5 má malý stromek na jednotku olistění několikanásobně větší přírůst (podle druhu 1,2–4×, nejvíc bříza a modřín);
+výhoda mizí s velikostí koruny. Ve volné půdě vychází v pěti letech 1,6–3 m. Husté koruny se samy prosvětlují
+a tloušťkový přírůst je o 40 % menší. Borovice se nemění.
+
 Ve v3 se také větev, která převzala vrchol, postupně zvedá ke svislici i ve stávajícím dřevě (tenká rychle,
 silná pomalu), a osu může převzít i větev nasazená níž na pahýlu bez jehlic.
 

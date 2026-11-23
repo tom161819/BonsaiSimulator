@@ -242,7 +242,7 @@ test('všechny druhy vyklíčí, rostou a přežijí deset let bez zásahu', () 
     const tl = new Timeline(4, [], undefined, id); tl.act({ type: 'repot', pot: 'ground' }); tl.seek(at(9, 200));
     const st = stats(tl.state);
     assert.equal(tl.state.stage, 'growing', id);
-    assert.ok(st.height > 60 && st.height < 700, `${id}: výška ${st.height.toFixed(0)} cm`);
+    assert.ok(st.height > 60 && st.height < 800, `${id}: výška ${st.height.toFixed(0)} cm`);
     assert.ok(st.baseDiameter > 1 && st.baseDiameter < 16, `${id}: kmen ${st.baseDiameter.toFixed(1)} cm`);
   }
 });
@@ -296,6 +296,12 @@ test('v4: pahýl habru obrazí několika výhony po délce, ne jedním u řezu',
   const kids = tl.state.shoots.filter((s) => s.parent === seg.id && !s.dead);
   assert.ok(kids.length >= 3, `výhonů z pahýlu: ${kids.length}`);
   assert.ok(kids.every((k) => k.attachT < 0.98) && Math.max(...kids.map((k) => k.attachT)) - Math.min(...kids.map((k) => k.attachT)) > 0.2, 'rozmístěné po délce, ne na řezné ploše');
+});
+
+test('v5: modřín ve velké nádobě je v pěti letech vyšší než metr; ve v4 zůstává malý', () => {
+  const h = (rules: number) => { const tl = new Timeline(7, [], rules, 'larch'); tl.seek(at(1, 75)); tl.act({ type: 'repot', pot: 'training', potId: 't25', prune: 0 }); tl.seek(at(4, 220)); return stats(tl.state).height; };
+  assert.ok(h(5) > 100 && h(5) < 250, `v5: ${h(5).toFixed(0)} cm`);
+  assert.ok(h(4) < 60, `v4: ${h(4).toFixed(0)} cm`);
 });
 
 console.log(`\n${n} testů prošlo`);

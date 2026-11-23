@@ -3,6 +3,7 @@ import { Timeline } from '../src/sim/timeline';
 import { stats, YEAR } from '../src/sim/util';
 import { SPECIES, SPECIES_ORDER } from '../src/sim/species';
 if (process.env.C && process.argv[3]) (SPECIES as any)[process.argv[3]].growthPerFoliage = Number(process.env.C);
+if (process.env.J && process.argv[3]) (SPECIES as any)[process.argv[3]].juvenile = Number(process.env.J);
 import type { PotType } from '../src/sim/types';
 
 const years = Number(process.argv[2] || 12);
