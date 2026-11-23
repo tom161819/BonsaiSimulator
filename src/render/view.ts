@@ -513,6 +513,7 @@ export class TreeView {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.18;
     this.scene.add(this.table);
+    this.makeTools();
     this.hi.renderOrder = 10; this.marker.renderOrder = 11;
     this.wireLines.renderOrder = 8; this.wireDots.renderOrder = 9;
     this.wireLines.visible = false; this.wireDots.visible = false;
@@ -560,7 +561,7 @@ export class TreeView {
     const s = this.state;
     if (!s) return '';
     const keep = { target: this.target.clone(), dist: this.dist, phi: this.phi, auto: this.auto, pr: this.renderer.getPixelRatio() };
-    const hidden = [this.hi, this.marker, this.wireLines, this.wireDots, this.table, this.backdrop].filter((o) => o.visible);
+    const hidden = [this.hi, this.marker, this.wireLines, this.wireDots, this.table, this.backdrop, this.toolScissors, this.toolWire].filter((o) => o.visible);
     for (const o of hidden) o.visible = false;
     const pot = potById(s.potId);
     const H = Math.max(6, this.height), below = pot.shape === 'ground' ? 1 : pot.h + 2;
@@ -602,7 +603,9 @@ export class TreeView {
     if (this.auto) {
       const H = Math.max(4, this.height);
       const narrow = this.camera.aspect < 0.8 ? 1.5 : 1;
-      const td = (H * 2.35 + 26) * narrow, ty = H * 0.46;
+      // záběr zahrnuje i nádobu a desku stolu s nářadím
+      const bottom = this.table.visible ? this.tableTop : 0, span = H - bottom;
+      const td = (span * 2.05 + 26) * narrow, ty = bottom + span * 0.5;
       if (Math.abs(td - this.dist) > 0.01 || Math.abs(ty - this.target.y) > 0.01) {
         this.dist += (td - this.dist) * 0.12;
         this.target.x *= 0.88; this.target.z *= 0.88;
@@ -661,6 +664,55 @@ export class TreeView {
   }
 
   private tableTop = 0;
+  private toolScissors = new THREE.Group();
+  private toolWire = new THREE.Group();
+  private activeTool: 'cut' | 'wire' = 'cut';
+
+  /** Nářadí na stole: bonsajové nůžky a cívka měděného drátu. Kliknutím se volí nástroj. */
+  private makeTools() {
+    const steel = new THREE.MeshStandardMaterial({ color: 0x2c2d30, roughness: 0.35, metalness: 0.85 });
+    const edge = new THREE.MeshStandardMaterial({ color: 0xb9bcc2, roughness: 0.25, metalness: 0.9 });
+    const copper = new THREE.MeshStandardMaterial({ color: 0xb8692e, roughness: 0.4, metalness: 0.8 });
+    const add = (g: THREE.Group, geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, ry = 0, rx = 0) => {
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(x, y, z); mesh.rotation.set(rx, ry, 0);
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      g.add(mesh);
+    };
+    // nůžky (jednotková velikost ~ 1 na délku): dvě zkřížená ramena, každé = čepel + stopka + velké oko
+    for (const sgn of [-1, 1]) {
+      const arm = new THREE.Group();
+      const blade = new THREE.Shape();
+      blade.moveTo(0, -0.028); blade.lineTo(0.42, -0.004); blade.lineTo(0.42, 0.004); blade.lineTo(0, 0.045); blade.closePath();
+      add(arm, new THREE.ExtrudeGeometry(blade, { depth: 0.016, bevelEnabled: false }).rotateX(-Math.PI / 2), edge, 0, 0, 0);
+      add(arm, new THREE.BoxGeometry(0.2, 0.02, 0.035), steel, -0.1, 0.01, 0);
+      add(arm, new THREE.TorusGeometry(0.115, 0.02, 8, 24).rotateX(Math.PI / 2), steel, -0.3, 0.01, sgn * 0.085);
+      arm.rotation.y = sgn * 0.17;
+      arm.position.y = sgn > 0 ? 0.03 : 0.012;
+      this.toolScissors.add(arm);
+    }
+    add(this.toolScissors, new THREE.CylinderGeometry(0.022, 0.022, 0.06, 12), edge, 0, 0.03, 0);
+    // cívka drátu: několik závitů na sobě a volný konec
+    for (let k = 0; k < 5; k++) add(this.toolWire, new THREE.TorusGeometry(0.3 - 0.006 * (k % 2), 0.022, 8, 40).rotateX(Math.PI / 2), copper, (k % 2) * 0.01, 0.024 + k * 0.04, 0);
+    add(this.toolWire, new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8).rotateZ(Math.PI / 2), copper, 0.36, 0.024, 0.27, 0.5);
+    this.scene.add(this.toolScissors, this.toolWire);
+  }
+
+  /** Který nástroj na stole leží pod kurzorem (souřadnice plátna). */
+  pickTool(x: number, y: number): 'cut' | 'wire' | null {
+    const W = this.canvas.clientWidth, Hh = this.canvas.clientHeight, v = new THREE.Vector3();
+    for (const [g, id] of [[this.toolScissors, 'cut'], [this.toolWire, 'wire']] as [THREE.Group, 'cut' | 'wire'][]) {
+      if (!g.visible) continue;
+      v.copy(g.position).project(this.camera);
+      if (v.z > 1) continue;
+      const rad = Math.max(22, ((g.scale.x * 0.45) / this.dist) * Hh * 1.75);
+      if (Math.hypot((v.x * 0.5 + 0.5) * W - x, (-v.y * 0.5 + 0.5) * Hh - y) < rad) return id;
+    }
+    return null;
+  }
+
+  /** Zvolený nástroj je na stole nadzvednutý. */
+  setActiveTool(t: 'cut' | 'wire') { this.activeTool = t; if (this.state) this.build(); }
   private jointEnds: Record<number, number[]> = {};
   jointGap = { rel: 0, parent: -1, child: -1, info: '' };
   private potOverride: string | null = null;
@@ -1233,6 +1285,24 @@ export class TreeView {
         drawBud(d, Math.min(1.5, 0.28 + 0.045 * sh.targetLen) * (1.1 - 0.75 * e), 0);
       }
 
+      if (leafySp && !sh.dead) {
+        // rašící letorost: pupen na špičce se s růstem výhonu postupně vytrácí (jako svíčka borovice)
+        if (sh.elong && sh.kind === 'shoot' && !sh.tipCut) {
+          const e = sh.targetLen > 0 ? len / sh.targetLen : 1;
+          at(1);
+          drawBud(d, sp.budLen * (1.15 - 0.95 * e), 0, sp.budFat, sp.budColor);
+        }
+        // modřín: krátké výhony jsou na starším dřevě vidět celý rok jako pupenovité čípky; z nich na jaře
+        // vyrážejí svazečky jehlic
+        if (sp.leafShape === 'tuft' && age >= 1 && sh.needleCount > 0) {
+          const cntS = sh.needleCount, stepS = Math.max(1, stride);
+          for (let k = (sh.id * 7) % stepS; k < cntS; k += stepS) {
+            at(0.08 + 0.9 * ((k + 0.5) / cntS));
+            const a2 = k * 2.39996 + sh.id;
+            drawBud([u[0] * Math.cos(a2) + w[0] * Math.sin(a2), u[1] * Math.cos(a2) + w[1] * Math.sin(a2), u[2] * Math.cos(a2) + w[2] * Math.sin(a2)], 0.2, rb * 0.75, 0.55, sp.budColor);
+          }
+        }
+      }
       if (sh.needleCount <= 0 || sh.needleLive <= 0) continue;
       if (leafySp) {
         // ---- listy (a jehlice modřínu): každé jaro nové, na podzim se barví a opadají
@@ -1329,7 +1399,8 @@ export class TreeView {
           const aLeaf = winter ? 9 : aBase - tposN * lag;
           if (aLeaf < 0.04) continue; // list u špičky se ještě nerozvinul
           setTone(aLeaf);
-          L0 = sh.needleLen * (0.3 + 0.7 * smooth(aLeaf));
+          const openK = smooth(aLeaf);
+          L0 = sh.needleLen * (sp.leafShape === 'tuft' ? 0.1 + 0.9 * openK : 0.3 + 0.7 * openK);
           at(cot ? 1 : 0.08 + 0.9 * tposN);
           let phi: number;
           if (cot) phi = (k / cnt) * 6.2832 + sh.id;
@@ -1338,7 +1409,8 @@ export class TreeView {
           else phi = k * 2.39996 + sh.id;
           for (let q = 0; q < perNode; q++) {
             const a2 = tuft ? phi + q * 2.39996 : phi;
-            const tiltA = tuft ? (cur ? 1.0 : 0.35 + 0.9 * rnd(sh.id, k * 13 + q, 15)) : cot ? 1.25 : flat ? 0.95 + (h - 0.5) * 0.2 : 1.05 + (h - 0.5) * 0.4;
+            // svazeček se z pupenu rozevírá: nejdřív sevřený štěteček, pak se jehlice rozloží
+            const tiltA = tuft ? (cur ? 0.3 + 0.7 * openK : (0.35 + 0.9 * rnd(sh.id, k * 13 + q, 15)) * (0.2 + 0.8 * openK)) : cot ? 1.25 : flat ? 0.95 + (h - 0.5) * 0.2 : 1.05 + (h - 0.5) * 0.4;
             const sa = Math.sin(tiltA), ca = Math.cos(tiltA), cp = Math.cos(a2), spn = Math.sin(a2);
             // krátké výhony modřínu sedí na boku větve a míří ven; listy visí lehce dolů
             const ax0 = tuft && !cur ? u[0] * cp + w[0] * spn : d[0], ay0 = tuft && !cur ? u[1] * cp + w[1] * spn : d[1], az0 = tuft && !cur ? u[2] * cp + w[2] * spn : d[2];
@@ -1490,9 +1562,18 @@ export class TreeView {
     // podložka musí pojmout nádobu i stín stromu
     const ps = potById(this.potOverride ?? s.potId);
     {
-      const wdt = Math.max(Math.max(ps.a, ps.b) * 2.6, H * 1.9, 40), dep = wdt * 0.62, th = Math.max(2, wdt * 0.035);
+      const wdt = Math.max(Math.max(ps.a, ps.b) * 3.4, H * 1.9, 40), dep = wdt * 0.62, th = Math.max(2, wdt * 0.035);
       this.table.scale.set(wdt, th, dep);
       this.table.position.y = this.tableTop - th / 2;
+      // nářadí leží vpředu na stole: nůžky vlevo, drát vpravo; velikost podle stolu
+      const potW = Math.max(ps.a, ps.b);
+      const size = Math.max(9, potW * 0.6);
+      for (const [g, sx, id] of [[this.toolScissors, -1, 'cut'], [this.toolWire, 1, 'wire']] as [THREE.Group, number, string][]) {
+        g.visible = this.table.visible;
+        g.scale.setScalar(size * (id === 'wire' ? 0.75 : 1));
+        g.position.set(sx * (ps.a / 2 + size * 0.75), this.tableTop + (this.activeTool === id ? size * 0.12 : 0), ps.b * 0.35 * -sx); // z výchozího pohledu nůžky vlevo, drát vpravo
+        g.rotation.set(0, id === 'cut' ? 0.9 : 0.3, this.activeTool === id ? 0.12 : 0);
+      }
       (this.table.material as THREE.MeshStandardMaterial).map!.repeat.set(wdt / 60, dep / 60);
     }
 

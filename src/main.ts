@@ -446,6 +446,16 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
   if (e.pointerType === 'mouse' && !repotOpen) {
+    const onTool = view.pickTool(e.offsetX, e.offsetY);
+    if (onTool) {
+      setHover(null);
+      canvas.style.cursor = 'pointer';
+      tip.hidden = false; tip.className = '';
+      tip.textContent = onTool === 'cut' ? 'Nůžky – zaštipování, řez a vylamování pupenů' : 'Drát – tažením za větev ji ohnete';
+      tip.style.left = `${Math.min(window.innerWidth - 270, e.clientX + 16)}px`; tip.style.top = `${e.clientY - 40}px`;
+      return;
+    }
+    canvas.style.cursor = tool === 'wire' ? 'grab' : 'crosshair';
     const p = view.pick(e.offsetX, e.offsetY);
     setHover(p ? describe(p) : null, e.clientX, e.clientY);
   }
@@ -472,6 +482,8 @@ const up = (e: PointerEvent) => {
   }
   bend = null;
   if (!wasTap || repotOpen) return;
+  const onTool = view.pickTool(e.offsetX, e.offsetY);
+  if (onTool) { setTool(onTool); return; }
   const p = view.pick(e.offsetX, e.offsetY);
   const d = p ? describe(p) : null;
   if (e.pointerType === 'mouse') { if (d) doAction(d); }
@@ -503,8 +515,15 @@ $('j-spring').onclick = () => {
 };
 slider.oninput = () => { playing = false; go(Number(slider.value)); };
 // --- nástroje a přesazení
+function setTool(t: 'cut' | 'wire') {
+  tool = t;
+  canvas.style.cursor = tool === 'wire' ? 'grab' : 'crosshair';
+  view.setActiveTool(t);
+  setHover(null);
+  refresh();
+}
 for (const b of $('toolSeg').querySelectorAll('button')) {
-  b.onclick = () => { tool = b.dataset.tool as 'cut' | 'wire'; canvas.style.cursor = tool === 'wire' ? 'grab' : 'crosshair'; setHover(null); refresh(); };
+  b.onclick = () => setTool(b.dataset.tool as 'cut' | 'wire');
 }
 // najetí na tlačítko Drát nebo na řádek „Dráty“ zvýrazní všechny dráty na stromu
 for (const el of [$('tool-wire'), $('sWires'), $('sWires').previousElementSibling as HTMLElement]) {
