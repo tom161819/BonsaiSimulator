@@ -719,6 +719,7 @@ export class TreeView {
   setActiveTool(t: 'cut' | 'wire') { this.activeTool = t; if (this.state) this.build(); }
   private jointEnds: Record<number, number[]> = {};
   jointGap = { rel: 0, parent: -1, child: -1, info: '' };
+  attachGap = 0;
   private potOverride: string | null = null;
   /** Náhled jiné nádoby v dialogu přesazení (null = skutečná nádoba stromu). */
   private spreadPreview = 0;
@@ -863,7 +864,7 @@ export class TreeView {
     const { base, tip } = fr;
     const wb = this.wb, bb = this.bb, nb = this.nb;
     wb.reset(); bb.reset(); nb.reset();
-    this.jointEnds = {}; this.jointGap = { rel: 0, parent: -1, child: -1, info: '' };
+    this.jointEnds = {}; this.jointGap = { rel: 0, parent: -1, child: -1, info: '' }; this.attachGap = 0;
     this.builtDist = this.dist;
 
     // pokračující výhon určuje poloměr na vrcholu a směr, kterým osa plynule navazuje
@@ -978,6 +979,8 @@ export class TreeView {
       }
     }
     const ONT = new Uint8Array(n);
+    const MID = new Uint8Array(n);
+    for (let i = 0; i < n; i++) { const c = s.shoots[i]; if (c.parent >= 0 && c.attachT <= 0.98) MID[fr.index.get(c.parent)!] = 1; }
     const VO = new Float32Array(n).fill(-1);
     const UE = new Float32Array(n * 3); // osa u posledního prstence každého úseku
     const RNS = new Uint8Array(n); // počet vrcholů prstence; navazující úsek ho dědí
@@ -1025,7 +1028,14 @@ export class TreeView {
         T1 = nrm(d0[0] + (T1[0] - d0[0]) * soft, d0[1] + (T1[1] - d0[1]) * soft, d0[2] + (T1[2] - d0[2]) * soft);
       }
       const dot0 = T0[0] * d0[0] + T0[1] * d0[1] + T0[2] * d0[2], dot1 = T1[0] * d0[0] + T1[1] * d0[1] + T1[2] * d0[2];
-      const curved = !arc && TE[i] === 1 && len > 0.05 && (dot0 < 0.9995 || dot1 < 0.9995);
+      // výhon, ze kterého uprostřed délky roste jiný výhon, se kreslí rovně: potomek sedí na přímé spojnici
+      // a na prohnuté křivce by visel vedle ní
+      if (MID[i] && !arc && TE[i] === 1 && len > 0.05 && (dot0 < 0.9995 || dot1 < 0.9995)) {
+        // o kolik by se prohnutá osa uprostřed odchýlila od přímé spojnice (v poloměrech výhonu) – jen pro kontrolu
+        const dv = (len / 8) * Math.hypot(T0[0] - T1[0], T0[1] - T1[1], T0[2] - T1[2]) / Math.max(0.03, radiusOf(sh));
+        if (dv > this.attachGap) this.attachGap = dv;
+      }
+      const curved = !arc && TE[i] === 1 && !MID[i] && len > 0.05 && (dot0 < 0.9995 || dot1 < 0.9995);
 
       // místní soustava v bodě t výhonu: střed c a osy d (podél), u, w (napříč)
       let d: Vec3 = d0, u: Vec3 = u0, w: Vec3 = w0, cx = bx, cy = by, cz = bz;
