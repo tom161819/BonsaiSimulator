@@ -869,13 +869,13 @@ export class TreeView {
     const col = [0, 0, 0];
     const shedSeason = doy >= P.shedStartDoy && doy < P.shedEndDoy + 20;
     const R0 = n ? radiusOf(s.shoots[0]) : 0;
-    const zone = 3.2 * R0 * smooth((R0 - 0.12) / 0.5);
+    const zone = 2.4 * R0 * smooth((R0 - 0.12) / 0.5);
     // Pata kmene: u země se kmen rozšiřuje do náběhů mířících do směrů povrchových kořenů, takže kořen
     // vybíhá z hřbetu kmene a ne z hladkého válce.
     const lobeOf = (x: number, z: number) => {
       const az = Math.atan2(z, x);
       let best = 0;
-      for (const root of s.nebari) { const c = Math.cos(az - root.az); if (c > 0) best = Math.max(best, (root.thick / 0.45) * Math.pow(c, 7)); }
+      for (const root of s.nebari) { const c = Math.cos(az - root.az); if (c > 0) best = Math.max(best, (root.thick / 0.45) * Math.pow(c, 12)); }
       return best;
     };
     // barva dřeva a síla borky každého výhonu; v kloubech se prolínají se sousedem, aby přechod nebyl skokem
@@ -1060,7 +1060,6 @@ export class TreeView {
           const t = ts[q];
           at(t * TE[i]);
           let r = radiusAt(t);
-          const zf = inZone && cy < zone ? clamp(1 - cy / zone, 0, 1.2) : 0;
           const jStart = q === 0 && pIdx >= 0 && contKid[pIdx] === i && ts[0] === 0;
           const jEnd = q === ts.length - 1 && ckTip;
           if (jStart || jEnd) {
@@ -1103,11 +1102,23 @@ export class TreeView {
           for (let k = 0; k <= RN; k++) {
             const a = (k / RN) * 6.2832, km = k % RN;
             const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
-            const rr = r * (1 + (jStart || jEnd ? 0 : rough) * (rnd(sh.id, km, q + 20) - 0.5) * 2) * (zf > 0 ? 1 + zf * zf * (0.25 + 0.75 * lobeOf(nx, nz)) : 1); // ve spoji bez nerovností, aby prstence splynuly
+            const rr = r * (1 + (jStart || jEnd ? 0 : rough) * (rnd(sh.id, km, q + 20) - 0.5) * 2); // ve spoji bez nerovností, aby prstence splynuly
             // protažení límce podél mateřské osy
             const al = stretch ? (nx * pd[0] + ny * pd[1] + nz * pd[2]) * rr * stretch : 0;
             const ml = mk ? (nx * mx + ny * my + nz * mz) * rr * mk : 0;
-            B.v(cx + nx * rr + pd[0] * al + mx * ml, cy + ny * rr + pd[1] * al + my * ml, cz + nz * rr + pd[2] * al + mz * ml, nx, ny, nz, c0, c1, c2);
+            let vx = cx + nx * rr + pd[0] * al + mx * ml, vz = cz + nz * rr + pd[2] * al + mz * ml;
+            const vy = cy + ny * rr + pd[1] * al + my * ml;
+            if (inZone && vy < zone) {
+              // Nebari: rozšíření je vodorovné (i u šikmého kmene) a vyduté jako ústí trubky – kmen se dlouho
+              // skoro nemění a rozběhne se až těsně nad zemí. Řídí se výškou samotného bodu, takže spoje sedí.
+              const ox = vx - cx, oz = vz - cz, ol = Math.hypot(ox, oz);
+              if (ol > 1e-4) {
+                const f = clamp(1 - vy / zone, 0, 1.15);
+                const push = R0 * (0.3 * Math.pow(f, 3) + 1.5 * Math.pow(f, 5) * lobeOf(ox, oz));
+                vx += (ox / ol) * push; vz += (oz / ol) * push;
+              }
+            }
+            B.v(vx, vy, vz, nx, ny, nz, c0, c1, c2);
             B.t((k / RN) * tiles, v0 + (t * len) / (tile * 2), bk);
             if (jEnd || jStart) {
               // kontrola spojů: konec úseku a začátek navazujícího musí mít totožné vrcholy
@@ -1433,8 +1444,8 @@ export class TreeView {
           const rho = R0 * 0.15 + Lr * f;
           // kořen vychází ze středu kmene i u šikmo posazeného stromu: počátek sleduje osu kmene a k zemi se
           // posun ztrácí
-          const y = R0 * 0.85 * Math.pow(1 - f, 2.1) - R0 * 0.35 * f * f;
-          const lean = Math.pow(1 - f, 2) * R0 * 0.85;
+          const y = R0 * 0.38 * Math.pow(1 - f, 1.6) - R0 * 0.4 * f * f;
+          const lean = Math.pow(1 - f, 2) * R0 * 0.38;
           pts.push([Math.cos(az) * rho * (j === 0 ? 0 : 1) + leanX * lean, y, Math.sin(az) * rho * (j === 0 ? 0 : 1) + leanZ * lean]);
           rad.push(thick * (Math.pow(1 - f, 0.8) * 0.85 + 0.15) * (1 + 0.5 * Math.pow(1 - f, 4)));
         }
