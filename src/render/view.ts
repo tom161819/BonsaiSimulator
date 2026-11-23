@@ -848,6 +848,8 @@ export class TreeView {
     }
     const endTan = (sh: Shoot): Vec3 => (sh.arc ? rotate(sh.dir, sh.arc.axis, sh.arc.angle) : sh.dir);
     const VO = new Float32Array(n).fill(-1);
+    const UE = new Float32Array(n * 3); // osa u posledního prstence každého úseku
+    const RNS = new Uint8Array(n); // počet vrcholů prstence; navazující úsek ho dědí
     // Společný prstenec ve spoji dvou navazujících úseků: leží v rovině půlící úhel mezi nimi a má jeden
     // poloměr, takže konec jednoho úseku a začátek druhého na sebe přesně dosednou (žádné mezery ani zářezy).
     const rEff = (j: number) => radiusOf(s.shoots[j]) * (s.shoots[j].elong && s.shoots[j].targetLen > 0 ? 0.55 + 0.45 * (s.shoots[j].len / s.shoots[j].targetLen) : 1);
@@ -861,7 +863,16 @@ export class TreeView {
       const bx = base[i * 3], by = base[i * 3 + 1], bz = base[i * 3 + 2];
       const d0 = sh.dir;
       // osy průřezu volené tak, aby w = d × u – stěny trubky pak míří ven (jinak by se kreslil vnitřek)
-      const [u0, wB] = basis(d0);
+      let [u0, wB] = basis(d0);
+      {
+        // navazující úsek přebírá natočení průřezu od předchozího: vrcholy prstenců ve spoji pak leží přesně na sobě
+        const pq = sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;
+        if (pq >= 0 && contKid[pq] === i && sh.attachT > 0.98 && UE[pq * 3] + UE[pq * 3 + 1] + UE[pq * 3 + 2] !== 0) {
+          const k = UE[pq * 3] * d0[0] + UE[pq * 3 + 1] * d0[1] + UE[pq * 3 + 2] * d0[2];
+          const x = UE[pq * 3] - d0[0] * k, y = UE[pq * 3 + 1] - d0[1] * k, z = UE[pq * 3 + 2] - d0[2] * k;
+          if (Math.hypot(x, y, z) > 0.2) { u0 = nrm(x, y, z); wB = [-(d0[1] * u0[2] - d0[2] * u0[1]), -(d0[2] * u0[0] - d0[0] * u0[2]), -(d0[0] * u0[1] - d0[1] * u0[0])]; }
+        }
+      }
       const w0: Vec3 = [-wB[0], -wB[1], -wB[2]];
       const len = sh.len;
       const arc = sh.arc;
@@ -948,7 +959,8 @@ export class TreeView {
       if (len > 0.01) {
         const isBark = BK[i] > 0;
         const B = bb; // všechno dřevo v jedné síti – hladké i rozpraskané se liší jen sílou borky ve vrcholech
-        const RN = rb < 0.25 ? 6 : rb < 0.8 ? 8 : rb < 2 ? 12 : 16;
+        const RN = pIdx >= 0 && contKid[pIdx] === i && sh.attachT > 0.98 && RNS[pIdx] ? RNS[pIdx] : rb < 0.25 ? 6 : rb < 0.8 ? 8 : rb < 2 ? 12 : 16;
+        RNS[i] = RN;
         const ts: number[] = [0];
         if (collar && tc > 0.02) ts.push(tc * 0.2, tc * 0.45, tc * 0.7, tc);
         if (inZone) ts.push(0.15, 0.3, 0.5, 0.75);
@@ -964,6 +976,18 @@ export class TreeView {
           for (const t of ts) if (t - keep[keep.length - 1] >= 0.02 && 1 - t >= 0.02) keep.push(t);
           keep.push(1);
           ts.length = 0; ts.push(...keep);
+        }
+        {
+          // u ostrého spoje nesmí být další prstenec moc blízko – šikmý společný prstenec by ho na vnitřní straně
+          // ohybu protnul a vznikl by cíp
+          const guard = (jd: Vec3, tan: Vec3, r: number) => {
+            const c = clamp(jd[0] * tan[0] + jd[1] * tan[1] + jd[2] * tan[2], 0.2, 1);
+            return (r * (Math.sqrt(1 - c * c) / c + 0.35)) / len;
+          };
+          const g0 = pIdx >= 0 && contKid[pIdx] === i && sh.attachT > 0.98 ? guard(jointDir(pIdx, i), d0, jointR(pIdx, i)) : 0;
+          const g1 = ckTip ? guard(jointDir(i, ck), endTan(sh), jointR(i, ck)) : 0;
+          const kept = ts.filter((t) => t === 0 || t === 1 || (t > g0 && t < 1 - g1));
+          ts.length = 0; ts.push(...kept);
         }
         const rough = isBark ? clamp((rb - 0.3) * 0.05, 0, 0.07) : 0;
         const tile = 2.4 + rb * 1.8; // silnější kmen má větší desky
@@ -982,21 +1006,34 @@ export class TreeView {
           if (jStart || jEnd) {
             const J = jStart ? jointDir(pIdx, i) : jointDir(i, ck);
             r = jStart ? jointR(pIdx, i) : jointR(i, ck);
-            const kk = u[0] * J[0] + u[1] * J[1] + u[2] * J[2];
-            d = J; u = nrm(u[0] - J[0] * kk, u[1] - J[1] * kk, u[2] - J[2] * kk);
+            // začátek navazujícího úseku použije přesně tutéž osu u, jakou měl konec předchozího
+            const src: Vec3 = jStart && UE[pIdx * 3] + UE[pIdx * 3 + 1] + UE[pIdx * 3 + 2] !== 0 ? [UE[pIdx * 3], UE[pIdx * 3 + 1], UE[pIdx * 3 + 2]] : u;
+            const kk = src[0] * J[0] + src[1] * J[1] + src[2] * J[2];
+            d = J; u = nrm(src[0] - J[0] * kk, src[1] - J[1] * kk, src[2] - J[2] * kk);
             w = [J[1] * u[2] - J[2] * u[1], J[2] * u[0] - J[0] * u[2], J[0] * u[1] - J[1] * u[0]];
           }
+          if (q === ts.length - 1) { UE[i * 3] = u[0]; UE[i * 3 + 1] = u[1]; UE[i * 3 + 2] = u[2]; }
+          // boční větev nesmí být u nasazení silnější než mateřský úsek, jinak by z něj na druhé straně trčela
+          const sideBase = q === 0 && pIdx >= 0 && !jStart;
+          if (sideBase) r = Math.min(r, rEff(pIdx) * 0.92);
           const stretch = collar && t < tc ? 0.3 * (1 - t / tc) * (1 - t / tc) : 0;
           const c0 = colorAt(t, 0), c1 = colorAt(t, 1), c2 = colorAt(t, 2), bk = barkAt(t);
           const first = B.nv;
           for (let k = 0; k <= RN; k++) {
             const a = (k / RN) * 6.2832, km = k % RN;
             const nx = u[0] * Math.cos(a) + w[0] * Math.sin(a), ny = u[1] * Math.cos(a) + w[1] * Math.sin(a), nz = u[2] * Math.cos(a) + w[2] * Math.sin(a);
-            const rr = r * (1 + rough * (rnd(sh.id, km, q + 20) - 0.5) * 2);
+            const rr = r * (1 + (jStart || jEnd ? 0 : rough) * (rnd(sh.id, km, q + 20) - 0.5) * 2); // ve spoji bez nerovností, aby prstence splynuly
             // protažení límce podél mateřské osy
             const al = stretch ? (nx * pd[0] + ny * pd[1] + nz * pd[2]) * rr * stretch : 0;
             B.v(cx + nx * rr + pd[0] * al, cy + ny * rr + pd[1] * al, cz + nz * rr + pd[2] * al, nx, ny, nz, c0, c1, c2);
             B.t((k / RN) * tiles, v0 + (t * len) / (tile * 2), bk);
+          }
+          if (q === 0 && pIdx >= 0 && !jStart) {
+            // uzavřený začátek boční větve
+            B.reserve(1, RN * 3);
+            const cc = B.v(cx - d[0] * r * 0.3, cy - d[1] * r * 0.3, cz - d[2] * r * 0.3, -d[0], -d[1], -d[2], c0, c1, c2);
+            B.t(0.5, v0, bk);
+            for (let k = 0; k < RN; k++) B.tri(first + k + 1, first + k, cc);
           }
           if (prev >= 0) for (let k = 0; k < RN; k++) {
             B.tri(prev + k, prev + k + 1, first + k); B.tri(prev + k + 1, first + k + 1, first + k);
