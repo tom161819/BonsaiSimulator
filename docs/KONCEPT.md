@@ -138,6 +138,14 @@ a tloušťkový přírůst je o 40 % menší. Borovice se nemění.
 **Pravidla v6 – tolerantnější drátování.** Růst je stejný jako ve v5. Bezpečný ohyb je asi o 60 % větší
 (45/(r+0,25)° místo 28, nejméně 15° místo 8°), v době růstu se snižuje jen na 80 % (dřív 60 %) a riziko prasknutí
 dosáhne 100 % až při dvojnásobku bezpečného ohybu (dřív při 1,5násobku). Herní ústupek, ne údaj z literatury.
+**Pravidla v7 – vrcholová dominance olistěných druhů.** Měření na habru ve 2l nádobě (v6): 62 % ročního přírůstku
+šlo do spodní třetiny výšky a jen 11 % do horní; kmen zkrácený nad staršími větvemi už nikdy nevyhnal nový vrchol
+(pravidlo v4 považovalo staré větve za „pahýl už obrazil“). Ve v7: (1) váha vrcholu roste s výškou ve stromě
+(0,5 u země až 1,6 nahoře, exponent 1,5; v průměru 1), stejně se váží i podíl, který si větev nechává z vlastní
+produkce; (2) slabé vrcholy ve spodních patrech pupen nezaloží a zůstanou krátkými výhony, dole vzniká i méně
+bočních pupenů; (3) zkrácený kmen vyrazí nový vůdčí výhon, i když pod řezem větve jsou, a ten táhne aspoň jako
+2 % všech vrcholů. Výsledek na stejném habru: dole 36 %, nahoře 29 %, počet nových výhonů dole 285 → 165;
+po zkrácení kmene roste nový vrchol 6–12 cm ročně. Borovice se nemění. Hodnoty jsou odhad laděný měřením.
 
 Ve v3 se také větev, která převzala vrchol, postupně zvedá ke svislici i ve stávajícím dřevě (tenká rychle,
 silná pomalu), a osu může převzít i větev nasazená níž na pahýlu bez jehlic.

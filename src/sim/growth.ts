@@ -111,7 +111,7 @@ function lateralDir(s: State, sh: Shoot, i: number, n: number, theta: number, sa
 
 // ---------------------------------------------------------------- pupeny
 
-interface Sink { i: number; kind: 'apex' | 'pinch' | 'back'; w: number; v: number; min?: number; }
+interface Sink { i: number; kind: 'apex' | 'pinch' | 'back'; w: number; v: number; min?: number; h?: number; } // h = výšková váha (v7)
 
 /** Zakládání pupenů (červenec): rozdělí růstový rozpočet stromu mezi růstové vrcholy
  *  a uloží do pupenů předurčenou délku příštích výhonů. */
@@ -133,8 +133,17 @@ function runBudSet(s: State) {
   let prod = 0;
   const own = new Float64Array(n), PS = new Float64Array(n); // vlastní produkce výhonu a produkce celého jeho větvení
   for (let i = 0; i < n; i++) { own[i] = ownFoliage(s, s.shoots[i]) * (0.25 + 0.75 * s.shoots[i].light); prod += own[i]; }
+  // v7 (olistěné druhy): vrcholová dominance – čím výš vrchol je, tím silněji táhne; totéž platí pro podíl,
+  // který si větev nechává z vlastní produkce. Spodní patra dál rostou, ale strom investuje hlavně nahoru.
+  const apical = s.rules >= 7 && speciesOf(s).kind === 'leafy';
+  const hk = new Float64Array(n).fill(1);
+  if (apical) {
+    let H = 1;
+    for (let i = 0; i < n; i++) if (!s.shoots[i].dead) H = Math.max(H, fr.tip[i * 3 + 1]);
+    for (let i = 0; i < n; i++) hk[i] = P.apicalLow + (P.apicalHigh - P.apicalLow) * Math.pow(clamp(fr.tip[i * 3 + 1] / H, 0, 1), P.apicalExp);
+  }
   for (let i = n - 1; i >= 0; i--) {
-    PS[i] += own[i];
+    PS[i] += own[i] * hk[i];
     const sh = s.shoots[i];
     if (sh.parent >= 0 && !sh.dead) PS[idx.get(sh.parent)!] += PS[i];
   }
@@ -154,7 +163,7 @@ function runBudSet(s: State) {
   for (let i = 0; i < n; i++) {
     const sh = s.shoots[i];
     if (sh.dead || sh.kind === 'hypocotyl') { sh.stimulus = 0; continue; }
-    if (leafy) { leafySinks(s, sp, sh, i, kids, sinks, year, crowded); sh.stimulus = 0; continue; }
+    if (leafy) { leafySinks(s, sp, sh, i, kids, sinks, year, crowded); if (apical) for (const k of sinks[i]) k.h = hk[i]; sh.stimulus = 0; continue; }
     const hasNeedles = sh.needleCount > 0 && sh.needleLive > 0.3;
     const tipFree = !kids[i].some((c) => s.shoots[c].attachT > 0.98) && !sh.buds.some((b) => b.t > 0.98);
     if (sh.light < P.lightDeath) sh.shedding = true;
@@ -171,6 +180,21 @@ function runBudSet(s: State) {
       }
     }
     sh.stimulus = 0;
+  }
+
+  // v7: vrchol kmene táhne aspoň jako daný díl všech vrcholů stromu – nový vůdčí výhon na zkráceném kmeni
+  // má jediný pupen proti stovkám na větvích a bez toho by se nikdy neprosadil
+  if (apical) {
+    // výšková váha přesouvá růst mezi patry větví (v průměru 1); vrchol kmene ji nedostává – ten už zvýhodňuje
+    // dělení hlavní/boční osa a v nádobě by jinak utekl do výšky
+    const lead = (i: number) => s.shoots[i].order === 0 && s.shoots[i].isMain;
+    let tot = 0, totH = 0;
+    for (let i = 0; i < n; i++) for (const k of sinks[i]) { tot += k.w; totH += k.w * hk[i]; }
+    const m = tot > 0 ? totH / tot : 1;
+    for (let i = 0; i < n; i++) for (const k of sinks[i]) {
+      if (!lead(i)) k.w *= hk[i] / m;
+      else if (k.kind !== 'back') k.w = Math.max(k.w, P.leaderShare * tot);
+    }
   }
 
   // Borchert–Honda: Q se sčítá od vrcholů ke kořeni, rozpočet se dělí od kořene k vrcholům.
@@ -200,15 +224,17 @@ function runBudSet(s: State) {
       let pSum = 0;
       if (auto > 0) {
         for (const c of kids[i]) if (Q[c] > 0) pSum += PS[c];
-        if (sinks[i].length) pSum += own[i];
+        if (sinks[i].length) pSum += own[i] * hk[i];
       }
       const a = pSum > 0 ? auto : 0;
       for (const c of kids[i]) V[c] = V[i] * ((1 - a) * wKid(c) / sum + (a && Q[c] > 0 ? (a * PS[c]) / pSum : 0));
-      for (const k of sinks[i]) k.v = V[i] * ((1 - a) * wSink(k) / sum + (a ? (a * own[i]) / pSum / sinks[i].length : 0));
+      for (const k of sinks[i]) k.v = V[i] * ((1 - a) * wSink(k) / sum + (a ? (a * own[i] * hk[i]) / pSum / sinks[i].length : 0));
     }
     let dropped = 0;
     if (round < rounds - 1) for (let i = 0; i < n; i++) {
-      const keep = sinks[i].filter((k) => k.v >= P.minShoot || k.min);
+      // v7: slabý vrchol ve spodních patrech pupen nezaloží dřív než stejně slabý vrchol nahoře
+      const lim = apical ? P.minShoot * Math.pow(P.apicalHigh / hk[i], 2) : P.minShoot;
+      const keep = sinks[i].filter((k) => k.v >= lim || k.min);
       dropped += sinks[i].length - keep.length;
       sinks[i] = keep;
     }
@@ -274,7 +300,8 @@ function leafySinks(s: State, sp: Species, sh: Shoot, i: number, kids: number[][
   const canBud = (sh.dormant ?? 0) > 0;
   const tipFree = !kids[i].some((c) => s.shoots[c].attachT > 0.98) && !sh.buds.some((b) => b.t > 0.98);
   // v4: pahýl, který už obrazil, další pupeny u řezu nezakládá – pokračují jeho nové výhony
-  const stubDone = s.rules >= 4 && !cur && sh.tipCut && kids[i].length > 0;
+  // (v7: jen výhony vyrostlé až po řezu – větve, které na kmeni byly už dřív, novému vrcholu nebrání)
+  const stubDone = s.rules >= 4 && !cur && sh.tipCut && (s.rules >= 7 ? kids[i].some((c) => s.shoots[c].id > (sh.cutId ?? -1)) : kids[i].length > 0);
   // čím hustší koruna, tím víc světla vrchol potřebuje, aby založil pupen (velké stromy se samy prosvětlují)
   const need = s.rules >= 5 ? 0.5 + 0.42 * Math.min(1, (s.shoots.length - 3500) / 5000) : 0.5;
   if (tipFree && canBud && !stubDone && !(crowded && sh.light < need)) {
@@ -325,7 +352,9 @@ function expandLeafy(s: State, sp: Species, sh: Shoot, k: Sink, year: number) {
   const place = (rank: number) => clamp(1 - ((Math.floor(rank / per) + 0.5) / nodes) * (1 - 0.8 * sp.tipCluster), 0.12, 0.98);
   if (k.kind === 'apex') {
     const rho = sp.lateralRatio, dec = sp.lateralDecay;
-    const maxN = Math.min(N, o === 0 ? sp.maxLaterals : Math.max(2, sp.maxLaterals - 2));
+    // v7: ve spodních patrech zakládá výhon méně bočních pupenů než nahoře
+    const low = k.h === undefined ? 1 : clamp(k.h, 0.4, 1);
+    const maxN = Math.min(N, Math.max(1, Math.round((o === 0 ? sp.maxLaterals : Math.max(2, sp.maxLaterals - 2)) * low)));
     let nl = 0, sum = 0;
     while (nl < maxN) {
       const s2 = sum + Math.pow(dec, nl);
@@ -357,7 +386,7 @@ function expandLeafy(s: State, sp: Species, sh: Shoot, k: Sink, year: number) {
       return;
     }
     // po řezu vyraší nejvyšší zbylé pupeny; první převezme osu
-    const nb = Math.min(N, k.v < 0.9 ? 1 : Math.min(3, 1 + Math.floor(k.v / 4)));
+    const nb = Math.min(N, k.v < 0.9 ? 1 : Math.min(k.h !== undefined && k.h < 0.8 ? 2 : 3, 1 + Math.floor(k.v / 4)));
     const l = Math.min(cap, k.v / nb);
     for (let j = 0; j < nb; j++) {
       const dir = j === 0 && nb === 1 ? leafyTerminal(s, sp, sh, salt + 10) : axilDir(s, sp, sh, j, salt + 40);

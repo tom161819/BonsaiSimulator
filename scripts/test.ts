@@ -1,8 +1,8 @@
 // Testy simulačního jádra (bez grafiky): node scripts/run.mjs scripts/test.ts
 import assert from 'node:assert/strict';
 import { Timeline } from '../src/sim/timeline';
-import { YEAR, bendLimit, breakRisk, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
-import type { State, Vec3 } from '../src/sim/types';
+import { YEAR, bendLimit, breakRisk, computeFrames, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
+import type { Action, State, Vec3 } from '../src/sim/types';
 import samples from '../src/samples.json';
 import { SPECIES_ORDER } from '../src/sim/species';
 
@@ -343,6 +343,27 @@ test('v6: silná větev snese větší ohyb a riziko roste pomaleji; v5 beze zm�
   assert.ok(b.safe > a.safe * 1.3, `v5 ${a.safe.toFixed(0)}°, v6 ${b.safe.toFixed(0)}°`);
   assert.ok(Math.abs(a.risk - 1) < 1e-9);
   assert.ok(Math.abs(b.risk - 0.5) < 1e-9);
+});
+
+test('v7: zkrácený kmen habru vyžene nový vrchol a spodní třetina tolik neobrůstá', () => {
+  const run = (rules: number) => {
+    const acts: Action[] = [{ day: 440, type: 'repot', pot: 'training', potId: 't2', prune: 0 }];
+    let tl = new Timeline(4, acts, rules, 'hornbeam'); tl.seek(4 * 365 + 20);
+    let fr = computeFrames(tl.state);
+    const trunk = tl.state.shoots.find((s, i) => s.order === 0 && !s.dead && fr.base[i * 3 + 1] <= 55 && fr.tip[i * 3 + 1] > 55)!;
+    const i0 = fr.index.get(trunk.id)!;
+    acts.push({ day: 4 * 365 + 20, type: 'cut', shoot: trunk.id, t: (55 - fr.base[i0 * 3 + 1]) / (fr.tip[i0 * 3 + 1] - fr.base[i0 * 3 + 1]) });
+    tl = new Timeline(4, acts, rules, 'hornbeam'); tl.seek(7 * 365 + 300);
+    const s = tl.state; fr = computeFrames(s);
+    const by = Math.max(...s.shoots.map((q) => q.bornYear));
+    let H = 0; s.shoots.forEach((q, i) => { if (!q.dead) H = Math.max(H, fr.tip[i * 3 + 1]); });
+    let low = 0, lead = 0;
+    s.shoots.forEach((q, i) => { if (q.dead || q.bornYear !== by) return; if (fr.base[i * 3 + 1] < H / 3) low++; if (q.order === 0) lead = Math.max(lead, q.len); });
+    return { low, lead };
+  };
+  const a = run(6), b = run(7);
+  assert.ok(b.lead > 4, `nový vrchol ve v7: ${b.lead.toFixed(1)} cm`);
+  assert.ok(b.low < a.low * 0.9, `nových výhonů dole: v6 ${a.low}, v7 ${b.low}`);
 });
 
 console.log(`\n${n} testů prošlo`);

@@ -60,6 +60,7 @@ export interface Shoot {
   dead: boolean;
   deadYear: number;
   tipCut: boolean; // vrchol odstraněn (zaštípnutí / řez)
+  cutId?: number; // nextId v okamžiku řezu – výhony s vyšším id vyrostly až po něm
   stimulus: number; // podnět k tvorbě zpětných pupenů po řezu
   light: number; // 0..1 oslunění
   fol: number; // olistění celého podstromu (cache pro tloušťkový růst)

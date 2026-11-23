@@ -111,6 +111,7 @@ function cut(s: State, id: number, t: number) {
     for (const c of s.shoots) if (c.parent === id) c.attachT /= t;
     for (const b of sh.buds) b.t /= t;
     sh.tipCut = true;
+    sh.cutId = s.nextId;
     sh.stimulus += 1;
   }
   updateDeath(s);
