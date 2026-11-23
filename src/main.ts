@@ -819,6 +819,13 @@ function updateRepot() {
   $('rMoundV').textContent = v.mound ? `${Math.round(v.mound * 100)} %` : 'rovný';
   rIn('rMound').disabled = spec.type === 'ground';
   $<HTMLSelectElement>('rGlaze').disabled = spec.type !== 'bonsai';
+  {
+    // čtvereček s barvou: zvolená glazura, jinak barva nádoby z katalogu
+    const g = spec.type === 'bonsai' ? GLAZES.find((x) => x.id === v.glaze && x.id) : undefined;
+    const sw = $('rGlazeSw');
+    sw.hidden = spec.type === 'ground';
+    sw.style.background = `#${(g ? g.color : spec.color).toString(16).padStart(6, '0')}`;
+  }
   const offTxt = (x: number, neg: string, pos: string) => (x ? `${Math.round(Math.abs(x) * 100)} % ${x < 0 ? neg : pos}` : 'střed');
   $('rOffXV').textContent = offTxt(v.offX, 'vlevo', 'vpravo');
   $('rOffZV').textContent = offTxt(v.offZ, 'dozadu', 'dopředu');
