@@ -133,6 +133,136 @@ function soilTexture(): THREE.CanvasTexture {
   return t;
 }
 
+/** Atlas listů 4 × 2: buňka 0 je bílá (jehlice borovice a modřínu), další nesou list daného tvaru
+ *  s pilovitým okrajem, střední žilkou a postranními žilkami. Barvu dodává vrchol, textura jen kresbu. */
+const LEAF_CELL: Record<string, [number, number]> = { ovate: [1, 0], beech: [2, 0], delta: [3, 0], lobed: [0, 1], palmate: [1, 1] };
+function leafAtlas(): THREE.CanvasTexture {
+  const C = 256, W = C * 4, H = C * 2;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d')!;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, H - C, C, C); // buňka (0,0) = levý dolní roh
+  const spec: Record<string, { teeth: number; amp: number; veins: number; palm?: boolean }> = {
+    ovate: { teeth: 26, amp: 0.022, veins: 11 }, beech: { teeth: 14, amp: 0.012, veins: 8 }, delta: { teeth: 16, amp: 0.03, veins: 6 },
+    lobed: { teeth: 0, amp: 0, veins: 5 }, palmate: { teeth: 0, amp: 0, veins: 0, palm: true },
+  };
+  for (const [name, [cx, cy]] of Object.entries(LEAF_CELL)) {
+    const half = LEAF[name as keyof typeof LEAF], sp = spec[name];
+    const ox = cx * C + C / 2, oy = H - cy * C - C * 0.04, S = C * 0.92;
+    const X = (x: number) => ox + x * S, Y = (y: number) => oy - y * S;
+    // obrys: pravá polovina, zrcadlově levá; mezi body vložené zoubky
+    const pts: [number, number][] = [];
+    const side = (sgn: number, list: [number, number][]) => {
+      for (let i = 0; i < list.length - 1; i++) {
+        const [x0, y0] = list[i], [x1, y1] = list[i + 1];
+        const n = sp.teeth ? Math.max(1, Math.round((sp.teeth * Math.hypot(x1 - x0, y1 - y0)) / 1.3)) : 1;
+        for (let k = 0; k < n; k++) {
+          const f = k / n, tooth = sp.teeth && k % 2 ? sp.amp : 0;
+          const nx = y1 - y0, ny = -(x1 - x0), nl = Math.hypot(nx, ny) || 1;
+          pts.push([sgn * (x0 + (x1 - x0) * f + (nx / nl) * tooth), y0 + (y1 - y0) * f + (ny / nl) * tooth]);
+        }
+      }
+    };
+    side(1, half);
+    side(-1, half.slice().reverse().map(([x, y]) => [x, y] as [number, number]));
+    ctx.save();
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
+    ctx.closePath();
+    const g = ctx.createLinearGradient(X(-0.5), 0, X(0.5), 0);
+    g.addColorStop(0, '#a9a9a9'); g.addColorStop(0.5, '#bdbdbd'); g.addColorStop(1, '#a6a6a6');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.clip();
+    // jemná skvrnitost čepele
+    for (let i = 0; i < 260; i++) {
+      ctx.fillStyle = `rgba(${rnd(61, i, 1) < 0.5 ? '255,255,255' : '90,90,90'},${0.05 + 0.06 * rnd(61, i, 2)})`;
+      ctx.beginPath();
+      ctx.arc(cx * C + rnd(61, i, 3) * C, H - cy * C - rnd(61, i, 4) * C, 3 + 7 * rnd(61, i, 5), 0, 6.2832);
+      ctx.fill();
+    }
+    // žilky: světlá střední, tmavší stín vedle ní, postranní k okraji
+    const vein = (x0: number, y0: number, x1: number, y1: number, w: number) => {
+      ctx.strokeStyle = 'rgba(60,60,60,0.45)'; ctx.lineWidth = w + 3; ctx.beginPath(); ctx.moveTo(X(x0), Y(y0)); ctx.lineTo(X(x1), Y(y1)); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = w + 0.6; ctx.beginPath(); ctx.moveTo(X(x0), Y(y0)); ctx.lineTo(X(x1), Y(y1)); ctx.stroke();
+    };
+    if (sp.palm) for (const a of [-1.15, -0.6, 0, 0.6, 1.15]) vein(0, 0.08, Math.sin(a) * 0.5, 0.08 + Math.cos(a) * (a ? 0.6 : 0.9), a ? 2.2 : 3);
+    else {
+      vein(0, 0, 0, 0.98, 3);
+      for (let k = 1; k <= sp.veins; k++) {
+        const y = 0.06 + (0.84 * k) / (sp.veins + 1), reach = 0.5 * Math.sin(Math.PI * Math.min(1, y + 0.12));
+        for (const sgn of [-1, 1]) vein(0, y, sgn * reach, y + 0.16 + reach * 0.25, 1.4);
+      }
+    }
+    ctx.restore();
+  }
+  // průhledné okolí dostane barvu čepele, aby zmenšené úrovně textury neměly tmavý lem
+  const img = ctx.getImageData(0, 0, W, H);
+  for (let i = 0; i < img.data.length; i += 4) if (img.data[i + 3] === 0) { img.data[i] = img.data[i + 1] = img.data[i + 2] = 180; }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+/** Deska stolu: prkna s kresbou dřeva. */
+function woodTexture(): THREE.CanvasTexture {
+  const N = 512;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = N;
+  const ctx = cv.getContext('2d')!;
+  const planks = 4, ph = N / planks;
+  for (let p = 0; p < planks; p++) {
+    const tone = 0.82 + 0.3 * rnd(71, p, 1);
+    ctx.fillStyle = `rgb(${Math.round(126 * tone)},${Math.round(94 * tone)},${Math.round(62 * tone)})`;
+    ctx.fillRect(0, p * ph, N, ph);
+    for (let i = 0; i < 46; i++) { // léta dřeva: vlnité podélné čáry
+      const y0 = p * ph + rnd(71, p * 100 + i, 2) * ph, amp = 2 + 5 * rnd(71, p * 100 + i, 3), f = 1 + Math.floor(2 * rnd(71, p * 100 + i, 4));
+      ctx.strokeStyle = `rgba(${rnd(71, p * 100 + i, 5) < 0.6 ? '60,38,20' : '200,160,110'},${0.1 + 0.16 * rnd(71, p * 100 + i, 6)})`;
+      ctx.lineWidth = 0.6 + 1.6 * rnd(71, p * 100 + i, 7);
+      ctx.beginPath();
+      for (let x = 0; x <= N; x += 16) { const y = y0 + amp * Math.sin((x / N) * 6.2832 * f + i); if (x) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(30,18,10,0.55)';
+    ctx.fillRect(0, p * ph, N, 2.5); // spára mezi prkny
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+/** Pozadí: obloha s oparem u obzoru a pod ním rozostřená zahrada (světlé a tmavé zelené skvrny). */
+function backdropTexture(): THREE.CanvasTexture {
+  const W = 1024, H = 512;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d')!;
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#9fc0dc'); sky.addColorStop(0.36, '#cfe0ea'); sky.addColorStop(0.5, '#e6ebe4');
+  sky.addColorStop(0.52, '#8fa57c'); sky.addColorStop(0.7, '#6f8a62'); sky.addColorStop(1, '#5b6f52');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 520; i++) { // rozostřené koruny a keře kolem obzoru
+    const x = rnd(81, i, 1) * W, y = H * (0.36 + 0.34 * Math.pow(rnd(81, i, 2), 0.7)), r = 18 + 60 * rnd(81, i, 3);
+    const light = rnd(81, i, 4);
+    const col = light < 0.25 ? '225,235,190' : light < 0.6 ? '120,150,95' : '70,100,70';
+    for (const dx of [0, W, -W]) {
+      const g = ctx.createRadialGradient(x + dx, y, 0, x + dx, y, r);
+      g.addColorStop(0, `rgba(${col},${0.2 + 0.25 * rnd(81, i, 5)})`); g.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(x + dx - r, y - r, 2 * r, 2 * r);
+    }
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 /** Podložka pod nádobou: do ztracena mizející kruh, na který dopadá stín. */
 function fadeTexture(): THREE.CanvasTexture {
   const N = 256;
@@ -198,7 +328,10 @@ export class TreeView {
   readonly camera = new THREE.PerspectiveCamera(32, 1, 0.5, 20000);
   private wood = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, envMapIntensity: 0.3 }));
   private bark: THREE.Mesh;
-  private needles = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 28, specular: 0x1c2a1c }));
+  private leafTex = leafAtlas();
+  private needles = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 28, specular: 0x1c2a1c, map: this.leafTex, alphaTest: 0.4 }));
+  private backdrop = new THREE.Mesh(new THREE.SphereGeometry(9000, 48, 24), new THREE.MeshBasicMaterial({ map: backdropTexture(), side: THREE.BackSide, depthWrite: false, toneMapped: false, fog: false }));
+  private sunU = { uSunDir: { value: new THREE.Vector3(0, 1, 0) } };
   private sun = new THREE.DirectionalLight(0xfff0d8, 2.3);
   private soilTex = soilTexture();
   private table: THREE.Mesh;
@@ -257,9 +390,25 @@ export class TreeView {
     this.addWind(this.needles.material as THREE.Material, 'needles', true, true);
     this.sun.shadow.autoUpdate = false; // stín se přepočítá jen při změně stromu, ne při každém snímku s větrem
     for (const m of [this.wood, this.bark, this.needles]) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; }
-    this.table = new THREE.Mesh(new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0xa39f94, roughness: 1, envMapIntensity: 0.25, transparent: true, alphaMap: fadeTexture(), depthWrite: false }));
+    // stůl: prkenná deska pod nádobou (u volné půdy skrytá)
+    this.table = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.75, envMapIntensity: 0.35 }));
     this.table.receiveShadow = true;
+    this.backdrop.renderOrder = -5;
+    this.backdrop.frustumCulled = false;
+    this.scene.add(this.backdrop);
+    // listy: stín respektuje výřez listu; proti slunci list prosvítá
+    this.needles.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: this.leafTex, alphaTest: 0.4 });
+    const leafMat = this.needles.material as THREE.MeshPhongMaterial;
+    leafMat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, this.sunU);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', 'uniform vec3 uSunDir;\n#include <common>')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+          float through = pow(max(dot(-normalize(vViewPosition), uSunDir), 0.0), 2.0);
+          totalEmissiveRadiance += diffuseColor.rgb * vec3(1.1, 1.15, 0.6) * through * 0.55;`);
+    };
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.18;
     this.scene.add(this.table);
     this.hi.renderOrder = 10; this.marker.renderOrder = 11;
     this.wireLines.renderOrder = 8; this.wireDots.renderOrder = 9;
@@ -308,7 +457,7 @@ export class TreeView {
     const s = this.state;
     if (!s) return '';
     const keep = { target: this.target.clone(), dist: this.dist, phi: this.phi, auto: this.auto, pr: this.renderer.getPixelRatio() };
-    const hidden = [this.hi, this.marker, this.wireLines, this.wireDots, this.table].filter((o) => o.visible);
+    const hidden = [this.hi, this.marker, this.wireLines, this.wireDots, this.table, this.backdrop].filter((o) => o.visible);
     for (const o of hidden) o.visible = false;
     const pot = potById(s.potId);
     const H = Math.max(6, this.height), below = pot.shape === 'ground' ? 1 : pot.h + 2;
@@ -376,6 +525,8 @@ export class TreeView {
     // šířka jehlic se přizpůsobuje vzdálenosti, při větším přiblížení/oddálení je třeba přestavět
     if (this.state && Math.abs(Math.log(this.dist / this.builtDist)) > 0.25) this.build();
     if (this.windOn) { this.windU.uTime.value = performance.now() / 1000; this.needsRender = true; }
+    this.backdrop.position.copy(this.camera.position);
+    this.sunU.uSunDir.value.copy(this.sun.position).sub(this.sun.target.position).normalize().transformDirection(this.camera.matrixWorldInverse);
     if (!this.needsRender) return;
     this.needsRender = false;
     this.renderer.render(this.scene, this.camera);
@@ -405,6 +556,7 @@ export class TreeView {
     mat.customProgramCacheKey = () => key;
   }
 
+  private tableTop = 0;
   private potOverride: string | null = null;
   /** Náhled jiné nádoby v dialogu přesazení (null = skutečná nádoba stromu). */
   previewPot(id: string | null) {
@@ -488,7 +640,7 @@ export class TreeView {
         }
       }
     }
-    this.table.position.y = -h - footH - 0.02;
+    this.tableTop = -h - footH - 0.02;
   }
 
   // ------------------------------------------------------------ geometrie stromu
@@ -823,7 +975,9 @@ export class TreeView {
         const flat = sp.phyllotaxis === 'distichous' && Math.abs(d0[1]) < 0.86;
         const emit = (px: number, py: number, pz: number, ld: Vec3, L: number, k: number) => {
           const j = (0.85 + 0.3 * rnd(sh.id, k, 12)) * shade;
-          const r = tone[0] * j, gg = tone[1] * j, b = tone[2] * j;
+          // čepel v atlasu je šedá (kresba žilek je světlejší), proto se barva listu zesvětluje
+          const lift2 = sp.leafShape === 'tuft' ? 1 : 1.9;
+          const r = Math.min(1, tone[0] * j * lift2), gg = Math.min(1, tone[1] * j * lift2), b = Math.min(1, tone[2] * j * lift2);
           if (sp.leafShape === 'tuft') {
             // modřín: jehlice jako úzký trojúhelník
             const sx = ld[1] * 0 - ld[2], sz = ld[0], sl = Math.hypot(sx, sz) || 1;
@@ -841,27 +995,25 @@ export class TreeView {
           const nx = -sz * ld[1], ny = sz * ld[0] - sx * ld[2], nz = sx * ld[1]; // normála = šířka × délka
           const nl2 = Math.hypot(nx, ny, nz) || 1, ux = nx / nl2, uy = Math.abs(ny / nl2), uz = nz / nl2;
           const W = L * sp.leafWidth;
-          const out = LEAF[cot ? 'ovate' : (sp.leafShape as keyof typeof LEAF)];
+          const cell = LEAF_CELL[cot ? 'ovate' : sp.leafShape];
           const pet = L * 0.12;
-          const cx0 = px + ld[0] * (pet + L * 0.45), cy0 = py + ld[1] * (pet + L * 0.45), cz0 = pz + ld[2] * (pet + L * 0.45);
-          const c0 = nb.v(cx0, cy0, cz0, ux, uy, uz, r * 0.9, gg * 0.9, b * 0.9); nb.t(0, 0, 0.5);
-          let first = -1, prev = -1;
-          const ring = (x: number, y: number) => {
-            const lift = Math.abs(x) * W * 0.22;
-            const v = nb.v(px + ld[0] * (pet + L * y) + sx * W * x + ux * lift, py + ld[1] * (pet + L * y) + uy * lift, pz + ld[2] * (pet + L * y) + sz * W * x + uz * lift,
-              ux, uy, uz, r * (0.85 + 0.25 * y), gg * (0.85 + 0.25 * y), b * (0.85 + 0.2 * y));
-            nb.t(0, 0, y);
-            if (prev >= 0) { nb.tri(c0, prev, v); nb.tri(c0, v, prev); }
-            if (first < 0) first = v;
-            prev = v;
-          };
-          for (let q = 0; q < out.length; q++) ring(out[q][0], out[q][1]);
-          for (let q = out.length - 2; q >= 1; q--) ring(-out[q][0], out[q][1]);
-          nb.tri(c0, prev, first); nb.tri(c0, first, prev);
+          // čepel = 2 × 1 políčka s kresbou z atlasu; střed je níž než okraje (list je lehce do V)
+          let row0 = -1;
+          for (let yy = 0; yy <= 1; yy++) for (let xx = -1; xx <= 1; xx++) {
+            const x = xx * 0.5, lift = Math.abs(x) * W * 0.24 - yy * L * 0.06;
+            const v = nb.v(px + ld[0] * (pet + L * yy) + sx * W * x + ux * lift, py + ld[1] * (pet + L * yy) + uy * lift, pz + ld[2] * (pet + L * yy) + sz * W * x + uz * lift,
+              ux + sx * x * 0.5, uy, uz + sz * x * 0.5, r, gg, b);
+            nb.t((cell[0] + 0.5 + x * 0.92) / 4, (cell[1] + 0.04 + yy * 0.92) / 2, yy);
+            if (row0 < 0) row0 = v;
+          }
+          for (let q = 0; q < 2; q++) {
+            const a0 = row0 + q, a1 = row0 + q + 1, b0 = row0 + 3 + q, b1 = row0 + 4 + q;
+            nb.tri(a0, a1, b1); nb.tri(a0, b1, b0); nb.tri(a0, b1, a1); nb.tri(a0, b0, b1);
+          }
         };
         const tuft = sp.leafShape === 'tuft';
         const perNode = tuft ? (cur ? 4 : 12) : 1;
-        nb.reserve(Math.ceil(cnt / stride + 1) * perNode * (tuft ? 3 : 24), Math.ceil(cnt / stride + 1) * perNode * (tuft ? 6 : 132));
+        nb.reserve(Math.ceil(cnt / stride + 1) * perNode * (tuft ? 3 : 6), Math.ceil(cnt / stride + 1) * perNode * (tuft ? 6 : 24));
         for (let k = (sh.id * 7) % stride; k < cnt; k += stride) {
           const h = rnd(sh.id, k, 11);
           if (h >= sh.needleLive) continue;
@@ -1015,7 +1167,12 @@ export class TreeView {
     this.updatePot(s.potId, H);
     // podložka musí pojmout nádobu i stín stromu
     const ps = potById(this.potOverride ?? s.potId);
-    this.table.scale.setScalar(Math.max(Math.max(ps.a, ps.b) * 2.2, H * 1.7, 30));
+    {
+      const wdt = Math.max(Math.max(ps.a, ps.b) * 2.6, H * 1.9, 40), dep = wdt * 0.62, th = Math.max(2, wdt * 0.035);
+      this.table.scale.set(wdt, th, dep);
+      this.table.position.y = this.tableTop - th / 2;
+      (this.table.material as THREE.MeshStandardMaterial).map!.repeat.set(wdt / 60, dep / 60);
+    }
 
     // slunce a rozsah stínové mapy podle velikosti stromu
     const R = Math.max(16, H * 1.2);
@@ -1026,6 +1183,14 @@ export class TreeView {
     sc.updateProjectionMatrix();
     this.sun.shadow.normalBias = R * 0.004;
     this.sun.shadow.needsUpdate = true;
+    {
+      // pozadí podle ročního období (a tmavší ve tmavém vzhledu stránky)
+      const season = doy < 60 || doy > 335 ? [0.86, 0.9, 0.98] : doy < 150 ? [1, 1.02, 0.97] : doy < 265 ? [1, 1, 0.96] : [1.05, 0.95, 0.82];
+      const root = document.documentElement;
+      const dark = root.dataset.theme === 'dark' || (root.dataset.theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      const k = dark ? 0.42 : 1;
+      (this.backdrop.material as THREE.MeshBasicMaterial).color.setRGB(season[0] * k, season[1] * k, season[2] * k);
+    }
     this.windU.uH.value = Math.max(5, H);
     this.needsRender = true;
   }
