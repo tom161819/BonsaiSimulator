@@ -6,6 +6,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { PotType, Shoot, State } from '../sim/types';
 import { P, potById } from '../sim/params';
 import { LeafShape, speciesOf } from '../sim/species';
+import leafAtlasJson from '../leafAtlas.json';
 import type { Vec3 } from '../sim/types';
 import { Frames, basis, clamp, computeFrames, doyOf, needleGrowth, radiusOf, rnd, rotate, shootPoint, smooth, yearOf } from '../sim/util';
 
@@ -382,7 +383,9 @@ export class TreeView {
   private photoU = { value: 0 };
   private photoCache = new Map<string, { d: THREE.Texture; n: THREE.Texture } | null>();
   private barkCache = new Map<BarkStyle, THREE.CanvasTexture>();
-  private leafTex = leafAtlas();
+  private leafTex: THREE.Texture = leafAtlas();
+  /** rozložení atlasu listů: kreslený má 4 × 2 políčka a jeden list na tvar, fotografický víc variant */
+  private leafGrid: { cols: number; rows: number; cells: Record<string, number[][]> } = { cols: 4, rows: 2, cells: Object.fromEntries(Object.entries(LEAF_CELL).map(([k, v]) => [k, [v]])) };
   private needles = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 28, specular: 0x1c2a1c, map: this.leafTex, alphaTest: 0.4 }));
   private backdrop = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), new THREE.MeshBasicMaterial({ map: backdropTexture(), side: THREE.BackSide, depthWrite: false, toneMapped: false, fog: false }));
   private sunU = { uSunDir: { value: new THREE.Vector3(0, 1, 0) } };
@@ -464,6 +467,18 @@ export class TreeView {
           float through = pow(max(dot(-normalize(vViewPosition), uSunDir), 0.0), 2.0);
           totalEmissiveRadiance += diffuseColor.rgb * vec3(1.1, 1.15, 0.6) * through * 0.55;`);
     };
+    // naskenované listy (assets/tex/leaves.webp); dokud se nenačtou, slouží kreslený atlas
+    new THREE.TextureLoader().load('tex/leaves.webp', (t) => {
+      t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+      const old = this.leafTex;
+      this.leafTex = t;
+      leafMat.map = t; leafMat.needsUpdate = true;
+      const dm = this.needles.customDepthMaterial as THREE.MeshDepthMaterial;
+      dm.map = t; dm.needsUpdate = true;
+      this.leafGrid = leafAtlasJson as unknown as typeof this.leafGrid;
+      old.dispose();
+      if (this.state) this.build();
+    }, undefined, () => undefined);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.18;
     this.scene.add(this.table);
@@ -1119,16 +1134,19 @@ export class TreeView {
           const nx = -sz * ld[1], ny = sz * ld[0] - sx * ld[2], nz = sx * ld[1]; // normála = šířka × délka
           const nl2 = Math.hypot(nx, ny, nz) || 1, ux = nx / nl2, uy = Math.abs(ny / nl2), uz = nz / nl2;
           const W = L * sp.leafWidth;
-          const cell = LEAF_CELL[cot ? 'ovate' : sp.leafShape];
+          const variants = this.leafGrid.cells[cot ? 'ovate' : sp.leafShape];
+          const cell = variants[Math.floor(rnd(sh.id, k, 25) * variants.length) % variants.length];
+          const GC = this.leafGrid.cols, GR = this.leafGrid.rows;
           const pet = L * 0.2;
           // čepel = 2 × 2 políčka; každý list je jinak natočený kolem řapíku, jinak prohnutý a zrcadlený
           {
             // řapík: úzký proužek od větvičky k čepeli (bílá buňka atlasu)
+            const GC = this.leafGrid.cols, GR = this.leafGrid.rows;
             const pw = Math.max(0.03, W * 0.035), pr = r * 0.6, pg = gg * 0.62, pb = b * 0.45;
-            const q0 = nb.v(px - sx * pw, py, pz - sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.06, 0.25, 0);
-            nb.v(px + sx * pw, py, pz + sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.06, 0.25, 0);
-            nb.v(px + ld[0] * pet * 1.15 - sx * pw, py + ld[1] * pet * 1.15, pz + ld[2] * pet * 1.15 - sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.06, 0.25, 0);
-            nb.v(px + ld[0] * pet * 1.15 + sx * pw, py + ld[1] * pet * 1.15, pz + ld[2] * pet * 1.15 + sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.06, 0.25, 0);
+            const q0 = nb.v(px - sx * pw, py, pz - sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.5 / GC, 0.5 / GR, 0);
+            nb.v(px + sx * pw, py, pz + sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.5 / GC, 0.5 / GR, 0);
+            nb.v(px + ld[0] * pet * 1.15 - sx * pw, py + ld[1] * pet * 1.15, pz + ld[2] * pet * 1.15 - sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.5 / GC, 0.5 / GR, 0);
+            nb.v(px + ld[0] * pet * 1.15 + sx * pw, py + ld[1] * pet * 1.15, pz + ld[2] * pet * 1.15 + sz * pw, ux, uy, uz, pr, pg, pb); nb.t(0.5 / GC, 0.5 / GR, 0);
             nb.tri(q0, q0 + 1, q0 + 3); nb.tri(q0, q0 + 3, q0 + 2); nb.tri(q0, q0 + 3, q0 + 1); nb.tri(q0, q0 + 2, q0 + 3);
           }
           const roll = (rnd(sh.id, k, 21) - 0.5) * 1.1, curl = (rnd(sh.id, k, 22) - 0.35) * 0.3, flip = rnd(sh.id, k, 23) < 0.5 ? -1 : 1;
@@ -1142,7 +1160,7 @@ export class TreeView {
             const lift = Math.abs(x) * W * 0.22 - curl * L * yy * yy;
             const v = nb.v(px + ld[0] * (pet + L * yy) + ax * W * (x + skew * yy) + bxn * lift, py + ld[1] * (pet + L * yy) + ay * W * x + byn * lift, pz + ld[2] * (pet + L * yy) + az2 * W * (x + skew * yy) + bzn * lift,
               bxn + ax * x * 0.5, Math.abs(byn) + 0.15, bzn + az2 * x * 0.5, r, gg, b);
-            nb.t((cell[0] + 0.5 + flip * x * 0.92) / 4, (cell[1] + 0.04 + yy * 0.92) / 2, yy);
+            nb.t((cell[0] + 0.5 + flip * x * 0.94) / GC, (cell[1] + 0.03 + yy * 0.94) / GR, yy);
             if (row0 < 0) row0 = v;
           }
           for (let yi = 0; yi < 2; yi++) for (let q = 0; q < 2; q++) {

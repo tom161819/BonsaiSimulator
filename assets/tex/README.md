@@ -12,3 +12,16 @@ Fotografické textury z Poly Haven (https://polyhaven.com), licence CC0. Zmenše
 | maple_* | trident_maple_bark | javor babyka | mírně zesvětleno |
 
 `*_d.jpg` = barva, `*_n.jpg` = normálová mapa (OpenGL).
+
+# Listy
+
+`leaves.webp` je atlas složený skriptem `scripts/assets/leaf_atlas.py` z naskenovaných sad ambientCG (https://ambientcg.com), licence CC0.
+Každý list je oříznutý na čepel, roztažený na políčko a barevně znormalizovaný (hra ho barví podle ročního období).
+
+| Tvar ve hře | Druh | Sada ambientCG |
+| --- | --- | --- |
+| ovate | habr (a dělohy semenáčků) | LeafSet014 |
+| beech | buk | LeafSet024 |
+| lobed | dub | LeafSet016 |
+| delta | bříza | LeafSet004 |
+| palmate | javor babyka | LeafSet010 |
