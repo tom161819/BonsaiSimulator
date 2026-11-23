@@ -958,11 +958,24 @@ export class TreeView {
     // Nástupce vrcholu nasazený níž na seříznutém úseku (zpětný pupen, výhon z pahýlu): úsek se kreslí jen
     // k němu a oba navazují společným prstencem, místo aby větev trčela z boku pahýlu s klínem u řezu.
     const TE = new Float32Array(n).fill(1);
-    for (let i = 0; i < n; i++) {
-      const c = s.shoots[i];
-      if (c.dead || !c.isMain || c.parent < 0 || c.attachT > 0.98) continue;
-      const pi = fr.index.get(c.parent)!;
-      if (s.shoots[pi].tipCut && !s.shoots[pi].dead && contKid[pi] < 0) { contKid[pi] = i; TE[pi] = Math.max(0.05, c.attachT); }
+    {
+      // nejvzdálenější živá větev na každém seříznutém úseku bez pokračování na vrcholu
+      const last = new Int32Array(n).fill(-1);
+      for (let i = 0; i < n; i++) {
+        const c = s.shoots[i];
+        if (c.dead || c.parent < 0 || c.attachT > 0.98) continue;
+        const pi = fr.index.get(c.parent)!;
+        if (!s.shoots[pi].tipCut || s.shoots[pi].dead || contKid[pi] >= 0) continue;
+        if (last[pi] < 0 || c.attachT > s.shoots[last[pi]].attachT) last[pi] = i;
+      }
+      for (let pi = 0; pi < n; pi++) {
+        const i = last[pi];
+        if (i < 0) continue;
+        const p = s.shoots[pi], c = s.shoots[i];
+        // jen krátký konec za poslední větví „zaroste“; delší pahýl zůstává vidět a větev z něj roste do strany.
+        // Žádná větev tak nikdy nezůstane za koncem nakresleného úseku.
+        if ((1 - c.attachT) * p.len <= 4 * radiusOf(p) && c.attachT > 0.25) { contKid[pi] = i; TE[pi] = c.attachT; }
+      }
     }
     const ONT = new Uint8Array(n);
     const VO = new Float32Array(n).fill(-1);
