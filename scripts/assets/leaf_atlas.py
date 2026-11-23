@@ -29,9 +29,13 @@ for shape, num in SETS.items():
         w = (m > 0.5).sum(1); lim = 0.09 * w.max()
         rows = np.where(w > lim)[0]
         top, bot = rows.min(), rows.max() + 1
-        stem_bottom = (m.shape[0] - bot) >= top  # řapík je na té straně, kde se odřízlo víc
         m, c = m[top:bot], c[top:bot]
-        if not stem_bottom: m, c = m[::-1], c[::-1]
+        # orientace podle tvaru: list je nejširší blíž k bázi (u dubu naopak blíž ke špičce);
+        # báze má být dole, tedy těžiště plochy v dolní polovině (u dubu v horní)
+        wr = (m > 0.5).sum(1).astype(np.float32)
+        centroid = (wr * np.arange(len(wr))).sum() / wr.sum() / len(wr)
+        base_low = centroid > 0.5
+        if base_low == (shape == 'lobed'): m, c = m[::-1], c[::-1]
         cols_ = np.where((m > 0.5).sum(0) > 0)[0]
         m, c = m[:, cols_.min():cols_.max() + 1], c[:, cols_.min():cols_.max() + 1]
         # barva: jas srovnat na střední šedou, z odstínu nechat čtvrtinu
