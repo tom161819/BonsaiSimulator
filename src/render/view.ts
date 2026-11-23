@@ -1666,35 +1666,44 @@ export class TreeView {
     const s = this.state, fr = this.frames;
     if (!s || !fr) return null;
     const W = this.canvas.clientWidth, Hh = this.canvas.clientHeight;
-    const v = new THREE.Vector3();
+    const v = new THREE.Vector3(), cam = this.camera.position;
     const proj = (px: number, py: number, pz: number): [number, number, number] => {
       v.set(px, py, pz).project(this.camera);
       return [(v.x * 0.5 + 0.5) * W, (-v.y * 0.5 + 0.5) * Hh, v.z];
     };
-    let best: Pick | null = null, bestScore = 16;
+    // pixelů na centimetr ve vzdálenosti d od kamery
+    const pxPerCm = (d: number) => Hh / (2 * Math.tan((this.camera.fov * Math.PI) / 360) * Math.max(0.1, d));
+    // Kandidáti: vše, co kurzor zasahuje (uvnitř obrysu nebo do pár pixelů od něj). Tlustý kmen zasahuje velkou
+    // plochu, tenká větvička malou – proto má přednost to nejtenčí, pokud to není schované za něčím silnějším.
+    interface Hit { p: Pick; e: number; rpx: number; d: number; R: number }
+    const hits: Hit[] = [];
+    const b = fr.base, tp = fr.tip;
     for (let i = 0; i < s.shoots.length; i++) {
       const sh = s.shoots[i];
-      const b = fr.base, tp = fr.tip;
       const [ax, ay, az] = proj(b[i * 3], b[i * 3 + 1], b[i * 3 + 2]);
       const [cx, cy, cz] = proj(tp[i * 3], tp[i * 3 + 1], tp[i * 3 + 2]);
       if (az > 1 || cz > 1) continue;
       for (const bud of sh.buds) {
-        const [qx, qy] = proj(
-          b[i * 3] + (tp[i * 3] - b[i * 3]) * bud.t + bud.dir[0] * 0.3,
-          b[i * 3 + 1] + (tp[i * 3 + 1] - b[i * 3 + 1]) * bud.t + bud.dir[1] * 0.3,
-          b[i * 3 + 2] + (tp[i * 3 + 2] - b[i * 3 + 2]) * bud.t + bud.dir[2] * 0.3);
-        const dd = Math.hypot(qx - x, qy - y) - 5; // pupeny mají přednost
-        if (dd < bestScore) { bestScore = dd; best = { type: 'bud', shoot: sh.id, bud: bud.id }; }
+        const wx = b[i * 3] + (tp[i * 3] - b[i * 3]) * bud.t + bud.dir[0] * 0.3, wy = b[i * 3 + 1] + (tp[i * 3 + 1] - b[i * 3 + 1]) * bud.t + bud.dir[1] * 0.3, wz = b[i * 3 + 2] + (tp[i * 3 + 2] - b[i * 3 + 2]) * bud.t + bud.dir[2] * 0.3;
+        const [qx, qy] = proj(wx, wy, wz);
+        const e = Math.hypot(qx - x, qy - y) - 6;
+        if (e < 5) hits.push({ p: { type: 'bud', shoot: sh.id, bud: bud.id }, e: Math.max(0, e), rpx: 1, d: Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z), R: 0.1 });
       }
-      const ex = cx - ax, ey = cy - ay;
-      const l2 = ex * ex + ey * ey;
+      const ex = cx - ax, ey = cy - ay, l2 = ex * ex + ey * ey;
       if (l2 < 1) continue;
       const t = clamp(((x - ax) * ex + (y - ay) * ey) / l2, 0, 1);
-      const dd = Math.hypot(ax + ex * t - x, ay + ey * t - y) + (az + (cz - az) * t) * 2;
-      const thick = Math.max(0, (radiusOf(sh) / this.dist) * Hh * 1.6 - 2);
-      if (dd - thick < bestScore) { bestScore = dd - thick; best = { type: 'shoot', shoot: sh.id, t }; }
+      const wx = b[i * 3] + (tp[i * 3] - b[i * 3]) * t, wy = b[i * 3 + 1] + (tp[i * 3 + 1] - b[i * 3 + 1]) * t, wz = b[i * 3 + 2] + (tp[i * 3 + 2] - b[i * 3 + 2]) * t;
+      const d = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z), R = radiusOf(sh), rpx = R * pxPerCm(d);
+      const e = Math.hypot(ax + ex * t - x, ay + ey * t - y) - rpx;
+      if (e < 7) hits.push({ p: { type: 'shoot', shoot: sh.id, t }, e: Math.max(0, e), rpx, d, R });
     }
-    return best;
+    if (!hits.length) return null;
+    // schované = přímo pod kurzorem leží něco znatelně silnějšího a blíž ke kameře
+    const hidden = (h: Hit) => hits.some((k) => k !== h && k.e === 0 && k.rpx > h.rpx * 1.5 + 2 && k.d + k.R * 0.3 < h.d);
+    const visible = hits.filter((h) => !hidden(h));
+    const pool = visible.length ? visible : hits;
+    pool.sort((p1, p2) => (p1.e + p1.rpx * 0.25 + p1.d * 0.02) - (p2.e + p2.rpx * 0.25 + p2.d * 0.02));
+    return pool[0].p;
   }
 
   /** Kam by se větev ohnula, kdyby její špička šla za kurzorem (v rovině obrazovky procházející patou). */
