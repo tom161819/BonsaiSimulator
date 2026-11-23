@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { PotType, Shoot, State } from '../sim/types';
-import { P, potById } from '../sim/params';
+import { GLAZES, P, potById } from '../sim/params';
 import { LeafShape, speciesOf } from '../sim/species';
 import leafAtlasJson from '../leafAtlas.json';
 import type { Vec3 } from '../sim/types';
@@ -428,6 +428,16 @@ export class TreeView {
   private sunU = { uSunDir: { value: new THREE.Vector3(0, 1, 0) } };
   private sun = new THREE.DirectionalLight(0xfff0d8, 2.3);
   private soilTex = soilTexture();
+  private soilPhoto: { d: THREE.Texture; n: THREE.Texture; h: THREE.Texture } | null = null; // fotografický substrát (assets/tex/soil_*.jpg)
+  private soilPreview: { mound: number; glaze: string } | null = null;
+  private soilFn: (x: number, z: number) => number = () => 0; // výška substrátu vůči patě kmene (v souřadnicích stromu)
+
+  /** Náhled navršení substrátu a barvy misky při přesazování. */
+  previewSoil(p: { mound: number; glaze: string } | null) {
+    if (JSON.stringify(p) === JSON.stringify(this.soilPreview)) return;
+    this.soilPreview = p;
+    if (this.state) this.build();
+  }
   private table: THREE.Mesh;
   private bb = new Buf();
   private hi = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff3b1f, depthTest: false, transparent: true }));
@@ -508,6 +518,17 @@ export class TreeView {
           float through = pow(max(dot(-normalize(vViewPosition), uSunDir), 0.0), 2.0);
           totalEmissiveRadiance += diffuseColor.rgb * vec3(1.1, 1.15, 0.6) * through * 0.55;`);
     };
+    {
+      // fotografický substrát; dokud se nenačte (nebo když chybí), slouží kreslená textura
+      const L = new THREE.TextureLoader();
+      L.load('tex/soil_d.jpg', (d) => L.load('tex/soil_n.jpg', (nn) => L.load('tex/soil_h.jpg', (h) => {
+        for (const t of [d, nn, h]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; }
+        d.colorSpace = THREE.SRGBColorSpace;
+        this.soilPhoto = { d, n: nn, h };
+        this.potKey = '';
+        if (this.state) this.build();
+      })));
+    }
     // naskenované listy (assets/tex/leaves.webp); dokud se nenačtou, slouží kreslený atlas
     new THREE.TextureLoader().load('tex/leaves.webp', (t) => {
       t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
@@ -751,18 +772,72 @@ export class TreeView {
   private updatePot(potId: string, H: number) {
     const spec = potById(this.potOverride ?? potId);
     const groundR = Math.max(12, Math.round((H * 0.3) / 10) * 10);
-    const key = spec.id + (spec.shape === 'ground' ? groundR : '');
+    const st = this.state;
+    const mound = spec.shape === 'ground' ? 0 : this.soilPreview?.mound ?? st?.mound ?? 0;
+    const glazeId = this.soilPreview?.glaze ?? st?.glaze ?? '';
+    const glaze = spec.type === 'bonsai' ? GLAZES.find((g) => g.id === glazeId && g.id) : undefined;
+    const off = this.offsetPreview ?? st?.potOffset ?? [0, 0];
+    // poloha stromu vůči středu nádoby a tvar povrchu substrátu: kopeček s vrcholem u kmene, u okraje nádoby na nule
+    const tx = spec.shape === 'ground' ? 0 : off[0] * (spec.a / 2) * 0.8, tz = spec.shape === 'ground' ? 0 : off[1] * (spec.b / 2) * 0.8;
+    const ha = spec.a / 2, hb = spec.b / 2, Mh = mound * Math.min(spec.a, spec.b) * 0.2, sig = 0.55 * Math.min(ha, hb);
+    const rhoOf = (x: number, z: number) => (spec.shape === 'rect' ? Math.max(Math.abs(x) / ha, Math.abs(z) / hb) : Math.hypot(x / ha, z / hb));
+    const hill = (x: number, z: number) => { // v souřadnicích nádoby
+      if (Mh <= 0) return 0;
+      const rho = Math.min(1, rhoOf(x, z)), rim = Math.pow(1 - rho * rho, 0.85);
+      const d2 = ((x - tx) * (x - tx) + (z - tz) * (z - tz)) / (sig * sig);
+      return Mh * rim * (0.4 + 0.6 * Math.exp(-d2));
+    };
+    const h0 = hill(tx, tz);
+    this.soilFn = (x, z) => hill(x + tx, z + tz) - h0;
+    this.potGroup.position.y = -h0;
+    const key = [spec.id, spec.shape === 'ground' ? groundR : '', mound, glazeId, off[0], off[1], this.soilPhoto ? 1 : 0].join('|');
     if (key === this.potKey) return;
     this.potKey = key;
     for (const c of [...this.potGroup.children]) {
       this.potGroup.remove(c);
       (c as THREE.Mesh).geometry.dispose();
     }
-    const tex = this.soilTex.clone();
-    tex.needsUpdate = true;
     const span = spec.shape === 'ground' ? groundR * 2 : Math.max(spec.a, spec.b);
-    tex.repeat.set(Math.max(1.5, span / 10), Math.max(1.5, span / 10));
-    const soil = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, envMapIntensity: 0.25 });
+    let soil: THREE.MeshStandardMaterial;
+    const TILE = 16; // cm na jedno opakování fotografie (zrno 3–6 mm jako akadama)
+    if (this.soilPhoto) {
+      soil = new THREE.MeshStandardMaterial({ map: this.soilPhoto.d, normalMap: this.soilPhoto.n, normalScale: new THREE.Vector2(1.6, 1.6), displacementMap: this.soilPhoto.h, displacementScale: 0.5, displacementBias: -0.25, roughness: 1, envMapIntensity: 0.25 });
+    } else {
+      const tex = this.soilTex.clone();
+      tex.needsUpdate = true;
+      tex.repeat.set(Math.max(1.5, span / 10), Math.max(1.5, span / 10));
+      soil = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, envMapIntensity: 0.25 });
+    }
+    // povrch substrátu: hustá síť (kvůli plastickému zrnu a kopečku); u = poloha v cm / dlaždice
+    const soilGeo = (pts: (i: number, j: number) => [number, number], NI: number, NJ: number, closeJ: boolean) => {
+      const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+      for (let i = 0; i <= NI; i++) for (let j = 0; j <= NJ; j++) {
+        const [x, z] = pts(i, j);
+        pos.push(x, hill(x, z), z);
+        uv.push(this.soilPhoto ? x / TILE : x / span + 0.5, this.soilPhoto ? z / TILE : z / span + 0.5);
+      }
+      const W = NJ + 1;
+      for (let i = 0; i < NI; i++) for (let j = 0; j < NJ; j++) {
+        const a0 = i * W + j, a1 = a0 + 1, b0 = a0 + W, b1 = b0 + 1;
+        idx.push(a0, a1, b0, a1, b1, b0);
+      }
+      void closeJ;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      // normály musí mířit nahoru (pořadí vrcholů závisí na parametrizaci)
+      const nn = g.getAttribute('normal') as THREE.BufferAttribute;
+      if (nn.getY(0) < 0) { g.setIndex(idx.map((_, q) => idx[q - (q % 3) + [0, 2, 1][q % 3]])); g.computeVertexNormals(); }
+      return g;
+    };
+    const dense = this.soilPhoto ? 1 : 0.25;
+    const discGeo = (ra: number, rb: number) => soilGeo((i, j) => {
+      const r = Math.pow(i / Math.round(70 * dense + 6), 0.9), a = (j / Math.round(160 * dense + 24)) * 6.2832;
+      return [Math.cos(a) * r * ra, Math.sin(a) * r * rb];
+    }, Math.round(70 * dense + 6), Math.round(160 * dense + 24), true);
+    const rectGeo = (wa: number, wb: number) => soilGeo((i, j) => [(i / Math.round(120 * dense + 8) - 0.5) * wa, (j / Math.round(120 * dense + 8) - 0.5) * wb], Math.round(120 * dense + 8), Math.round(120 * dense + 8), false);
     const add = (g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0, sx = 1, sz = 1) => {
       const mesh = new THREE.Mesh(g, m);
       mesh.position.set(x, y, z); mesh.scale.set(sx, 1, sz);
@@ -773,10 +848,12 @@ export class TreeView {
     this.table.visible = spec.shape !== 'ground';
     if (spec.shape === 'ground') {
       add(new THREE.CircleGeometry(900, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x6f7a4a, roughness: 1 }), 0, -0.25).castShadow = false;
-      add(new THREE.CircleGeometry(groundR, 40).rotateX(-Math.PI / 2), soil);
+      add(discGeo(groundR, groundR), soil);
+      this.tableTop = 0;
       return;
     }
-    const wall = new THREE.MeshStandardMaterial({ color: spec.color, roughness: spec.glaze ? 0.3 : 0.85, metalness: spec.glaze ? 0.05 : 0, envMapIntensity: spec.glaze ? 1 : 0.3, side: THREE.DoubleSide });
+    const glossy = glaze ? glaze.glossy : spec.glaze;
+    const wall = new THREE.MeshStandardMaterial({ color: glaze ? glaze.color : spec.color, roughness: glossy ? 0.22 : 0.85, metalness: glossy ? 0.05 : 0, envMapIntensity: glossy ? 0.8 : 0.3, side: THREE.DoubleSide });
     const { a, b, h } = spec;
     const lip = Math.max(0.35, h * 0.06); // okraj nad substrátem
     const dish = spec.type === 'bonsai';
@@ -793,14 +870,14 @@ export class TreeView {
       add(new THREE.BoxGeometry(a + t * 1.6, t * 0.7, t * 1.8), wall, 0, top - t * 0.35, -b / 2 + t * 0.1);
       add(new THREE.BoxGeometry(t * 1.8, t * 0.7, b + t * 1.6), wall, a / 2 - t * 0.1, top - t * 0.35, 0);
       add(new THREE.BoxGeometry(t * 1.8, t * 0.7, b + t * 1.6), wall, -a / 2 + t * 0.1, top - t * 0.35, 0);
-      add(new THREE.PlaneGeometry(a - t * 2, b - t * 2).rotateX(-Math.PI / 2), soil);
+      add(rectGeo(a - t * 2, b - t * 2), soil);
       for (const [fx, fz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(new THREE.BoxGeometry(a * 0.16, footH, b * 0.16), wall, fx * a * 0.38, -h - footH / 2, fz * b * 0.36);
     } else {
       const r = a / 2, sz = b / a, taper = dish ? 0.88 : 0.76;
       add(new THREE.CylinderGeometry(r, r * taper, h + lip, 56, 1, true), wall, 0, lip - (h + lip) / 2, 0, 1, sz);
       add(new THREE.TorusGeometry(r, Math.max(0.3, r * 0.045), 10, 56).rotateX(Math.PI / 2), wall, 0, lip, 0, 1, sz);
       add(new THREE.CylinderGeometry(r * taper, r * taper, 0.4, 56), wall, 0, -h + 0.2, 0, 1, sz);
-      add(new THREE.CircleGeometry(r * 0.985, 56).rotateX(-Math.PI / 2), soil, 0, 0, 0, 1, sz);
+      add(discGeo(r * 0.985, r * 0.985 * sz), soil);
       if (dish) for (let k = 0; k < 3; k++) {
         const ang = (k / 3) * 6.2832 + 0.5;
         add(new THREE.BoxGeometry(r * 0.3, footH, r * 0.22), wall, Math.cos(ang) * r * 0.62, -h - footH / 2, Math.sin(ang) * r * 0.62 * sz);
@@ -816,13 +893,13 @@ export class TreeView {
         for (let k = 0; k < 7; k++) {
           const mr = Math.max(0.35, base * (0.6 + 0.9 * rnd(77, c * 10 + k, 3)));
           const m = add(new THREE.IcosahedronGeometry(mr, 1), moss,
-            ox + (rnd(77, c * 10 + k, 4) - 0.5) * base * 5, mr * 0.1, oz + (rnd(77, c * 10 + k, 5) - 0.5) * base * 5);
+            ox + (rnd(77, c * 10 + k, 4) - 0.5) * base * 5, mr * 0.1 + hill(ox, oz), oz + (rnd(77, c * 10 + k, 5) - 0.5) * base * 5);
           m.scale.set(1.2, 0.5 + 0.3 * rnd(77, c * 10 + k, 6), 1.2);
           m.rotation.set(rnd(77, k, 7), rnd(77, k, 8) * 3, 0);
         }
       }
     }
-    this.tableTop = -h - footH - 0.02;
+    this.tableTop = -h - footH - 0.02 - h0;
   }
 
   // ------------------------------------------------------------ geometrie stromu
@@ -1594,6 +1671,7 @@ export class TreeView {
       }
     }
 
+    this.updatePot(s.potId, H); // dřív než kořeny: ty sledují tvar povrchu substrátu
     // povrchové kořeny (nebari): několik kořenů se od paty kmene rozbíhá a noří do substrátu
     if (n && R0 > 0.2) {
       const root0 = s.shoots[0];
@@ -1632,7 +1710,8 @@ export class TreeView {
           // posun ztrácí
           const y = R0 * 0.38 * Math.pow(1 - f, 1.6) - R0 * 0.4 * f * f;
           const lean = Math.pow(1 - f, 2) * R0 * 0.38;
-          pts.push([Math.cos(az) * rho * (j === 0 ? 0 : 1) + leanX * lean, y, Math.sin(az) * rho * (j === 0 ? 0 : 1) + leanZ * lean]);
+          const rx = Math.cos(az) * rho * (j === 0 ? 0 : 1) + leanX * lean, rz = Math.sin(az) * rho * (j === 0 ? 0 : 1) + leanZ * lean;
+          pts.push([rx, y + this.soilFn(rx, rz), rz]);
           rad.push(thick * (Math.pow(1 - f, 0.8) * 0.85 + 0.15) * (1 + 0.5 * Math.pow(1 - f, 4)));
         }
         bb.reserve((SEG + 1) * (RN + 1) + 1, SEG * RN * 6);
@@ -1673,12 +1752,11 @@ export class TreeView {
     bb.apply(this.bark.geometry, true);
     nb.apply(this.needles.geometry, true);
     this.seedMesh.visible = s.stage === 'seed';
-    this.updatePot(s.potId, H);
     // strom stojí v počátku; posun ke kraji misky se dělá posunem nádoby a stolu opačným směrem
     const off = this.offsetPreview ?? s.potOffset ?? [0, 0];
     const psO = potById(this.potOverride ?? s.potId);
     const ox = psO.shape === 'ground' ? 0 : -off[0] * (psO.a / 2) * 0.8, oz = psO.shape === 'ground' ? 0 : -off[1] * (psO.b / 2) * 0.8;
-    this.potGroup.position.set(ox, 0, oz);
+    this.potGroup.position.x = ox; this.potGroup.position.z = oz;
     this.table.position.x = ox; this.table.position.z = oz;
     // podložka musí pojmout nádobu i stín stromu
     const ps = potById(this.potOverride ?? s.potId);

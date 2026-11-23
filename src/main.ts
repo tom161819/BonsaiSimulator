@@ -2,7 +2,7 @@
 
 import { Timeline } from './sim/timeline';
 import { TreeView, Pick, wireGauge } from './render/view';
-import { P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
+import { GLAZES, P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
 import { YEAR, bendLimit, bendStress, breakRisk, heldArc, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
@@ -785,7 +785,9 @@ let rPot = 't05';
   sel.onchange = () => { rPot = sel.value; updateRepot(); };
 }
 const rIn = (id: string) => $<HTMLInputElement>(id);
-const rVals = () => ({ prune: Number(rIn('rPrune').value) / 100, yaw: Number(rIn('rYaw').value), side: Number(rIn('rSide').value), fwd: Number(rIn('rFwd').value), spread: Number(rIn('rSpread').value) / 100, offX: Number(rIn('rOffX').value) / 100, offZ: Number(rIn('rOffZ').value) / 100 });
+const rVals = () => ({ prune: Number(rIn('rPrune').value) / 100, yaw: Number(rIn('rYaw').value), side: Number(rIn('rSide').value), fwd: Number(rIn('rFwd').value), spread: Number(rIn('rSpread').value) / 100, offX: Number(rIn('rOffX').value) / 100, offZ: Number(rIn('rOffZ').value) / 100, mound: Number(rIn('rMound').value) / 100, glaze: $<HTMLSelectElement>('rGlaze').value });
+for (const g of GLAZES) { const o = document.createElement('option'); o.value = g.id; o.textContent = g.name; $('rGlaze').appendChild(o); }
+$<HTMLSelectElement>('rGlaze').onchange = () => updateRepot();
 
 function updateRepot() {
   const s = tl.state, v = rVals();
@@ -799,6 +801,10 @@ function updateRepot() {
   $('rFwdV').textContent = v.fwd ? `${Math.abs(v.fwd)}° ${v.fwd < 0 ? 'dozadu' : 'dopředu'}` : '0°';
   view.previewRotation(v.yaw, v.fwd, -v.side);
   view.previewRoots(v.spread, [v.offX, v.offZ]);
+  view.previewSoil({ mound: spec.type === 'ground' ? 0 : v.mound, glaze: v.glaze });
+  $('rMoundV').textContent = v.mound ? `${Math.round(v.mound * 100)} %` : 'rovný';
+  rIn('rMound').disabled = spec.type === 'ground';
+  $<HTMLSelectElement>('rGlaze').disabled = spec.type !== 'bonsai';
   const offTxt = (x: number, neg: string, pos: string) => (x ? `${Math.round(Math.abs(x) * 100)} % ${x < 0 ? neg : pos}` : 'střed');
   $('rOffXV').textContent = offTxt(v.offX, 'vlevo', 'vpravo');
   $('rOffZV').textContent = offTxt(v.offZ, 'dozadu', 'dopředu');
@@ -828,6 +834,7 @@ function closeRepot() {
   $('repot').hidden = true;
   view.previewRotation(0, 0, 0);
   view.previewRoots(0, null);
+  view.previewSoil(null);
   view.previewPot(null);
   refresh();
 }
@@ -838,12 +845,14 @@ $('repotBtn').onclick = () => {
   rIn('rPrune').value = tl.state.pot === 'ground' || tl.state.stage === 'seed' ? '0' : '30';
   rIn('rYaw').value = '0'; rIn('rSide').value = '0'; rIn('rFwd').value = '0'; rIn('rSpread').value = '0';
   rIn('rOffX').value = String(Math.round((tl.state.potOffset?.[0] ?? 0) * 100)); rIn('rOffZ').value = String(Math.round((tl.state.potOffset?.[1] ?? 0) * 100));
+  rIn('rMound').value = String(Math.round((tl.state.mound ?? 0) * 100));
+  $<HTMLSelectElement>('rGlaze').value = tl.state.glaze ?? '';
   $('repot').hidden = false;
   view.front();
   setHover(null);
   refresh();
 };
-for (const id of ['rPrune', 'rYaw', 'rSide', 'rFwd', 'rSpread', 'rOffX', 'rOffZ']) rIn(id).oninput = updateRepot;
+for (const id of ['rPrune', 'rYaw', 'rSide', 'rFwd', 'rSpread', 'rOffX', 'rOffZ', 'rMound']) rIn(id).oninput = updateRepot;
 $('rCancel').onclick = closeRepot;
 $('rOk').onclick = () => {
   const v = rVals();
@@ -854,7 +863,8 @@ $('rOk').onclick = () => {
   if (v.side || v.fwd) parts.push(`náklon ${Math.round(Math.hypot(v.side, v.fwd))}°`);
   if (v.spread) parts.push('kořeny rozprostřeny');
   if (v.offX || v.offZ) parts.push('mimo střed nádoby');
-  tl.act({ type: 'repot', pot: spec.type, potId: spec.id, prune: v.prune, yaw: v.yaw, tiltX: v.fwd, tiltZ: -v.side, spread: v.spread, offX: v.offX, offZ: v.offZ, label: `Přesazeno: ${parts.join(', ')}` });
+  if (v.mound && spec.type !== 'ground') parts.push('substrát navršen');
+  tl.act({ type: 'repot', pot: spec.type, potId: spec.id, prune: v.prune, yaw: v.yaw, tiltX: v.fwd, tiltZ: -v.side, spread: v.spread, offX: v.offX, offZ: v.offZ, mound: spec.type === 'ground' ? 0 : v.mound, glaze: v.glaze, label: `Přesazeno: ${parts.join(', ')}` });
   lastLogKey = '';
   persist();
   closeRepot();

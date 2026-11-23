@@ -142,6 +142,22 @@ export const POTS: PotSpec[] = [
   { id: 'b6', type: 'bonsai', name: 'Obdélníková miska 6 l, neglazovaná', liters: 6, shape: 'rect', a: 46, b: 33, h: 7.5, color: 0x7a4a36, glaze: false },
   { id: 'b12', type: 'bonsai', name: 'Hluboká obdélníková miska 12 l', liters: 12, shape: 'rect', a: 52, b: 38, h: 11, color: 0x3c3f44, glaze: true },
 ];
+/** Barvy misek: neglazovaná kamenina a běžné glazury. '' = barva z katalogu. */
+export interface Glaze { id: string; name: string; color: number; glossy: boolean }
+export const GLAZES: Glaze[] = [
+  { id: '', name: 'Původní barva misky', color: 0, glossy: false },
+  { id: 'brown', name: 'Neglazovaná hnědá', color: 0x5a3f33, glossy: false },
+  { id: 'red', name: 'Neglazovaná červená (terakota)', color: 0x74402e, glossy: false },
+  { id: 'grey', name: 'Neglazovaná šedá', color: 0x5b5a57, glossy: false },
+  { id: 'cream', name: 'Krémová glazura', color: 0xb5a98a, glossy: true },
+  { id: 'blue', name: 'Modrá glazura (kobalt)', color: 0x1f3357, glossy: true },
+  { id: 'sky', name: 'Světle modrá glazura', color: 0x56758c, glossy: true },
+  { id: 'green', name: 'Zelená glazura (celadon)', color: 0x4d6b57, glossy: true },
+  { id: 'oxblood', name: 'Tmavě červená glazura', color: 0x4a1512, glossy: true },
+  { id: 'ochre', name: 'Okrová glazura', color: 0x8a6426, glossy: true },
+  { id: 'black', name: 'Černá glazura', color: 0x1c1c1f, glossy: true },
+  { id: 'white', name: 'Bílá glazura', color: 0xc9c6bd, glossy: true },
+];
 export const potById = (id: string | undefined): PotSpec => POTS.find((p) => p.id === id) ?? POTS[1];
 /** Výchozí nádoba pro daný typ (starší uložené hry znají jen typ). */
 export const defaultPotId = (type: PotType) => (type === 'ground' ? 'ground' : type === 'training' ? 't5' : 'b15');

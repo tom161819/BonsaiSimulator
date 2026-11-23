@@ -209,6 +209,8 @@ function repot(s: State, a: Extract<Action, { type: 'repot' }>) {
   // kořeny se otáčejí se stromem; při přesazení je lze rozprostřít rovnoměrně do stran
   s.nebari = spreadNebari(s.nebari, a.spread ?? 0);
   for (const r of s.nebari) r.az -= (a.yaw ?? 0) * rad; // otočení kolem svislé osy (stejný smysl jako u výhonů)
+  if (a.mound !== undefined) s.mound = Math.max(0, Math.min(1, a.mound));
+  if (a.glaze !== undefined) s.glaze = a.glaze;
   if (a.offX !== undefined || a.offZ !== undefined) s.potOffset = [Math.max(-0.85, Math.min(0.85, a.offX ?? 0)), Math.max(-0.85, Math.min(0.85, a.offZ ?? 0))];
   rotateSubtree(s, -1, [1, 0, 0], (a.tiltX ?? 0) * rad);
   rotateSubtree(s, -1, [0, 0, 1], (a.tiltZ ?? 0) * rad);
