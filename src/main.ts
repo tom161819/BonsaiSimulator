@@ -204,6 +204,54 @@ const leavesOn = (x: State['shoots'][number]) => (!x.dead && x.needleLive > 0.02
 /** Vyraší po odstranění listů ještě letos znovu? */
 const leafReflush = (s: State) => { const sp = speciesOf(s); return sp.reflush > 0 && s.gdd >= sp.flushGdd && doyOf(s.day) < 230 && s.gdd < 1150; };
 
+// ---- borovice: třetí nástroj jsou Svíčky – zaštipuje jen letošní rostoucí výhony, větví se nedotkne
+const pineTree = () => speciesOf(tl.state).kind === 'pine';
+const isCandle = (x: State['shoots'][number]) => !x.dead && x.elong && x.kind === 'shoot' && x.parent >= 0;
+/** Výběr pod kurzorem podle nástroje (Svíčky vybírají jen svíčky). */
+const pickAt = (x: number, y: number) => view.pick(x, y, tool === 'bud', tool === 'leaf', tool === 'wire', tool === 'leaf' && pineTree() ? isCandle : undefined);
+/** Kolik svíčky ubrat podle síly: silné víc, slabé míň, nejslabší nechat (jak se svíčky zaštipují u borovic).
+ *  Hranice síly se berou z celého stromu. Vrací zachovaný podíl délky, nebo 0 = nechat být. */
+function candleKeep(all: State['shoots'][number][]) {
+  const L = all.map((x) => x.targetLen).sort((a, b) => a - b);
+  const q = (f: number) => L[Math.min(L.length - 1, Math.floor(f * L.length))] ?? 0;
+  const hi = q(0.67), mid = q(0.34);
+  return (x: State['shoots'][number], strongOnly = false) => {
+    if (x.targetLen < 2.5) return 0;
+    if (x.targetLen >= hi) return 0.35;
+    if (strongOnly) return 0;
+    return x.targetLen >= mid ? 0.55 : 0.75;
+  };
+}
+function candleCuts(list: State['shoots'][number][], strongOnly = false) {
+  const keep = candleKeep(tl.state.shoots.filter(isCandle));
+  return list.map((x) => ({ shoot: x.id, t: keep(x, strongOnly) })).filter((c) => c.t > 0);
+}
+const nCandles = (n: number) => `${n} ${n === 1 ? 'svíčku' : n < 5 ? 'svíčky' : 'svíček'}`;
+function describeCandle(p: Pick): Described | null {
+  const s = tl.state;
+  const sh = s.shoots.find((x) => x.id === p.shoot);
+  if (!sh || p.type !== 'shoot' || !isCandle(sh)) return null;
+  if (ctrlHeld) {
+    const root = wholeBranch(s, sh.id) ?? sh;
+    const sub = new Set<number>([root.id]);
+    for (const x of s.shoots) if (sub.has(x.parent)) sub.add(x.id);
+    const cuts = candleCuts(s.shoots.filter((x) => sub.has(x.id) && isCandle(x)));
+    if (!cuts.length) return { title: 'Svíčky na větvi jsou slabé', detail: 'Žádnou není potřeba zaštipovat.', danger: '', action: null, pick: { type: 'shoot', shoot: sh.id, t: 0 }, own: true };
+    return {
+      title: 'Zaštípnout svíčky na celé větvi', own: true, pick: { type: 'shoot', shoot: sh.id, t: 0 },
+      detail: `Zaštípne ${nCandles(cuts.length)} podle síly: silné na třetinu, střední na polovinu, slabší o čtvrtinu, nejslabší nechá. Větví se nedotkne.`,
+      danger: '', action: { type: 'cutMany', cuts, label: `Zaštípnuty svíčky na větvi (${cuts.length})` },
+    };
+  }
+  const t = Math.min(0.9, Math.max(0.15, Math.round(p.t * 20) / 20));
+  const pct = Math.round((1 - t) * 100);
+  return {
+    title: 'Zaštípnout svíčku', own: true, pick: { type: 'shoot', shoot: sh.id, t },
+    detail: `Odstraní ${pct} %. Zbytek doroste na ${cm(sh.targetLen * t)} místo ${cm(sh.targetLen)}; u zaštípnutí se v létě založí několik menších pupenů. Větve ani starší dřevo se nedotkne.`,
+    danger: '', action: { type: 'cut', shoot: sh.id, t, label: `Zaštípnuta svíčka o ${pct} %` },
+  };
+}
+
 /** Nástroj Listy: odstranění listů z výhonu, s Ctrl z celé větve. */
 function describeLeaf(p: Pick): Described | null {
   const s = tl.state;
@@ -233,7 +281,7 @@ function describeLeaf(p: Pick): Described | null {
 
 function describe(p: Pick): Described | null {
   if (tool === 'wire') return describeWire(p);
-  if (tool === 'leaf') return describeLeaf(p);
+  if (tool === 'leaf') return pineTree() ? describeCandle(p) : describeLeaf(p);
   const s = tl.state;
   let sh = s.shoots.find((x) => x.id === p.shoot);
   if (!sh) return null;
@@ -430,15 +478,26 @@ function refresh() {
     wb.textContent = nW ? `Odplevelit (${nW} ${nW === 1 ? 'rostlina' : nW < 5 ? 'rostliny' : 'rostlin'})` : 'Odplevelit';
   }
   {
-    // nástroj Listy je jen pro olistěné druhy a pravidla v10
-    const leafOk = speciesOf(s).kind === 'leafy' && s.rules >= 10;
+    // nástroj Listy je jen pro olistěné druhy a pravidla v10; u borovice je na jeho místě nástroj Svíčky
+    const pine = speciesOf(s).kind === 'pine';
+    const leafOk = pine || (speciesOf(s).kind === 'leafy' && s.rules >= 10);
     const lb = $<HTMLButtonElement>('tool-leaf');
     lb.disabled = !leafOk;
-    lb.title = leafOk ? 'Prosvětlování: odstraňuje listy, dřevo ani pupeny se nedotkne' : s.rules < 10 ? 'Odstraňování listů je až v pravidlech v10' : 'Jen pro listnáče a modřín';
+    lb.textContent = pine ? 'Svíčky' : 'Listy';
+    lb.title = pine ? 'Zaštipování svíček: zkracuje jen letošní rostoucí výhony, větví se nedotkne' : leafOk ? 'Prosvětlování: odstraňuje listy, dřevo ani pupeny se nedotkne' : 'Odstraňování listů je až v pravidlech v10';
     if (!leafOk && tool === 'leaf') { tool = 'cut'; for (const b of $('toolSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.tool === tool)); $('cutOpts').hidden = false; }
-    $('leafOpts').hidden = tool !== 'leaf';
-    keyHints?.show(tool, leafOk);
-    const any = leafOk && s.shoots.some((x) => leavesOn(x) > 0);
+    $('leafOpts').hidden = tool !== 'leaf' || pine;
+    $('candleOpts').hidden = tool !== 'leaf' || !pine;
+    keyHints?.show(tool, leafOk, pine);
+    if (pine) {
+      const cs = s.shoots.filter(isCandle), strong = candleCuts(cs, true).length;
+      $<HTMLButtonElement>('candleAll').disabled = !candleCuts(cs).length;
+      $<HTMLButtonElement>('candleStrong').disabled = !strong;
+      $('candleHint').textContent = cs.length
+        ? `Na stromě ${cs.length === 1 ? 'roste 1 svíčka' : cs.length < 5 ? `rostou ${cs.length} svíčky` : `roste ${cs.length} svíček`}. Klik: zaštípne svíčku v místě pod kurzorem, větví se nedotkne. Ctrl + klik: svíčky na celé větvi.`
+        : 'Teď žádné svíčky nerostou – rostou v dubnu až červnu (posuňte čas na jaro). Klik: zaštípne svíčku pod kurzorem; Ctrl + klik: svíčky na celé větvi.';
+    }
+    const any = leafOk && !pine && s.shoots.some((x) => leavesOn(x) > 0);
     $<HTMLButtonElement>('leafInner').disabled = !any; $<HTMLButtonElement>('leafHalf').disabled = !any;
   }
   $<HTMLButtonElement>('cleanDead').disabled = !deadwood(s).size;
@@ -507,7 +566,7 @@ let cutLine: { x0: number; y0: number; cx0: number; cy0: number; cuts: { shoot: 
 const lineEl = $('cutLine');
 function rehover() {
   if (!lastMouse || downAt || repotOpen) return;
-  const p = view.pick(lastMouse.ox, lastMouse.oy, tool === 'bud', tool === 'leaf', tool === 'wire');
+  const p = pickAt(lastMouse.ox, lastMouse.oy);
   setHover(p ? describe(p) : null, lastMouse.cx, lastMouse.cy);
 }
 for (const ev of ['keydown', 'keyup'] as const) window.addEventListener(ev, (e) => {
@@ -689,7 +748,7 @@ canvas.addEventListener('pointermove', (e) => {
   ctrlHeld = e.ctrlKey || e.metaKey;
   lastMouse = { ox: e.offsetX, oy: e.offsetY, cx: e.clientX, cy: e.clientY };
   if (e.pointerType === 'mouse' && !repotOpen) {
-    const pTree = view.pick(e.offsetX, e.offsetY, tool === 'bud', tool === 'leaf', tool === 'wire');
+    const pTree = pickAt(e.offsetX, e.offsetY);
     const onTool = pTree ? null : view.pickTool(e.offsetX, e.offsetY);
     if (onTool) {
       setHover(null);
@@ -765,7 +824,7 @@ const up = (e: PointerEvent) => {
   }
   bend = null;
   if (!wasTap || repotOpen) return;
-  const p = view.pick(e.offsetX, e.offsetY, tool === 'bud', tool === 'leaf', tool === 'wire');
+  const p = pickAt(e.offsetX, e.offsetY);
   if (tool === 'wire' && (e.ctrlKey || e.metaKey) && p && p.type === 'shoot') {
     // bod ohybu: Ctrl + klik ho položí, druhý Ctrl + klik na stejné místo ho zruší
     const sh = tl.state.shoots.find((x) => x.id === p.shoot);
@@ -838,7 +897,7 @@ for (const b of $('toolSeg').querySelectorAll('button')) {
 // nápověda ovládání: čísla 1–4 přepínají nástroje (kromě otevřeného přesazení a překryvných obrazovek)
 keyHints = createKeyHints($('keys'), (t) => {
   if (repotOpen || !$('chooser').hidden || !$('shelf').hidden) return false;
-  if (t === 'leaf' && $<HTMLButtonElement>('tool-leaf').disabled) { flash(speciesOf(tl.state).kind !== 'leafy' ? 'Listy se odstraňují jen u listnáčů a modřínu.' : 'Odstraňování listů je až v pravidlech v10.'); return false; }
+  if (t === 'leaf' && $<HTMLButtonElement>('tool-leaf').disabled) { flash('Odstraňování listů je až v pravidlech v10.'); return false; }
   setTool(t);
   return true;
 }, { avoid: $('left'), watch: [$('left'), $('bottom'), $('ui')] });
@@ -876,6 +935,18 @@ $('leafInner').onclick = () => {
   const ids = s.shoots.filter((x) => leavesOn(x) > 0 && (x.leafLight ?? 1) < 0.2).map((x) => x.id);
   if (!ids.length) { flash('Koruna je dost vzdušná – dovnitř se světlo dostane i tak.'); return; }
   leafAct(ids, 0, `Prosvětlen vnitřek koruny (${ids.length} výhonů)`);
+};
+$('candleAll').onclick = () => {
+  const cuts = candleCuts(tl.state.shoots.filter(isCandle));
+  if (!cuts.length) return;
+  tl.act({ type: 'cutMany', cuts, label: `Zaštípnuty svíčky podle síly (${cuts.length})` });
+  lastLogKey = ''; persist(); refresh();
+};
+$('candleStrong').onclick = () => {
+  const cuts = candleCuts(tl.state.shoots.filter(isCandle), true);
+  if (!cuts.length) return;
+  tl.act({ type: 'cutMany', cuts, label: `Zaštípnuty silné svíčky (${cuts.length})` });
+  lastLogKey = ''; persist(); refresh();
 };
 $('weedAll').onclick = () => {
   const n = (tl.state.weeds ?? []).length;
@@ -1079,6 +1150,8 @@ function wireCheck(frac = 1) {
 (window as any).bonsai = {
   wireCheck,
   weedScreen: () => view.weedScreen(),
+  // letošní svíčky a starší výhony na obrazovce (pro zkoušky nástroje Svíčky)
+  shootScreen: (t = 0.6) => tl.state.shoots.filter((q) => !q.dead && q.parent >= 0).map((q) => ({ id: q.id, candle: isCandle(q), len: q.len, target: q.targetLen, p: view.shootScreen(q.id, t) })),
   // body na obrazovce, za které jde větve chytit (pro zkoušky ovládání drátu)
   wirePoints: (t = 0.7) => tl.state.shoots.filter((q) => !q.dead && !q.elong && q.parent >= 0 && q.len > 5).map((q) => { const pl = planBend(tl.state, q.id, t); return pl ? { id: q.id, order: q.order, len: q.len, g: view.toScreen(pl.G), p: view.toScreen(pl.P) } : null; }).filter(Boolean),
   load: (save: Save) => { lastLogKey = ''; start(save); buildTrack(); },

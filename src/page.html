@@ -357,6 +357,11 @@
         <button id="leafHalf" style="margin-top:6px;width:100%" title="Částečná defoliace: na každém výhonu zůstane polovina listů">Ob list na celém stromě</button>
         <p class="hint">Klik: listy z výhonu. Ctrl + klik: z celé větve. V květnu a červnu vyraší znovu, menší.</p>
       </div>
+      <div id="candleOpts" hidden>
+        <button id="candleStrong" style="margin-top:8px;width:100%" title="Zkrátí jen nejsilnější třetinu svíček na třetinu – vyrovná sílu vrcholu a spodních větví">Zaštípnout silné svíčky</button>
+        <button id="candleAll" style="margin-top:6px;width:100%" title="Silné svíčky na třetinu, střední na polovinu, slabší o čtvrtinu, nejslabší nechá">Zaštípnout všechny svíčky</button>
+        <p class="hint" id="candleHint">Klik: zaštípne svíčku v místě pod kurzorem, větví se nedotkne. Ctrl + klik: svíčky na celé větvi. Svíčky rostou v dubnu až červnu.</p>
+      </div>
       <div id="wireOpts" hidden>
         <label for="wArc">Délka ohybu <output id="wArcV"></output></label>
         <input type="range" id="wArc" min="10" max="100" step="10" value="100">

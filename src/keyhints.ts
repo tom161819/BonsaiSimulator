@@ -41,6 +41,14 @@ const TOOLS: Record<HintTool, { name: string; key: string; rows: Row[] }> = {
   },
 };
 const ORDER: HintTool[] = ['cut', 'bud', 'leaf', 'wire'];
+// u borovice je na místě nástroje Listy nástroj Svíčky
+const CANDLE = {
+  name: 'Svíčky', key: '3',
+  rows: [
+    { parts: ['L'], mods: '', label: 'Zaštípnout svíčku', sub: 'v místě pod kurzorem' },
+    { parts: ['ctrl', '+', 'L'], mods: 'ctrl', label: 'Svíčky na celé větvi', sub: 'silné víc, slabé míň' },
+  ] as Row[],
+};
 
 const NS = 'http://www.w3.org/2000/svg';
 /** Myš s jedním zvýrazněným tlačítkem (L = levé, R = pravé, W = kolečko). */
@@ -176,8 +184,10 @@ export function createKeyHints(root: HTMLElement, onPick: (t: HintTool) => boole
     wheelTimer = window.setTimeout(() => root.classList.remove('wheeling'), 320);
   }, { passive: true });
 
+  let candle = false;
+  const infoOf = (t: HintTool) => (t === 'leaf' && candle ? CANDLE : TOOLS[t]);
   const render = (t: HintTool) => {
-    const info = TOOLS[t];
+    const info = infoOf(t);
     root.dataset.tool = t;
     // název nástroje se přelije
     nameEl.classList.remove('swap'); void nameEl.offsetWidth;
@@ -190,7 +200,13 @@ export function createKeyHints(root: HTMLElement, onPick: (t: HintTool) => boole
 
   return {
     /** Zvolený nástroj; leafAvailable = nástroj Listy je dostupný (listnáč a pravidla v10). */
-    show(t: HintTool, leafAvailable: boolean) {
+    show(t: HintTool, leafAvailable: boolean, pine = false) {
+      if (pine !== candle) {
+        candle = pine;
+        const b = sw.querySelector<HTMLButtonElement>('.ksw-b[data-t="leaf"]');
+        if (b) { const n = infoOf('leaf').name; b.title = `${n} (3)`; b.setAttribute('aria-label', `${n} – klávesa 3`); }
+        if (current === 'leaf') { render('leaf'); fit(); }
+      }
       if (t !== current) { current = t; render(t); fit(); }
       leafOk = leafAvailable;
       for (const b of sw.querySelectorAll<HTMLButtonElement>('.ksw-b')) {

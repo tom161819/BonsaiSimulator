@@ -2167,7 +2167,7 @@ export class TreeView {
   // ------------------------------------------------------------ výběr
 
   /** Najde pupen nebo výhon nejblíž kurzoru (v obrazovkových pixelech – tenké větvičky se dají trefit). */
-  pick(x: number, y: number, budsOnly = false, leafMode = false, noBuds = false): Pick | null {
+  pick(x: number, y: number, budsOnly = false, leafMode = false, noBuds = false, only?: (sh: Shoot) => boolean): Pick | null {
     const s = this.state, fr = this.frames;
     if (!s || !fr) return null;
     const W = this.canvas.clientWidth, Hh = this.canvas.clientHeight;
@@ -2180,7 +2180,7 @@ export class TreeView {
     const pxPerCm = (d: number) => Hh / (2 * Math.tan((this.camera.fov * Math.PI) / 360) * Math.max(0.1, d));
     // Kandidáti: vše, co kurzor zasahuje (uvnitř obrysu nebo do pár pixelů od něj). Tlustý kmen zasahuje velkou
     // plochu, tenká větvička malou – proto má přednost to nejtenčí, pokud to není schované za něčím silnějším.
-    interface Hit { p: Pick; e: number; rpx: number; d: number; R: number }
+    interface Hit { p: Pick; e: number; rpx: number; d: number; R: number; no?: boolean }
     const hits: Hit[] = [];
     const b = fr.base, tp = fr.tip;
     for (let i = 0; i < s.shoots.length; i++) {
@@ -2188,7 +2188,7 @@ export class TreeView {
       const [ax, ay, az] = proj(b[i * 3], b[i * 3 + 1], b[i * 3 + 2]);
       const [cx, cy, cz] = proj(tp[i * 3], tp[i * 3 + 1], tp[i * 3 + 2]);
       if (az > 1 || cz > 1) continue;
-      if (!leafMode && !noBuds) for (const bud of sh.buds) {
+      if (!leafMode && !noBuds && !only) for (const bud of sh.buds) {
         const wx = b[i * 3] + (tp[i * 3] - b[i * 3]) * bud.t + bud.dir[0] * 0.3, wy = b[i * 3 + 1] + (tp[i * 3 + 1] - b[i * 3 + 1]) * bud.t + bud.dir[1] * 0.3, wz = b[i * 3 + 2] + (tp[i * 3 + 2] - b[i * 3 + 2]) * bud.t + bud.dir[2] * 0.3;
         const [qx, qy] = proj(wx, wy, wz);
         const e = Math.hypot(qx - x, qy - y) - 6;
@@ -2197,6 +2197,8 @@ export class TreeView {
       if (budsOnly) continue;
       // nástroj Listy: trefit stačí list – počítá se okolí výhonu na dosah jeho listů; výhony bez listů se přeskočí
       if (leafMode && !(sh.needleCount > 0 && sh.needleLive > 0.02 && !sh.dead)) continue;
+      // jen vybrané výhony (Svíčky): ostatní se zasáhnout dají, ale vybrat ne – kurzor na větvi nevybere svíčku vedle ní
+      const no = !!only && !only(sh);
       // Ohnutý výhon (oblouk) neleží na spojnici paty a špičky: testuje se po kouscích podél skutečného tvaru,
       // jinak by šel chytit jen v místě, kde vidět není.
       const K = sh.arc && Math.abs(sh.arc.angle) > 0.05 ? 8 : 1;
@@ -2219,7 +2221,7 @@ export class TreeView {
         }
         px0 = px1; py0 = py1; w0x = w1x; w0y = w1y; w0z = w1z;
       }
-      if (bestE < 7) hits.push({ p: { type: 'shoot', shoot: sh.id, t: bestT }, e: Math.max(0, bestE), rpx: bestR, d: bestD, R: radiusOf(sh) });
+      if (bestE < 7) hits.push({ p: { type: 'shoot', shoot: sh.id, t: bestT }, e: Math.max(0, bestE), rpx: bestR, d: bestD, R: radiusOf(sh), no });
     }
     if (!hits.length) return null;
     // schované = přímo pod kurzorem leží něco znatelně silnějšího a blíž ke kameře
@@ -2227,7 +2229,7 @@ export class TreeView {
     const visible = hits.filter((h) => !hidden(h));
     const pool = visible.length ? visible : hits;
     pool.sort((p1, p2) => (p1.e + p1.rpx * 0.25 + p1.d * 0.02) - (p2.e + p2.rpx * 0.25 + p2.d * 0.02));
-    return pool[0].p;
+    return pool[0].no ? null : pool[0].p;
   }
 
   /** MĚŘENÍ: tenké výhony na silném dřevě. Kamera se postaví šikmo před každý z nich (rodič ~40 px silný)
@@ -2351,6 +2353,14 @@ export class TreeView {
     this.theta = Math.atan2(n[0], n[2]); this.phi = Math.min(1.5, Math.max(0.12, Math.acos(Math.min(1, n[1]))));
     this.dist = distCm;
     this.needsRender = true;
+  }
+
+  /** Bod výhonu v místě t na obrazovce (pro zkoušky ovládání). */
+  shootScreen(id: number, t: number): [number, number] | null {
+    const s = this.state, fr = this.frames, i = fr?.index.get(id);
+    if (!s || !fr || i === undefined) return null;
+    const q = shootPoint(s.shoots[i], t);
+    return this.toScreen([fr.base[i * 3] + q[0], fr.base[i * 3 + 1] + q[1], fr.base[i * 3 + 2] + q[2]]);
   }
 
   /** Bod ve světě → souřadnice na obrazovce (px v plátně). */
