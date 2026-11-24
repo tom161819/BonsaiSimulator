@@ -649,6 +649,35 @@ export class TreeView {
     this.needsRender = true;
   }
 
+  private season: number[] = [1, 1, 1];
+  private themeK = -1; // aktuální ztlumení pozadí (1 = světlé, 0,42 = tmavé); při změně vzhledu se plynule mění
+  private themeTween = 0;
+  private themeTarget() {
+    const root = document.documentElement;
+    const dark = root.dataset.theme === 'dark' || (root.dataset.theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    return dark ? 0.42 : 1;
+  }
+  private paintBackdrop() {
+    if (this.themeK < 0) this.themeK = this.themeTarget();
+    const s = this.season, k = this.themeK;
+    (this.backdrop.material as THREE.MeshBasicMaterial).color.setRGB(s[0] * k, s[1] * k, s[2] * k);
+    this.needsRender = true;
+  }
+  /** Vzhled stránky se změnil (přepínač, systém, hostitelská stránka): pozadí scény se plynule přelije. */
+  applyTheme(animate = true) {
+    cancelAnimationFrame(this.themeTween);
+    const to = this.themeTarget();
+    if (!animate || this.themeK < 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { this.themeK = to; this.paintBackdrop(); return; }
+    const from = this.themeK, t0 = performance.now();
+    const step = (now: number) => {
+      const u = Math.min(1, (now - t0) / 380);
+      this.themeK = from + (to - from) * (u * u * (3 - 2 * u));
+      this.paintBackdrop();
+      if (u < 1) this.themeTween = requestAnimationFrame(step);
+    };
+    this.themeTween = requestAnimationFrame(step);
+  }
+
   /** Při tažení větve se pohled nesmí sám přerámovat – kurzor by přestal sedět na drženém místě. */
   holdCamera = false;
   private updateCamera() {
@@ -1904,14 +1933,9 @@ export class TreeView {
     sc.updateProjectionMatrix();
     this.sun.shadow.normalBias = R * 0.004;
     this.sun.shadow.needsUpdate = true;
-    {
-      // pozadí podle ročního období (a tmavší ve tmavém vzhledu stránky)
-      const season = doy < 60 || doy > 335 ? [0.86, 0.9, 0.98] : doy < 150 ? [1, 1.02, 0.97] : doy < 265 ? [1, 1, 0.96] : [1.05, 0.95, 0.82];
-      const root = document.documentElement;
-      const dark = root.dataset.theme === 'dark' || (root.dataset.theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      const k = dark ? 0.42 : 1;
-      (this.backdrop.material as THREE.MeshBasicMaterial).color.setRGB(season[0] * k, season[1] * k, season[2] * k);
-    }
+    // pozadí podle ročního období (a tmavší ve tmavém vzhledu stránky)
+    this.season = doy < 60 || doy > 335 ? [0.86, 0.9, 0.98] : doy < 150 ? [1, 1.02, 0.97] : doy < 265 ? [1, 1, 0.96] : [1.05, 0.95, 0.82];
+    this.paintBackdrop();
     this.windU.uH.value = Math.max(5, H);
     this.needsRender = true;
   }

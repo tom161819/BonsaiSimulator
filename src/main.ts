@@ -39,6 +39,26 @@ let tool: Tool = 'cut';
 let repotOpen = false;
 let keyHints: ReturnType<typeof createKeyHints> | null = null; // nápověda ovládání vlevo dole
 
+// ---- vzhled: podle systému (nebo hostitelské stránky), vždy světlý, vždy tmavý; volba se pamatuje
+type ThemeMode = 'auto' | 'light' | 'dark';
+const THEME_KEY = 'bonsai-theme';
+let hostTheme = document.documentElement.dataset.theme; // poslední hodnota od hostitelské stránky (volba „podle systému“ ji vrací)
+let themeMode: ThemeMode = 'auto';
+try { const t = localStorage.getItem(THEME_KEY); if (t === 'light' || t === 'dark') themeMode = t; } catch { /* bez uložení */ }
+// hostitelská stránka změnila vzhled sama: její volba má přednost před naší (vlastní změny se zahazují)
+const hostWatch = new MutationObserver(() => {
+  hostTheme = document.documentElement.dataset.theme;
+  if (themeMode !== 'auto') { themeMode = 'auto'; try { localStorage.removeItem(THEME_KEY); } catch { /* bez uložení */ } syncThemeButtons(); }
+  view.applyTheme();
+});
+function setThemeAttr(mode: ThemeMode) {
+  const root = document.documentElement;
+  const v = mode === 'auto' ? hostTheme : mode;
+  if (v === undefined) delete root.dataset.theme; else root.dataset.theme = v;
+  hostWatch.takeRecords();
+}
+setThemeAttr(themeMode);
+hostWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 const view = new TreeView($<HTMLCanvasElement>('scene'));
 
 function start(save: Save | null) {
@@ -1105,6 +1125,21 @@ $('rOk').onclick = () => {
 };
 $('undo').onclick = () => { tl.undo(); lastLogKey = ''; persist(); refresh(); };
 $('center').onclick = () => view.recenter();
+function syncThemeButtons() { for (const b of $('themeSeg').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed', String(b.dataset.themeMode === themeMode)); }
+function setTheme(mode: ThemeMode) {
+  if (mode === themeMode) return;
+  themeMode = mode;
+  const root = document.documentElement;
+  root.classList.add('themefx'); window.setTimeout(() => root.classList.remove('themefx'), 500);
+  setThemeAttr(mode);
+  try { if (mode === 'auto') localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, mode); } catch { /* bez uložení */ }
+  syncThemeButtons();
+  view.applyTheme();
+}
+for (const b of $('themeSeg').querySelectorAll<HTMLButtonElement>('button')) b.onclick = () => { setTheme(b.dataset.themeMode as ThemeMode); b.blur(); };
+// přepnutí vzhledu systému za běhu (jen v režimu „podle systému“)
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode === 'auto') { document.documentElement.classList.add('themefx'); window.setTimeout(() => document.documentElement.classList.remove('themefx'), 500); view.applyTheme(); } });
+syncThemeButtons();
 let windOn = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const syncWind = () => { view.setWind(windOn); $('wind').setAttribute('aria-pressed', String(windOn)); };
 $('wind').onclick = () => { windOn = !windOn; syncWind(); };

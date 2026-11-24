@@ -240,6 +240,13 @@
   #keys[data-fit="3"] .kbtn { opacity: .3; cursor: default; }
   #keys.nofx, #keys.nofx * { transition: none !important; }
   @media (prefers-reduced-motion: reduce) { #keys, #keys * { animation: none !important; transition: none !important; } }
+  /* přepínač vzhledu: ikony se kreslí čarou, ve zvoleném stavu mají barvu textu tlačítka */
+  #themeSeg svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  #themeSeg button { padding-inline: 9px; display: grid; place-items: center; }
+  #themeSeg button[aria-pressed="true"] svg { animation: themePop .35s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes themePop { from { transform: scale(.6) rotate(-40deg); } }
+  /* při přepnutí se barvy panelů plynule přelijí (třída je jen na chvíli) */
+  .themefx .panel, .themefx button, .themefx select, .themefx #tip, .themefx #keys kbd { transition: background-color .38s ease, color .38s ease, border-color .38s ease, box-shadow .38s ease; }
   #cutLine { position: fixed; height: 0; border-top: 2px dashed #ff3b1f; transform-origin: 0 0; pointer-events: none; z-index: 5; }
   #tip {
     position: absolute; pointer-events: none; max-width: 260px; background: var(--panel-solid); border: 1px solid var(--line);
@@ -307,6 +314,11 @@
       <option value="2">Pravidla v2</option>
       <option value="1">Pravidla v1</option>
     </select>
+    <div class="seg" id="themeSeg" role="group" aria-label="Vzhled">
+      <button data-theme-mode="auto" aria-pressed="true" title="Vzhled podle systému" aria-label="Vzhled podle systému"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 13.5v-11a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg></button>
+      <button data-theme-mode="light" aria-pressed="false" title="Světlý vzhled" aria-label="Světlý vzhled"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3"/></svg></button>
+      <button data-theme-mode="dark" aria-pressed="false" title="Tmavý vzhled" aria-label="Tmavý vzhled"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.4 9.7A5.7 5.7 0 0 1 6.3 2.6a5.7 5.7 0 1 0 7.1 7.1z"/></svg></button>
+    </div>
   </div>
   <div class="panel" id="phases">
     <h2>Období roku</h2>
