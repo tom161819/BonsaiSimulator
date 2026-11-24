@@ -6,10 +6,14 @@ import { temperature } from './climate';
 import { Species, speciesOf } from './species';
 import { computeLight } from './light';
 import {
-  UP, YEAR, add, clamp, computeFrames, potCapFor, rootBoundFactor, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
+  UP, YEAR, add, clamp, computeFrames, potCapFor, potExhaust, rootBoundFactor, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
 } from './util';
 
 const potGrowth = (s: State) => (s.rules >= 2 ? POT[s.pot].growth : POT_GROWTH_V1[s.pot]);
+// v9: přerostlá nádoba zkracuje nejdelší možný výhon (strměji než celkový růst), zmenšuje listy a brzdí tloustnutí
+const shootCap9 = (s: State) => (s.rules >= 9 ? Math.max(P.leaderFloor9, Math.pow(rootBoundFactor(s) * potExhaust(s), P.leaderPow9)) : 1);
+const leafShrink9 = (s: State) => (s.rules >= 9 ? 1 - P.leafShrink9 * (1 - rootBoundFactor(s)) : 1);
+const thick9 = (s: State) => (s.rules >= 9 ? P.thickFloor9 + (1 - P.thickFloor9) * rootBoundFactor(s) * potExhaust(s) : 1);
 
 export function createState(seed: number, rules = RULES_LATEST, species = 'pine'): State {
   return {
@@ -153,7 +157,7 @@ function runBudSet(s: State) {
   // v5: semenáček a mladý stromek mají na jednotku olistění výrazně větší přírůst; s velikostí koruny výhoda mizí
   const juv = leafy && s.rules >= 5 ? 1 + sp.juvenile / (1 + prod / P.juvenileScale) : 1;
   const G = prod * (leafy ? sp.growthPerFoliage : P.growthPerFoliage) * juv * potGrowth(s)
-    * rootBoundFactor(s) * (1 - P.stressGrowthLoss * Math.min(1, s.stress));
+    * rootBoundFactor(s) * potExhaust(s) * (1 - P.stressGrowthLoss * Math.min(1, s.stress));
   s.budget = G;
 
   // hustá koruna: zastíněné vrcholy přestávají zakládat pupeny (ve v5 dřív, kvůli plynulosti hry)
@@ -252,7 +256,7 @@ function addBud(s: State, sh: Shoot, kind: BudKind, t: number, dir: Vec3, len: n
 
 function expandSink(s: State, sh: Shoot, k: Sink, year: number) {
   const o = sh.order;
-  const cap = o === 0 ? P.maxLeader : P.maxLateral;
+  const cap = (o === 0 ? P.maxLeader : P.maxLateral) * shootCap9(s);
   const salt = year * 131;
   if (k.kind === 'apex') {
     // terminální pupen + přeslen bočních; počet bočních roste s vitalitou vrcholu
@@ -343,7 +347,7 @@ function leafyTerminal(s: State, sp: Species, sh: Shoot, salt: number): Vec3 {
 function expandLeafy(s: State, sp: Species, sh: Shoot, k: Sink, year: number) {
   if (k.min) k.v = Math.max(k.v, k.min);
   const o = sh.order;
-  const cap = o === 0 ? sp.maxLeader : sp.maxLateral;
+  const cap = (o === 0 ? sp.maxLeader : sp.maxLateral) * shootCap9(s);
   const salt = year * 131;
   const N = Math.max(1, sh.dormant ?? 1);
   const per = sp.phyllotaxis === 'opposite' ? 2 : 1;
@@ -401,7 +405,7 @@ function expandLeafy(s: State, sp: Species, sh: Shoot, k: Sink, year: number) {
 }
 
 // listy na slabých a krátkých výhonech jsou menší jen mírně; hlavní zmenšení přináší malá nádoba
-const leafSize = (sp: Species, s: State, len: number) => sp.leafLen * (0.72 + 0.28 * (1 - Math.exp(-len / 6))) * POT[s.pot].needle;
+const leafSize = (sp: Species, s: State, len: number) => sp.leafLen * (0.72 + 0.28 * (1 - Math.exp(-len / 6))) * POT[s.pot].needle * leafShrink9(s);
 
 /** Z pupenu olistěného druhu vyroste výhon s listy v každém úžlabí. */
 function leafyShoot(s: State, sp: Species, sh: Shoot, b: Bud, late: boolean) {
@@ -453,7 +457,7 @@ function flush(s: State) {
     if (sh.dead || !sh.buds.length) continue;
     for (const b of sh.buds) {
       const l = b.len;
-      const nl = (P.needleLenMin + P.needleLenGain * (1 - Math.exp(-l / P.needleLenScale))) * pot.needle;
+      const nl = (P.needleLenMin + P.needleLenGain * (1 - Math.exp(-l / P.needleLenScale))) * pot.needle * leafShrink9(s);
       newShoot(s, {
         // měkká svíčka kmene se gravitropicky napřímí během dnů, i když je strom nakloněný
         parent: sh.id, attachT: b.t, dir: b.order === 0 && b.isMain ? norm(add(b.dir, [0, 1.5, 0])) : b.dir, order: b.order, isMain: b.isMain,
@@ -488,6 +492,23 @@ export function updateDeath(s: State) {
     }
   }
   if (s.stage === 'growing' && n > 0 && !alive[0]) s.stage = 'dead';
+}
+
+/** v9: chřadnutí v přerostlé nádobě. Každý podzim odumře část nejslabších koncových větviček (nejdřív ty
+ *  ve stínu a nejtenčí); čím déle strom v nádobě strádá, tím víc. Na konci odumře celý. */
+function potDieback(s: State) {
+  const b = s.bound ?? 0;
+  if (s.rules < 9 || s.pot === 'ground' || s.stage !== 'growing' || b <= P.boundGrace9) return;
+  const year = yearOf(s.day);
+  const kill = (sh: Shoot) => { sh.dead = true; sh.deadYear = year; sh.elong = false; sh.needleLive = 0; sh.buds = []; sh.dormant = 0; sh.wire = null; };
+  if (b >= P.boundGrace9 + P.boundSpan9 + 1) { for (const sh of s.shoots) if (!sh.dead) kill(sh); return; }
+  const p = Math.min(P.diebackMax9, P.diebackPerYear9 * (b - P.boundGrace9));
+  const hasLiveKid = new Set<number>();
+  for (const sh of s.shoots) if (!sh.dead) hasLiveKid.add(sh.parent);
+  const tips = s.shoots.filter((sh) => !sh.dead && sh.parent >= 0 && !hasLiveKid.has(sh.id));
+  tips.sort((a, c) => a.light - c.light || a.area - c.area || a.id - c.id);
+  const n = Math.floor(tips.length * p + rnd(s.seed, year, 909));
+  for (let i = 0; i < n; i++) kill(tips[i]);
 }
 
 /** Tenké suché větvičky po dvou letech opadnou; silnější suché dřevo zůstává (budoucí jin). */
@@ -599,12 +620,19 @@ export function step(s: State) {
   if (cambium && (s.day % 7 === 0 || s.shoots[0].fol === 0)) updateFoliage(s);
   const shedding = doy >= P.shedStartDoy && doy < P.shedEndDoy;
   const shedRate = 1 / (P.shedEndDoy - P.shedStartDoy - 5);
-  const kArea = (P.areaPerFoliage * (speciesOf(s).kind === 'leafy' ? speciesOf(s).thicken * (s.rules >= 5 ? 0.6 : 1) : 1) * dG) / (P.cambiumEndGdd - P.cambiumStartGdd);
+  const kArea = thick9(s) * (P.areaPerFoliage * (speciesOf(s).kind === 'leafy' ? speciesOf(s).thicken * (s.rules >= 5 ? 0.6 : 1) : 1) * dG) / (P.cambiumEndGdd - P.cambiumStartGdd);
 
   if (cambium) {
     // kořeny rostou s olistěním, dokud je v nádobě místo; stres z přesazení postupně odeznívá
     const season = dG / (P.cambiumEndGdd - P.cambiumStartGdd);
-    if (s.pot !== 'ground') s.roots += P.rootGrowth * s.shoots[0].fol * season * Math.max(0, 1 - s.roots / (s.potCap * P.rootMaxFill));
+    if (s.pot !== 'ground' && s.rules >= 9) {
+      // v9: kořeny přirůstají s olistěním a zčásti odumírají; počítadlo měří, jak dlouho je nádoba přerostlá
+      // Jakmile strom začne chřadnout, je substrát vyčerpaný a plný odumřelých kořenů: místo se samo neuvolní
+      // a počítadlo běží dál, dokud strom někdo nepřesadí.
+      const spent = (s.bound ?? 0) > P.boundGrace9;
+      s.roots = Math.max(0, s.roots + P.rootGrowth * s.shoots[0].fol * season * Math.max(0, 1 - s.roots / (s.potCap * P.rootMaxFill9)) - (spent ? 0 : P.rootTurnover9 * season * s.roots));
+      s.bound = (s.bound ?? 0) + season * (spent ? 1 : clamp((s.roots / s.potCap - P.boundFrom9) / (P.boundFull9 - P.boundFrom9), 0, 1));
+    } else if (s.pot !== 'ground') s.roots += P.rootGrowth * s.shoots[0].fol * season * Math.max(0, 1 - s.roots / (s.potCap * P.rootMaxFill));
     s.stress *= 1 - P.stressDecay * season;
   }
   const setRate = cambium ? dG / (P.cambiumEndGdd - P.cambiumStartGdd) : 0;
@@ -646,6 +674,7 @@ export function step(s: State) {
   if (doy === P.shedEndDoy) {
     for (const sh of s.shoots) sh.shedding = false;
     if (leafy) ageSpurs(s, sp);
+    potDieback(s);
     updateDeath(s);
     sag(s);
     dropDeadTwigs(s);

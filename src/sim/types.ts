@@ -112,6 +112,7 @@ export interface State {
   nebari: SurfaceRoot[];
   /** posun stromu od středu nádoby, v podílu poloviny jejího rozměru (−1…1); jen vzhled */
   potOffset?: [number, number];
+  bound?: number; // v9: roky strávené v přerostlé nádobě od posledního přesazení (vyčerpaný substrát)
   mossAge?: number; // dny, po které mech na substrátu nerušeně roste (jen vzhled)
   mound?: number; // 0..1 navršení substrátu ke kmeni (jen vzhled)
   glaze?: string; // barva misky z GLAZES (jen vzhled)

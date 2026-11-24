@@ -164,8 +164,26 @@ export const rootFill = (s: State) => (s.pot === 'ground' ? 0 : s.roots / Math.m
 /** Násobitel růstu podle prokořenění: přerostlé kořeny strom dusí. */
 export function rootBoundFactor(s: State): number {
   const f = rootFill(s);
+  if (s.rules >= 9) {
+    // v9: plynulá křivka, která při přeplnění klesá skoro k nule
+    const p = P.rootCurve9;
+    if (f <= p[0][0]) return 1;
+    for (let i = 1; i < p.length; i++) if (f <= p[i][0]) return p[i - 1][1] + ((p[i][1] - p[i - 1][1]) * (f - p[i - 1][0])) / (p[i][0] - p[i - 1][0]);
+    return p[p.length - 1][1];
+  }
   if (f <= P.rootBoundStart) return 1;
   return Math.max(P.rootBoundMin, 1 - ((1 - P.rootBoundMin) * (f - P.rootBoundStart)) / (P.rootBoundFull - P.rootBoundStart));
+}
+
+/** v9: vyčerpání substrátu. Po letech v přerostlé nádobě strom chřadne: 1 = v pořádku, 0 = konec. */
+export const potExhaust = (s: State) => (s.rules >= 9 && s.pot !== 'ground' ? 1 - clamp(((s.bound ?? 0) - P.boundGrace9) / P.boundSpan9, 0, 1) : 1);
+
+/** Stav nádoby pro hráče: 0 v pořádku, 1 plná (růst slábne), 2 přerostlá (strom stagnuje), 3 strom chřadne. */
+export function potStatus(s: State): 0 | 1 | 2 | 3 {
+  if (s.pot === 'ground' || s.stage !== 'growing') return 0;
+  const f = rootFill(s);
+  if (s.rules >= 9) return (s.bound ?? 0) > P.boundGrace9 ? 3 : f >= P.boundFull9 || (s.bound ?? 0) >= 1 ? 2 : f >= 1 ? 1 : 0;
+  return f > 1.2 ? 2 : f > P.rootBoundStart ? 1 : 0;
 }
 
 /** Bezpečný úhel ohybu výhonu drátem (rad): tenké dřevo se ohne hodně, silné málo. */

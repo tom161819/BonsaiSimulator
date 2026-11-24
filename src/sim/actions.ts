@@ -204,6 +204,12 @@ function repot(s: State, a: Extract<Action, { type: 'repot' }>) {
   s.roots *= 1 - prune;
   s.potCap = potCapFor(spec.id);
   s.repotDay = s.day;
+  if (s.rules >= 9) {
+    // v9: čerstvý substrát chřadnutí zastaví, pokud se do něj kořeny vejdou (pod 120 %). Když je nádoba
+    // i po přesazení přeplněná, strom dostane jen odklad: počítadlo se vrátí nejvýš na konec doby stagnace.
+    const f = spec.type === 'ground' ? 0 : s.roots / s.potCap;
+    s.bound = f < P.boundFrom9 ? 0 : Math.min(s.bound ?? 0, P.boundGrace9);
+  }
   const rad = Math.PI / 180;
   rotateSubtree(s, -1, [0, 1, 0], (a.yaw ?? 0) * rad);
   // kořeny se otáčejí se stromem; při přesazení je lze rozprostřít rovnoměrně do stran

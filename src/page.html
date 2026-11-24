@@ -71,6 +71,13 @@
   #phase { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   #phase b { font-weight: 600; color: var(--accent); }
   #hint { color: var(--muted); font-size: 12.5px; }
+  /* upozornění na přerostlou nádobu: kliknutím otevře přesazení */
+  #potAlert { display: block; width: 100%; margin: 6px 0 4px; padding: 6px 9px; text-align: left; font-size: 12.5px; font-weight: 600; line-height: 1.3;
+    border-radius: 7px; border: 1px solid var(--hl); border-left-width: 4px; background: var(--hl-bg); color: var(--fg); cursor: pointer; }
+  #potAlert[hidden] { display: none; }
+  #potAlert.danger { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+  #potAlert small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+  dd.warn { color: var(--hl); }
   dl { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; margin: 0; font-variant-numeric: tabular-nums; }
   dt { color: var(--muted); } dd { margin: 0; font-weight: 500; text-align: right; }
   button, select {
@@ -175,6 +182,7 @@
     <div class="panel">
       <div id="date">–</div>
       <div id="phase"><b id="phaseName"></b></div>
+      <button id="potAlert" hidden></button>
       <div id="hint"></div>
     </div>
     <div class="panel" id="stats">
@@ -194,7 +202,8 @@
     <button id="keep">Přidat do sbírky</button>
     <button id="shelfBtn">Moje sbírka</button>
     <button id="samplesBtn">Vzorová sbírka</button>
-    <select id="rules" aria-label="Verze pravidel růstu" title="Verze pravidel růstu. v1 = původní; v2 = miska strom uživí, slabé výhony se větví, seříznutý vrchol nahradí větev; v3 = navíc soběstačné větve (spodní větve neodumírají kvůli silnému vrcholu); v6 = tolerantnější drátování; v7 = vrcholová dominance listnáčů a modřínu (strom roste hlavně nahoře, spodní patra méně obrůstají, zkrácený kmen vyžene nový vrchol); v8 = opakované drátování počítá jen ohyb navíc proti tvaru, který větev už drží.">
+    <select id="rules" aria-label="Verze pravidel růstu" title="Verze pravidel růstu. v1 = původní; v2 = miska strom uživí, slabé výhony se větví, seříznutý vrchol nahradí větev; v3 = navíc soběstačné větve (spodní větve neodumírají kvůli silnému vrcholu); v6 = tolerantnější drátování; v7 = vrcholová dominance listnáčů a modřínu (strom roste hlavně nahoře, spodní patra méně obrůstají, zkrácený kmen vyžene nový vrchol); v8 = opakované drátování počítá jen ohyb navíc proti tvaru, který větev už drží; v9 = nádoba růst opravdu omezuje (přerostlý strom stagnuje a po letech chřadne, dokud ho nepřesadíte).">
+      <option value="9">Pravidla v9</option>
       <option value="8">Pravidla v8</option>
       <option value="7">Pravidla v7</option>
       <option value="6">Pravidla v6</option>

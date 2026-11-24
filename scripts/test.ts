@@ -2,10 +2,11 @@
 import assert from 'node:assert/strict';
 import { Timeline } from '../src/sim/timeline';
 import { wholeBranch } from '../src/sim/actions';
-import { YEAR, bendLimit, breakRisk, computeFrames, mossCover, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
+import { YEAR, bendLimit, breakRisk, computeFrames, mossCover, potExhaust, potStatus, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
 import type { Action, State, Vec3 } from '../src/sim/types';
 import samples from '../src/samples.json';
 import { SPECIES_ORDER } from '../src/sim/species';
+import { P } from '../src/sim/params';
 
 const sig = (s: State) => JSON.stringify(s.shoots.map((x) => [x.id, x.parent, +x.len.toFixed(4), x.buds.length, x.dead]));
 const at = (y: number, doy: number) => y * YEAR + doy;
@@ -27,7 +28,7 @@ test('přehrání je deterministické a nezávisí na tom, jak se časem pohybuj
 });
 
 test('zaštípnutí svíčky zkrátí výhon a příští rok dá víc slabších výhonů', () => {
-  const mk = () => { const tl = new Timeline(3); tl.seek(at(4, 135)); return tl; };
+  const mk = () => { const tl = new Timeline(3, [], 8); tl.seek(at(4, 135)); return tl; };
   const ref = mk(), cut = mk();
   const leader = (tl: Timeline) => tl.state.shoots.filter((s) => s.order === 0 && s.isMain && s.bornYear === 4)[0];
   const id = leader(cut).id;
@@ -41,7 +42,7 @@ test('zaštípnutí svíčky zkrátí výhon a příští rok dá víc slabšíc
 });
 
 test('řez do dřeva bez jehlic větev zabije, řez s jehlicemi ne', () => {
-  const tl = new Timeline(3); tl.seek(at(5, 20));
+  const tl = new Timeline(3, [], 8); tl.seek(at(5, 20));
   const br = tl.state.shoots.find((s) => s.order === 1 && s.bornYear === 2 && !s.dead)!;
   const old = br.id;
   tl.seek(at(6, 20)); // jehlice z roku 2 už opadly
@@ -57,7 +58,7 @@ test('řez do dřeva bez jehlic větev zabije, řez s jehlicemi ne', () => {
 });
 
 test('vrácení zásahu obnoví původní strom', () => {
-  const tl = new Timeline(9); tl.seek(at(3, 140));
+  const tl = new Timeline(9, [], 8); tl.seek(at(3, 140));
   const before = sig(tl.state);
   const sh = tl.state.shoots.find((s) => s.elong)!;
   tl.act({ type: 'cut', shoot: sh.id, t: 0.3 });
@@ -67,7 +68,7 @@ test('vrácení zásahu obnoví původní strom', () => {
 });
 
 test('zásah v minulosti přepíše pozdější zásahy', () => {
-  const tl = new Timeline(9); tl.seek(at(3, 140));
+  const tl = new Timeline(9, [], 8); tl.seek(at(3, 140));
   tl.act({ type: 'cut', shoot: tl.state.shoots.find((s) => s.elong)!.id, t: 0.5 });
   tl.seek(at(2, 140));
   assert.equal(tl.futureActions(), 1);
@@ -82,7 +83,7 @@ test('miska brzdí růst proti volné půdě', () => {
 });
 
 test('drát ohne větev i s podstromem; předčasné sundání ohyb vrátí, po sezónách tvar drží', () => {
-  const mk = () => { const tl = new Timeline(3); tl.seek(at(5, 320)); return tl; };
+  const mk = () => { const tl = new Timeline(3, [], 8); tl.seek(at(5, 320)); return tl; };
   const tl = mk();
   const br = tl.state.shoots.find((s) => s.order === 1 && s.bornYear === 3 && !s.dead)!;
   const kid = tl.state.shoots.find((s) => s.parent === br.id)!;
@@ -105,7 +106,7 @@ test('drát ohne větev i s podstromem; předčasné sundání ohyb vrátí, po 
 });
 
 test('ohyb daleko za bezpečnou mez větev zlomí', () => {
-  const tl = new Timeline(3); tl.seek(at(5, 320));
+  const tl = new Timeline(3, [], 8); tl.seek(at(5, 320));
   const br = tl.state.shoots.find((s) => s.order === 1 && s.bornYear === 3 && !s.dead)!;
   tl.act({ type: 'wire', shoot: br.id, axis: [0, 0, 1], angle: bendLimit(tl.state, br) * 1.5 });
   assert.ok(tl.state.shoots.find((s) => s.id === br.id)!.dead);
@@ -113,7 +114,7 @@ test('ohyb daleko za bezpečnou mez větev zlomí', () => {
 
 test('v misce kořeny přerostou a strom chřadne; pravidelné přesazování ho udrží', () => {
   const run = (repot: boolean) => {
-    const tl = new Timeline(4);
+    const tl = new Timeline(4, [], 8);
     tl.seek(at(4, 75));
     tl.act({ type: 'repot', pot: 'bonsai', prune: 0.3 });
     for (let y = 5; y <= 14; y++) {
@@ -130,13 +131,13 @@ test('v misce kořeny přerostou a strom chřadne; pravidelné přesazování ho
 });
 
 test('tvrdé zakrácení kořenů uprostřed růstu strom zabije, v předjaří ne', () => {
-  const go = (doy: number) => { const tl = new Timeline(4); tl.seek(at(5, doy)); tl.act({ type: 'repot', pot: 'bonsai', prune: 0.5 }); return tl.state.stage; };
+  const go = (doy: number) => { const tl = new Timeline(4, [], 8); tl.seek(at(5, doy)); tl.act({ type: 'repot', pot: 'bonsai', prune: 0.5 }); return tl.state.stage; };
   assert.equal(go(75), 'growing');
   assert.equal(go(150), 'dead');
 });
 
 test('strom přesazený nakřivo zůstane dole šikmý, ale nový vrchol roste vzhůru', () => {
-  const tl = new Timeline(4); tl.seek(at(4, 75));
+  const tl = new Timeline(4, [], 8); tl.seek(at(4, 75));
   tl.act({ type: 'repot', pot: 'training', prune: 0.2, tiltZ: -40 });
   assert.ok(tl.state.shoots[0].dir[1] < 0.85, 'kmen je nakloněný');
   tl.seek(at(7, 300));
@@ -145,7 +146,7 @@ test('strom přesazený nakřivo zůstane dole šikmý, ale nový vrchol roste v
 });
 
 test('oblouk: špička se stočí o celý úhel, větev se nezkrátí a plynulý ohyb snese víc než zlom', () => {
-  const tl = new Timeline(3); tl.seek(at(5, 320));
+  const tl = new Timeline(3, [], 8); tl.seek(at(5, 320));
   const br = tl.state.shoots.find((s) => s.order === 1 && s.bornYear === 3 && !s.dead)!;
   const kid = tl.state.shoots.find((s) => s.parent === br.id && s.attachT > 0.98)!;
   const k0 = [...kid.dir];
@@ -164,13 +165,13 @@ test('oblouk: špička se stočí o celý úhel, větev se nezkrátí a plynulý
 });
 
 test('větve se vahou jehličí prověšují: starší boční větve míří níž než mladé', () => {
-  const tl = new Timeline(3); tl.act({ type: 'repot', pot: 'ground' }); tl.seek(at(9, 320));
+  const tl = new Timeline(3, [], 8); tl.act({ type: 'repot', pot: 'ground' }); tl.seek(at(9, 320));
   const avg = (born: number) => { const b = tl.state.shoots.filter((s) => s.order === 1 && !s.isMain && s.bornYear === born && !s.dead); return b.reduce((t, s) => t + s.dir[1], 0) / b.length; };
   assert.ok(avg(4) < avg(9) - 0.02, `větve z roku 4 (${avg(4).toFixed(2)}) jsou níž než z roku 9 (${avg(9).toFixed(2)})`);
 });
 
 test('povrchové kořeny se při přesazení otočí se stromem a dají se rozprostřít', () => {
-  const tl = new Timeline(3); tl.seek(at(4, 75));
+  const tl = new Timeline(3, [], 8); tl.seek(at(4, 75));
   const before = tl.state.nebari.map((r) => r.az);
   assert.ok(before.length >= 5);
   tl.act({ type: 'repot', pot: 'training', potId: 't5', prune: 0.2, yaw: 90 });
@@ -183,14 +184,14 @@ test('povrchové kořeny se při přesazení otočí se stromem a dají se rozpr
 });
 
 test('dospělý strom nese šištice, mladý ne', () => {
-  const tl = new Timeline(3); tl.act({ type: 'repot', pot: 'ground' }); tl.seek(at(5, 200));
+  const tl = new Timeline(3, [], 8); tl.act({ type: 'repot', pot: 'ground' }); tl.seek(at(5, 200));
   assert.ok(!tl.state.shoots.some((s) => s.male || s.cone));
   tl.seek(at(10, 200));
   assert.ok(tl.state.shoots.some((s) => s.male) && tl.state.shoots.some((s) => s.cone));
 });
 
 test('sundání všech drátů je jeden zásah a jde vrátit', () => {
-  const tl = new Timeline(3); tl.seek(at(5, 320));
+  const tl = new Timeline(3, [], 8); tl.seek(at(5, 320));
   const brs = tl.state.shoots.filter((s) => s.order === 1 && !s.dead && !s.elong).slice(0, 3);
   for (const b of brs) tl.act({ type: 'wire', shoot: b.id, axis: [0, 0, 1], angle: 0.2 });
   assert.equal(tl.state.shoots.filter((s) => s.wire).length, 3);
@@ -201,7 +202,7 @@ test('sundání všech drátů je jeden zásah a jde vrátit', () => {
 });
 
 test('po odstranění vrcholu převezme osu boční větev a napřímí se', () => {
-  const tl = new Timeline(3); tl.seek(at(5, 75));
+  const tl = new Timeline(3, [], 8); tl.seek(at(5, 75));
   const top = tl.state.shoots.filter((s) => s.order === 0 && s.isMain && !s.dead && s.bornYear === 4).pop()!;
   tl.act({ type: 'cut', shoot: top.id, t: 0 });
   const heir = tl.state.shoots.find((s) => s.parent === top.parent && s.isMain && !s.dead)!;
@@ -240,7 +241,7 @@ const leavesOf = (tl: Timeline) => tl.state.shoots.reduce((t, s) => t + (s.dead 
 
 test('všechny druhy vyklíčí, rostou a přežijí deset let bez zásahu', () => {
   for (const id of SPECIES_ORDER) {
-    const tl = new Timeline(4, [], undefined, id); tl.act({ type: 'repot', pot: 'ground' }); tl.seek(at(9, 200));
+    const tl = new Timeline(4, [], 8, id); tl.act({ type: 'repot', pot: 'ground' }); tl.seek(at(9, 200));
     const st = stats(tl.state);
     assert.equal(tl.state.stage, 'growing', id);
     assert.ok(st.height > 60 && st.height < 800, `${id}: výška ${st.height.toFixed(0)} cm`);
@@ -250,7 +251,7 @@ test('všechny druhy vyklíčí, rostou a přežijí deset let bez zásahu', () 
 
 test('listnáče na zimu opadají a na jaře znovu olistí; buk drží suché listí, bříza ne', () => {
   for (const [id, keeps] of [['beech', true], ['hornbeam', true], ['birch', false], ['maple', false], ['larch', false]] as [string, boolean][]) {
-    const tl = new Timeline(4, [], undefined, id); tl.seek(at(5, 200));
+    const tl = new Timeline(4, [], 8, id); tl.seek(at(5, 200));
     const summer = leavesOf(tl);
     tl.seek(at(5, 350));
     const winter = leavesOf(tl);
@@ -263,7 +264,7 @@ test('listnáče na zimu opadají a na jaře znovu olistí; buk drží suché li
 
 test('habr po řezu do holého dřeva obrazí, borovice ne', () => {
   const cutOld = (id: string) => {
-    const tl = new Timeline(4, [], undefined, id); tl.seek(at(6, 60));
+    const tl = new Timeline(4, [], 8, id); tl.seek(at(6, 60));
     // nejstarší boční větev zkrátit na pahýl bez listí a bez větvení
     const br = tl.state.shoots.find((s) => s.order === 1 && !s.dead && s.bornYear <= 3 && s.kind === 'shoot')!;
     tl.act({ type: 'cut', shoot: br.id, t: 0.3 });
@@ -277,7 +278,7 @@ test('habr po řezu do holého dřeva obrazí, borovice ne', () => {
 
 test('habr po zaštípnutí vyraší ještě téhož léta, buk a borovice jen výjimečně nebo vůbec', () => {
   const again = (id: string) => {
-    const tl = new Timeline(6, [], undefined, id); tl.seek(at(4, 150));
+    const tl = new Timeline(6, [], 8, id); tl.seek(at(4, 150));
     const before = tl.state.shoots.length;
     for (const sh of tl.state.shoots.filter((s) => s.elong && s.kind === 'shoot' && s.targetLen > 4)) tl.act({ type: 'cut', shoot: sh.id, t: 0.5 });
     tl.seek(at(4, 195));
@@ -436,6 +437,56 @@ test('mech: po přesazení žádný, za rok třetina, za dva roky celá miska; j
   assert.equal(mossCover(tl.state), before);
   tl.act({ type: 'repot', pot: 'bonsai', potId: 'b15', prune: 0, moss: 'full' });
   assert.equal(mossCover(tl.state), 1);
+});
+
+// ---- pravidla v9: nádoba růst omezuje
+const potRun = (rules: number, species: string, potId: string, years: number, extra: Action[] = []) => {
+  const type = potId[0] === 't' ? 'training' : 'bonsai';
+  const tl = new Timeline(4, [{ day: 300, type: 'repot', pot: type, potId, prune: 0 }, ...extra], rules, species);
+  tl.seek(at(years, 250));
+  return tl;
+};
+
+test('v9: strom v 5l nádobě se zastaví; ve v8 roste dál bez omezení', () => {
+  const a = stats(potRun(8, 'maple', 't5', 10).state), b = stats(potRun(9, 'maple', 't5', 10).state);
+  assert.ok(a.height > 350 && a.baseDiameter > 3.5, `v8: ${a.height.toFixed(0)} cm, ${(a.baseDiameter * 10).toFixed(0)} mm`);
+  assert.ok(b.height < 220 && b.baseDiameter < 1.5, `v9: ${b.height.toFixed(0)} cm, ${(b.baseDiameter * 10).toFixed(0)} mm`);
+});
+
+test('v9: větší nádoba znamená větší strom', () => {
+  const d = (potId: string) => stats(potRun(9, 'maple', potId, 8).state).baseDiameter;
+  const a = d('t05'), b = d('t5'), c = d('t25');
+  assert.ok(a < b * 0.6 && b < c * 0.7, `0,5 l ${(a * 10).toFixed(1)} mm, 5 l ${(b * 10).toFixed(1)} mm, 25 l ${(c * 10).toFixed(1)} mm`);
+});
+
+test('v9: přerostlý strom nejdřív stagnuje, pak chřadne a nakonec uhyne', () => {
+  const tl = potRun(9, 'maple', 't05', 4);
+  assert.equal(potStatus(tl.state), 2, 'po pár letech je nádoba přerostlá');
+  assert.equal(potExhaust(tl.state), 1, 'první roky strom jen stagnuje');
+  tl.seek(at(8, 250));
+  assert.equal(potStatus(tl.state), 3);
+  const live9 = tl.state.shoots.filter((s) => !s.dead).length;
+  tl.seek(at(11, 250));
+  assert.ok(tl.state.shoots.filter((s) => !s.dead).length < live9, 'větve odumírají');
+  assert.equal(tl.state.stage, 'growing');
+  tl.seek(at(16, 250));
+  assert.equal(tl.state.stage, 'dead');
+});
+
+test('v9: přesazení se zkrácením kořenů chřadnutí zastaví; bez zkrácení ne', () => {
+  const tl = potRun(9, 'maple', 't05', 9);
+  assert.ok((tl.state.bound ?? 0) > P.boundGrace9);
+  tl.seek(at(10, 75));
+  tl.act({ type: 'repot', pot: 'training', potId: 't05', prune: 0 });
+  assert.ok((tl.state.bound ?? 0) >= P.boundGrace9, 'stejná nádoba bez zkrácení kořenů nepomůže');
+  tl.undo();
+  tl.act({ type: 'repot', pot: 'training', potId: 't5', prune: 0.3 });
+  assert.equal(tl.state.bound, 0);
+  assert.equal(potStatus(tl.state), 0);
+  const d0 = stats(tl.state).baseDiameter;
+  tl.seek(at(13, 250));
+  assert.equal(tl.state.stage, 'growing');
+  assert.ok(stats(tl.state).baseDiameter > d0 * 1.3, 'po přesazení strom zase sílí');
 });
 
 console.log(`\n${n} testů prošlo`);

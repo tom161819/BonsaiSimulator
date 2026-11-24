@@ -70,6 +70,16 @@ export const P = {
   rootBoundFull: 1.6, // při tomto zaplnění je růst na minimu
   rootBoundMin: 0.3,
   rootMaxFill: 1.8,
+  // --- pravidla v9: nádoba růst opravdu omezuje (viz docs/KONCEPT.md)
+  rootCurve9: [[0.5, 1], [0.7, 0.9], [1.0, 0.55], [1.5, 0.15], [2.0, 0.03]] as [number, number][], // [zaplnění, podíl růstu]
+  rootMaxFill9: 2.2, // kořeny mohou nádobu přeplnit víc než dřív
+  rootTurnover9: 0.2, // roční odumírání kořenů – díky němu se přerostlý strom ustálí, místo aby se zhroutil
+  thickFloor9: 0.1, // tloustnutí = thickFloor + (1 - thickFloor) × podíl růstu
+  leaderPow9: 1.5, leaderFloor9: 0.03, // nejdelší možný výhon klesá strměji než celkový růst
+  leafShrink9: 0.2, // o kolik jsou listy a jehlice menší při úplném zastavení růstu
+  boundFrom9: 1.2, boundFull9: 1.5, // počítadlo let v přerostlé nádobě běží od 120 %, naplno od 150 %
+  boundGrace9: 3, boundSpan9: 7, // 3 roky jen stagnace, dalších 7 let chřadnutí až k úhynu
+  diebackPerYear9: 0.06, diebackMax9: 0.4, // podíl nejslabších koncových větviček, který za rok odumře
   repotBaseStress: 0.1, // stres ze samotného přesazení
   repotPruneStress: 1.0, // stres na jednotku odstraněných kořenů
   stressGrowthLoss: 0.7, // o kolik stres 1,0 sníží růstový rozpočet
@@ -118,7 +128,7 @@ export const POT: Record<PotType, { name: string; growth: number; needle: number
 };
 /** Účinnost stanoviště v původních pravidlech (v1): miska strom živila výrazně hůř. */
 export const POT_GROWTH_V1: Record<PotType, number> = { ground: 1.0, training: 0.85, bonsai: 0.5 };
-export const RULES_LATEST = 8;
+export const RULES_LATEST = 9;
 
 /** Katalog nádob. Velikost se sama nemění – nádobu volí pěstitel při přesazení.
  *  Objem v litrech určuje, kolik kořenů se vejde (P.rootPerLiter); rozměry v cm slouží vykreslení:

@@ -4,7 +4,7 @@ import { Timeline } from './sim/timeline';
 import { TreeView, Pick, wireGauge } from './render/view';
 import { GLAZES, P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
-import { YEAR, bendLimit, bendStress, breakRisk, heldArc, mossCover, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
+import { YEAR, bendLimit, bendStress, breakRisk, heldArc, mossCover, potStatus, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
 import { bendShoot, deadwood, wholeBranch } from './sim/actions';
 import { SPECIES, SPECIES_ORDER, speciesOf } from './sim/species';
@@ -301,22 +301,39 @@ function refresh() {
   refreshPhases(s, ph.name);
   const fut = tl.futureActions();
   const fill = rootFill(s);
+  const pst = potStatus(s);
   const wires = s.shoots.filter((x) => x.wire);
   const biting = wires.filter((x) => x.scar).length;
   const ready = wires.filter((x) => x.wire!.set >= 1).length;
   let hint = ph.hint;
   if (s.stage === 'growing') {
     if (s.stress > 0.45) hint = 'Strom se vzpamatovává z přesazení – letos poroste slabě. Nestříhejte a nepřesazujte.';
-    else if (fill > 1.2) hint = 'Kořeny přerostly nádobu: voda neprotéká, strom slábne a bez přesazení se zakrácením kořenů bude chřadnout.';
+    else if (s.rules >= 9 && pst === 3) hint = `Strom chřadne: už ${Math.floor(s.bound ?? 0)} ${Math.floor(s.bound ?? 0) < 5 ? 'roky' : 'let'} strádá v přerostlé nádobě a odumírají mu větve. Substrát je vyčerpaný – přesaďte ho a zkraťte kořeny, jinak uhyne.`;
+    else if (s.rules >= 9 && pst === 2) hint = 'Kořeny přerostly nádobu a strom skoro neroste ani netloustne. Je nutné ho přesadit a zkrátit kořeny, nebo dát do větší nádoby. Po několika letech začne chřadnout.';
+    else if (s.rules < 9 && fill > 1.2) hint = 'Kořeny přerostly nádobu: voda neprotéká, strom slábne a bez přesazení se zakrácením kořenů bude chřadnout.';
     else if (biting) hint = `Drát na ${biting} ${biting === 1 ? 'větvi' : 'větvích'} zarůstá do kůry. Sundejte ho nástrojem Drát.`;
-    else if (fill > P.rootBoundStart) hint = 'Nádoba je prokořeněná a růst začíná slábnout. Naplánujte přesazení na předjaří.';
+    else if (s.rules >= 9 ? pst === 1 : fill > P.rootBoundStart) hint = s.rules >= 9 ? 'Nádoba je plná kořenů a růst slábne. Naplánujte na předjaří přesazení se zkrácením kořenů, nebo větší nádobu.' : 'Nádoba je prokořeněná a růst začíná slábnout. Naplánujte přesazení na předjaří.';
     else if (ready) hint = `${ready} ${ready === 1 ? 'nadrátovaná větev už drží' : 'nadrátované větve už drží'} tvar – drát lze sundat.`;
   }
   $('hint').textContent = fut ? `Jste v minulosti: nový zásah přepíše ${fut} pozdějších zásahů v deníku.` : hint;
   const sr = $('sRoots');
   sr.textContent = s.pot === 'ground' ? 'volná půda' : `${String(potById(s.potId).liters).replace('.', ',')} l · ${Math.round(fill * 100)} %`;
   sr.title = potById(s.potId).name;
-  sr.className = fill > 1.2 ? 'bad' : '';
+  sr.className = s.rules >= 9 ? (pst >= 2 ? 'bad' : pst === 1 ? 'warn' : '') : fill > 1.2 ? 'bad' : '';
+  {
+    // výrazné upozornění, že je čas přesadit (pravidla v9); kliknutím se otevře přesazení
+    const al = $('potAlert');
+    const show = s.rules >= 9 && pst >= 2 && !repotOpen; // plná nádoba (stav 1) má jen tichou nápovědu – u bonsají je to běžný stav
+    al.hidden = !show;
+    if (show) {
+      al.className = pst === 3 ? 'danger' : '';
+      const head = pst === 3 ? 'Strom chřadne – přesaďte ho a zkraťte kořeny' : 'Je nutné přesadit a zkrátit kořeny';
+      const sub2 = pst === 3 ? 'Odumírají mu větve; bez přesazení uhyne.' : `Kořeny zabírají ${Math.round(fill * 100)} % nádoby, strom skoro neroste.`;
+      al.innerHTML = '';
+      al.append(`⚠ ${head}`);
+      const sm = document.createElement('small'); sm.textContent = sub2; al.appendChild(sm);
+    }
+  }
   const sw = $('sWires');
   sw.textContent = wires.length ? `${wires.length}${biting ? ` · ${biting} zarůstá` : ''}` : '–';
   sw.className = biting ? 'bad' : '';
@@ -839,7 +856,13 @@ function updateRepot() {
   if (spec.type === 'ground') line('Ve volné půdě kořeny nic neomezuje – strom sílí nejrychleji, ale roste do výšky a jehlice má dlouhé.');
   else {
     line(`Kořeny teď zaplňují nádobu z ${Math.round(rootFill(s) * 100)} %, v nové (${String(spec.liters).replace('.', ',')} l) zaplní ${Math.round(after * 100)} %.`);
-    if (after > 1.2) line('Kořeny se do této nádoby nevejdou – zakraťte je víc nebo zvolte větší.', true);
+    if (s.rules >= 9) {
+      const ailing = potStatus(s) >= 2;
+      if (after >= 1.2) line(ailing ? 'To nestačí: kořeny se do nádoby nevejdou a strom bude strádat dál. Zakraťte je víc nebo zvolte větší nádobu.' : 'Kořeny se do této nádoby nevejdou – zakraťte je víc nebo zvolte větší.', true);
+      else if (after >= 1) line(ailing ? 'Chřadnutí se zastaví, ale nádoba bude hned plná a strom poroste pomalu. Lepší je zkrátit kořeny víc nebo zvolit větší nádobu.' : 'Nádoba bude hned plná a růst pomalý – zakraťte kořeny víc nebo zvolte větší.', true);
+      else if (after > 0.7) line(ailing ? 'Strom se vzpamatuje, ale nádoba bude brzy zase plná.' : 'Nádoba bude brzy plná – počítejte s dalším přesazením za rok až dva.');
+      else if (ailing) line('Kořeny se do nádoby pohodlně vejdou – strom se vzpamatuje a znovu poroste.');
+    } else if (after > 1.2) line('Kořeny se do této nádoby nevejdou – zakraťte je víc nebo zvolte větší.', true);
     else if (after > P.rootBoundStart) line('Nádoba bude hned těsná – zakraťte kořeny víc nebo zvolte větší.', true);
   }
   line(`Termín: ${season.name}.`, season.k > 1.5);
@@ -847,7 +870,7 @@ function updateRepot() {
   else if (total > 0.7) line('Stres vysoký: příští rok skoro neporoste.', true);
   else if (total > 0.4) line('Stres střední: růst příští rok znatelně zeslábne.');
   else line('Stres nízký.');
-  if (v.prune > 0.5) line('Borovice žije s houbami na kořenech (mykorhiza). Část kořenového balu má vždy zůstat netknutá.');
+  if (v.prune > 0.5 && speciesOf(s).kind === 'pine') line('Borovice žije s houbami na kořenech (mykorhiza). Část kořenového balu má vždy zůstat netknutá.');
 }
 
 function closeRepot() {
@@ -859,6 +882,7 @@ function closeRepot() {
   view.previewPot(null);
   refresh();
 }
+$('potAlert').onclick = () => { if (!repotOpen) $('repotBtn').click(); };
 $('repotBtn').onclick = () => {
   if (repotOpen) { closeRepot(); return; }
   repotOpen = true; playing = false;

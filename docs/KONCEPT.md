@@ -151,6 +151,29 @@ počítalo riziko prasknutí z celého ohybu od rovné větve a po předčasném
 i když první ohyb už zdřevnatěl. Ve v8 je výchozím stavem tvar, který dřevo drží (zarostlý oblouk plus
 zdřevnatělý podíl ohybu pod drátem): riziko se počítá jen ze změny proti němu, nový drát fixuje jen tuto změnu
 a po sundání se větev vrací k drženému tvaru. Změna poloměru oblouku se do namáhání nepočítá (zjednodušení).
+**Pravidla v9 – nádoba růst opravdu omezuje.** Měření ve v8 (javor ze semene v 25l kontejneru, bez zásahů):
+v 5 letech 2,1 m a kmen 16 mm (odpovídá školkařské praxi), ale ve 21 letech 13,3 m a kmen 223 mm. Tři příčiny:
+násobitel růstu neklesl pod 0,3 a zaplnění mělo strop 180 %, tloustnutí se řídilo jen olistěním a vůdčí výhon
+dostal každý rok plnou délku. Ve v9:
+
+| Kořeny v nádobě | do 50 % | 70 % | 100 % | 150 % | 200 % a víc |
+| --- | --- | --- | --- | --- | --- |
+| podíl růstu | 100 % | 90 % | 55 % | 15 % | 3 % |
+
+Stejný podíl brzdí i tloustnutí (nejméně desetina), nejdelší možný výhon klesá s mocninou 1,5 (přerostlý strom
+přirůstá do výšky jen pár cm ročně) a listy i jehlice jsou až o 20 % menší. Kořeny mohou nádobu přeplnit do 220 %
+a ročně jich pětina odumírá – díky této zpětné vazbě se strom ustálí kolem 130–170 % a stagnuje, místo aby se
+zhroutil. Počítadlo `bound` měří roky v přerostlé nádobě (běží od 120 %, naplno od 150 %): první 3 roky strom jen
+stagnuje, dalších 7 let chřadne (růst klesá k nule, každý podzim odumře 6–40 % nejslabších koncových větviček,
+substrát je vyčerpaný a kořeny už neodumírají) a pak uhyne. Přesazení, po kterém kořeny zabírají méně než 120 %
+nádoby, počítadlo vynuluje; přeplněná nádoba dá jen odklad. Výsledek (javor, 25 l): ustálení na 2,8 m a kmeni
+24 mm, při přesazování se zkrácením kořenů o polovinu každé 3 roky 3,6 m a 39 mm ve 21 letech. Tloušťka kmene při ustálení
+vychází úměrná zhruba odmocnině objemu nádoby. Běžná bonsaj (miska 2,5 l, zimní řez, přesazení po 3 letech)
+se drží na 125–160 % a tloustne asi 0,25 mm ročně.
+Podklady: Poorter et al. 2012 (metaanalýza 65 studií: dvojnásobná nádoba = +43 % biomasy, dřeviny jako byliny);
+pokusy s omezením kořenů u broskvoně a jabloně (kořeny i nadzemní část se brzdí stejným dílem, méně a menší listy).
+Dlouhodobá měřená data pro strom ponechaný desítky let v jedné nádobě jsme nenašli – doba stagnace a chřadnutí
+i cílové velikosti jsou odhad podle školkařské a bonsajové praxe.
 
 Ve v3 se také větev, která převzala vrchol, postupně zvedá ke svislici i ve stávajícím dřevě (tenká rychle,
 silná pomalu), a osu může převzít i větev nasazená níž na pahýlu bez jehlic.
