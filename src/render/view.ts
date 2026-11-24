@@ -734,11 +734,14 @@ export class TreeView {
   }
   recenter() { this.auto = true; this.needsRender = true; }
 
-  /** Portrét stromu pro sbírku: celý strom i s nádobou na průhledném pozadí, z právě zvoleného směru pohledu. */
+  /** Portrét stromu pro sbírku: celý strom i s nádobou na průhledném pozadí, z právě zvoleného směru pohledu.
+   *  Fotí se jako na výstavě: úzkým objektivem (12°) skoro z úrovně misky, takže miska je vidět jen mírně shora
+   *  (asi 10°) – stejně jako stojan, na kterém ve sbírce stojí. */
   capture(w = 360, h = 440): string {
     const s = this.state;
     if (!s) return '';
-    const keep = { target: this.target.clone(), dist: this.dist, phi: this.phi, auto: this.auto, pr: this.renderer.getPixelRatio() };
+    const keep = { target: this.target.clone(), dist: this.dist, phi: this.phi, auto: this.auto, pr: this.renderer.getPixelRatio(), fov: this.camera.fov };
+    this.camera.fov = 12;
     const hidden = [this.hi, this.marker, this.pivotMark, this.wireLines, this.wireDots, this.table, this.backdrop, this.toolScissors, this.toolWire].filter((o) => o.visible);
     for (const o of hidden) o.visible = false;
     const pot = potById(s.potId);
@@ -752,7 +755,7 @@ export class TreeView {
     const span = H + below + 3, width = Math.max(2 * reach + 8, pot.a + 4, pot.b + 4);
     const tan = Math.tan((this.camera.fov * Math.PI) / 360);
     this.auto = false;
-    this.phi = 1.38;
+    this.phi = Math.PI / 2 - (7 * Math.PI) / 180; // kamera 7° nad vodorovnou; spodek obrázku (miska) asi 12°
     this.dist = Math.max(span / 2 / tan, width / 2 / (tan * (w / h))) * 1.08;
     // dno nádoby sedí na spodním okraji obrázku, aby strom na lavici stál a nevznášel se
     this.target.set(0, -below + this.dist * tan * 0.97, 0);
@@ -763,7 +766,7 @@ export class TreeView {
     this.renderer.render(this.scene, this.camera);
     const url = this.canvas.toDataURL('image/png');
     for (const o of hidden) o.visible = true;
-    this.target.copy(keep.target); this.dist = keep.dist; this.phi = keep.phi; this.auto = keep.auto;
+    this.target.copy(keep.target); this.dist = keep.dist; this.phi = keep.phi; this.auto = keep.auto; this.camera.fov = keep.fov;
     this.renderer.setPixelRatio(keep.pr);
     this.resize();
     return url;

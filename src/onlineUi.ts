@@ -18,6 +18,9 @@ export interface OnlineDeps {
   pause(): void;
   /** stojan pod stromem podle velikosti misky v náhledu (sdílené se sbírkou) */
   fitStand(box: HTMLElement): void;
+  /** je náhled v aktuální verzi pohledu? jinak ho jde přefotit ze záznamu stromu */
+  thumbCurrent(url: string | null): boolean;
+  renderThumb(rec: { seed: number; actions: Action[]; day: number; rules: number; species: string }): string;
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -249,7 +252,18 @@ export function initOnline(initial: Backend | null, deps: OnlineDeps) {
     img.alt = `${x.name} – ${deps.speciesName(x.species)}`;
     if (!thumbs.has(x.id)) {
       img.removeAttribute('src'); img.classList.add('loading');
-      try { const d = await backend!.treeData(x.id); thumbs.set(x.id, d?.thumb ?? null); } catch { thumbs.set(x.id, null); }
+      try {
+        const d = await backend!.treeData(x.id);
+        thumbs.set(x.id, d?.thumb ?? null);
+        // starší náhled (jiný pohled než stojan): přefotí se ze záznamu stromu, jen pro zobrazení
+        if (d && !deps.thumbCurrent(d.thumb)) setTimeout(() => {
+          try {
+            const url = deps.renderThumb(d);
+            thumbs.set(x.id, url);
+            if (curId === x.id && !$('expo').hidden) { img.src = url; deps.fitStand(img.parentElement!); }
+          } catch { /* zůstane starý náhled */ }
+        }, 30);
+      } catch { thumbs.set(x.id, null); }
     }
     if (curId !== x.id) return; // mezitím přešel jinam
     const src = thumbs.get(x.id);

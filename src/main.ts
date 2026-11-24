@@ -1067,7 +1067,7 @@ $('keep').onclick = async () => {
     const btn = $<HTMLButtonElement>('keep');
     btn.disabled = true;
     try {
-      const thumb = await shrinkThumb(view.capture());
+      const thumb = markThumb(await shrinkThumb(view.capture()));
       await online.saveTree({ name: `${speciesOf(s).name} · ${yearOf(s.day) + 1}. rok`, species: tl.species, seed: tl.seed, rules: tl.rules, day: s.day, actions: tl.actions.filter((a) => a.day <= s.day), thumb, height: stats(s).height });
       flash('Strom je uložený ve vašem účtu. Ve sbírce ho můžete i vystavit.');
       onlineUi.refreshStats();
@@ -1079,7 +1079,7 @@ $('keep').onclick = async () => {
   const st = stats(s);
   list.push({
     id: `${Date.now()}`, name: `${speciesOf(s).name} · ${yearOf(s.day) + 1}. rok`, seed: tl.seed, rules: tl.rules, species: tl.species,
-    actions: tl.actions.filter((a) => a.day <= s.day), day: s.day, thumb: view.capture(), height: st.height, savedAt: new Date().toISOString(),
+    actions: tl.actions.filter((a) => a.day <= s.day), day: s.day, thumb: markThumb(view.capture()), height: st.height, savedAt: new Date().toISOString(),
   });
   if (!saveShelf(list)) { flash('Sbírku se nepodařilo uložit – úložiště prohlížeče je plné nebo nedostupné.'); return; }
   syncShelfBtn();
@@ -1323,6 +1323,46 @@ async function renderShelf() {
     items.push({ tree: el, card });
   }
   layoutBench(items);
+  upgradeThumbs(entries, items, token);
+}
+
+// ---- náhledy stromů: verze pohledu (v2 = úzký objektiv z úrovně misky, sedí se stojanem ve sbírce).
+// Starší náhledy se ze záznamu stromu přefotí a uloží; značka verze je parametr v adrese obrázku (data:image/…;v=2;…).
+const THUMB_V = 2;
+const thumbCurrent = (u: string | null | undefined) => !!u && u.startsWith('data:') && u.slice(0, 40).includes(`;v=${THUMB_V};`);
+const markThumb = (u: string) => u.replace(/^data:([^;,]+)(;v=\d+)?/, `data:$1;v=${THUMB_V}`);
+/** Nový portrét stromu ze záznamu (semínko + zásahy + pravidla + druh): strom se přehraje mimo rozpracovaný
+ *  a vyfotí; scéna se pak vrátí k rozpracovanému stromu. */
+function renderThumb(rec: { seed: number; actions: Action[]; day: number; rules: number; species: string }): string {
+  const t = new Timeline(rec.seed, rec.actions, rec.rules, rec.species);
+  t.seek(rec.day);
+  view.setState(t.state);
+  const url = view.capture();
+  view.setState(tl.state);
+  return markThumb(url);
+}
+/** Postupně přefotí staré náhledy ve sbírce (po jednom, ať stránka nezamrzne) a uloží je. */
+async function upgradeThumbs(entries: ShelfEntry[], items: BenchItem[], token: number) {
+  const todo = entries.map((e, i) => ({ e, it: items[i] })).filter((x) => !thumbCurrent(x.e.thumb));
+  let done = 0;
+  for (const { e, it } of todo) {
+    await new Promise((r) => setTimeout(r, 40));
+    if (token !== shelfToken || $('shelf').hidden) return;
+    $('shelfCount').dataset.note = `překresluji náhledy ${++done}/${todo.length}`;
+    let url: string;
+    try { url = renderThumb(e); } catch { continue; }
+    if (e.cloud) {
+      url = markThumb(await shrinkThumb(url));
+      online?.updateThumb(e.key, url).catch(() => undefined);
+    } else {
+      const l = loadShelf(), x = l.find((y) => y.id === e.key);
+      if (x) { x.thumb = url; saveShelf(l); }
+    }
+    e.thumb = url;
+    const img = it.tree.querySelector('img');
+    if (img) { img.src = url; fitStand(it.tree); }
+  }
+  delete $('shelfCount').dataset.note;
 }
 $('shelfBtn').onclick = () => { playing = false; renderShelf(); $('shelf').hidden = false; refresh(); };
 
@@ -1355,6 +1395,8 @@ const onlineUi = initOnline(online, {
   },
   pause: () => { playing = false; },
   fitStand,
+  thumbCurrent,
+  renderThumb,
 });
 $('expoBtn').hidden = !online;
 // server musí být dosažitelný (stránka vložená např. na claude.ai ho může mít zakázaný); jinak hra běží bez online části
@@ -1368,7 +1410,7 @@ online?.probe().then((ok) => {
 $('expoBtn').onclick = () => { playing = false; onlineUi.openExpo(); refresh(); };
 if (online?.kind === 'demo' && online._seed) {
   // ukázka bez serveru: vzorové stromy jako vystavené stromy ukázkových hráčů, s několika hodnoceními
-  online._seed(SAMPLES.map((k, i) => ({ username: ['Ukázka-Jana', 'Ukázka-Petr', 'Ukázka-Eva'][i % 3], name: `${k.style}`, species: 'pine', seed: k.seed, rules: k.rules, day: k.day, actions: k.actions, thumb: THUMBS[k.id] || null, height: k.height })),
+  online._seed(SAMPLES.map((k, i) => ({ username: ['Ukázka-Jana', 'Ukázka-Petr', 'Ukázka-Eva'][i % 3], name: `${k.style}`, species: 'pine', seed: k.seed, rules: k.rules, day: k.day, actions: k.actions, thumb: THUMBS[k.id] ? markThumb(THUMBS[k.id]) : null, height: k.height })),
     [[8, 9, 7, 10], [6, 7], [9, 9, 8], [5, 7, 6, 8, 7], []]);
   flash('Ukázkový režim online části: účty a výstava běží jen v paměti této stránky.');
 }
