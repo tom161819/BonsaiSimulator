@@ -622,4 +622,45 @@ test('ohyb v místě větve: část před ním zůstane, držené místo míří
   assert.equal(tl.state.shoots.find((q) => q.id === sh.id)!.len, len0);
 });
 
+// ---- pravidla v11: pozdní výhony a odložené usychání
+const lateSummer = (rules: number) => {
+  // javor zaštipovaný koncem června a koncem července: druhé rašení vyroste až po letním zakládání pupenů
+  const tl = new Timeline(4, [{ day: 300, type: 'repot', pot: 'training', potId: 't10', prune: 0 }], rules, 'maple');
+  for (let y = 3; y < 6; y++) for (const d of [175, 205]) {
+    tl.seek(at(y, d));
+    const cuts = tl.state.shoots.filter((q) => !q.dead && q.parent >= 0 && q.bornYear === y && q.len > 5 && !q.tipCut).map((q) => ({ shoot: q.id, t: Math.max(0.15, Math.min(0.9, 4 / q.len)) }));
+    if (cuts.length) tl.act({ type: 'cutMany', cuts });
+  }
+  return tl;
+};
+/** Kolik cizích výhonů uschne, když zkrátím jeden koncový výhon (bez potomků). */
+const sideDeaths = (tl: Timeline) => {
+  const s = tl.state;
+  const tip = s.shoots.filter((q) => !q.dead && q.parent >= 0 && q.len > 2 && !q.elong && !s.shoots.some((c) => c.parent === q.id)).pop()!;
+  const before = new Set(s.shoots.filter((q) => q.dead).map((q) => q.id));
+  tl.act({ type: 'cut', shoot: tip.id, t: 0.75 });
+  const died = tl.state.shoots.filter((q) => q.dead && !before.has(q.id) && q.id !== tip.id).length;
+  tl.undo();
+  return died;
+};
+
+test('v11: řez jednoho výhonu nenechá uschnout jiné (ve v10 jich v zimě uschly desítky)', () => {
+  const a = lateSummer(10); a.seek(at(6, 20));
+  assert.ok(sideDeaths(a) > 10, 've v10 se chyba projevuje');
+  const b = lateSummer(11);
+  for (const d of [at(5, 250), at(5, 315), at(6, 20), at(6, 130), at(6, 200)]) { b.seek(d); assert.equal(sideDeaths(b), 0, `den ${d}`); }
+});
+
+test('v11: výhonky z druhého rašení si založí pupeny a na jaře znovu raší', () => {
+  const tl = lateSummer(11); tl.seek(at(5, 330));
+  const late = tl.state.shoots.filter((q) => !q.dead && q.bornYear === 5 && q.bornDay > at(5, 185));
+  assert.ok(late.length > 10, `pozdních výhonků ${late.length}`);
+  assert.ok(late.every((q) => (q.dormant ?? 0) > 0), 'mají spící pupeny');
+  assert.ok(late.filter((q) => !q.tipCut).every((q) => q.buds.length > 0), 'mají vrcholový pupen');
+  tl.seek(at(6, 180));
+  const ids = new Set(late.map((q) => q.id));
+  const alive = tl.state.shoots.filter((q) => ids.has(q.id) && !q.dead).length;
+  assert.ok(alive > late.length * 0.9, `přežilo ${alive} z ${late.length}`);
+});
+
 console.log(`\n${n} testů prošlo`);

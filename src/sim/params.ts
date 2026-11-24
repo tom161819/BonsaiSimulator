@@ -138,7 +138,7 @@ export const POT: Record<PotType, { name: string; growth: number; needle: number
 };
 /** Účinnost stanoviště v původních pravidlech (v1): miska strom živila výrazně hůř. */
 export const POT_GROWTH_V1: Record<PotType, number> = { ground: 1.0, training: 0.85, bonsai: 0.5 };
-export const RULES_LATEST = 10;
+export const RULES_LATEST = 11;
 
 /** Katalog nádob. Velikost se sama nemění – nádobu volí pěstitel při přesazení.
  *  Objem v litrech určuje, kolik kořenů se vejde (P.rootPerLiter); rozměry v cm slouží vykreslení:

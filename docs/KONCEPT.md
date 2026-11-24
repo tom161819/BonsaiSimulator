@@ -205,6 +205,17 @@ vejdou), zasahuje hlavně uvnitř velkých neřezaných korun (u desetiletého j
 Konkrétní práh světla pro opad listu jsme v literatuře nenašli; druhové hodnoty jsou odhad, který dává strop
 listové plochy blízký naměřeným porostům. Ani po úpravě není hustota shluků úplně reálná (kolem 40 m²/m³) –
 zbytek je daný počtem výhonů.
+**Pravidla v11 – pozdní výhony a odložené usychání.** Hlášená chyba: hráč zkrátí jednu větvičku a jiná vedle
+uschne. Měření (bonsajový postup, zaštipování koncem června a července; pak zkrácení jednoho koncového výhonu
+bez potomků): ve v10 při tom uschlo až 62 cizích výhonů u javoru, 53 u břízy, 49 u dubu, 33 u modřínu, 30 u habru
+a 18 u buku. Dvě příčiny: (1) výhon, který vyrostl až po letním zakládání pupenů (druhé rašení po zaštípnutí
+nebo odlistění), si nezaložil spící ani vrcholový pupen – přes léto žil díky listům, po opadu byl odsouzený;
+(2) odumření se vyhodnocovalo jen při zakládání pupenů, koncem října (před opadem listí) a při každém zásahu,
+takže odsouzené výhony „uschly“ až ve chvíli, kdy hráč udělal cokoli jiného. U habru, buku a dubu je navíc do
+jara drželo suché listí. Ve v11 si pozdní výhony zakládají pupeny na podzim (při začátku barvení listí: spící
+pupeny v úžlabích a vrcholový pupen na 80 % vlastní délky), odumření se vyhodnotí hned po opadu listí a suché
+listí výhon naživu nedrží. Ve stejném měření neuschl při řezu žádný cizí výhon u žádného druhu a v žádné roční
+době; zaštipování koncem července už nepřipraví strom o větvení (javor: 590 živých výhonů místo 214).
 
 ### Ovládání drátu (není verze pravidel – platí pro všechny)
 

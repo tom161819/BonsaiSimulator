@@ -452,6 +452,20 @@ function flushLeafy(s: State, sp: Species) {
   }
 }
 
+/** v11: výhon, který vyrostl až po letním zakládání pupenů (druhé rašení po zaštípnutí nebo odlistění), ho minul –
+ *  neměl by tak spící pupeny ani vrcholový pupen a v zimě by uschl. Založí si je na podzim: spící pupeny v úžlabí
+ *  listů a vrcholový pupen na kratší přírůstek, než jaký sám udělal. */
+function lateBudSet(s: State, sp: Species, year: number) {
+  for (const sh of s.shoots) {
+    if (sh.dead || sh.kind !== 'shoot' || sh.bornYear !== year || sh.dormant !== undefined) continue;
+    sh.dormant = nodesOf(sp, sh);
+    if (!sh.tipCut && !sh.buds.some((b) => b.t > 0.98)) {
+      const len = clamp(sh.targetLen * 0.8, P.minShoot * 2, sh.order === 0 ? sp.maxLeader : sp.maxLateral);
+      addBud(s, sh, 'terminal', 1, leafyTerminal(s, sp, sh, year * 131 + 10), len, sh.order, true);
+    }
+  }
+}
+
 /** Stárnutí krátkých výhonů: po několika letech na dřevě zbude jen pár spících pupenů (nebo žádný). */
 function ageSpurs(s: State, sp: Species) {
   const year = yearOf(s.day);
@@ -496,10 +510,12 @@ export function updateDeath(s: State) {
   const alive = new Uint8Array(n);
   const year = yearOf(s.day);
   const leafy = speciesOf(s).kind === 'leafy'; // listnáč žije i bez listí, dokud má živé pupeny
+  // v11: suché listí, které drží přes zimu (habr, buk, dub), výhon naživu nedrží – jinak by uschl až na jaře
+  const dry = s.rules >= 11 && leafy && (doyOf(s.day) >= speciesOf(s).fallDoy || s.gdd < speciesOf(s).flushGdd);
   for (let i = n - 1; i >= 0; i--) {
     const sh = s.shoots[i];
     if (sh.dead) continue;
-    if (alive[i] || sh.buds.length || (sh.needleCount > 0 && sh.needleLive > 0.02) || (leafy && (sh.dormant ?? 0) > 0)) {
+    if (alive[i] || sh.buds.length || (!dry && sh.needleCount > 0 && sh.needleLive > 0.02) || (leafy && (sh.dormant ?? 0) > 0)) {
       alive[i] = 1;
       if (sh.parent >= 0) alive[idx.get(sh.parent)!] = 1;
     } else {
@@ -695,6 +711,12 @@ export function step(s: State) {
 
   const setNow = year === 0 ? doy >= P.seedlingBudSetDoy : s.gdd >= (leafy ? sp.budSetGdd : P.budSetGdd);
   if (s.budSetYear < year && setNow) { runBudSet(s); updateDeath(s); }
+  if (s.rules >= 11 && leafy) {
+    // v11: výhonky z druhého rašení si pupeny založí na podzim; co po opadu listí nemá list ani pupen, odumře
+    // hned – ne až při nejbližším zásahu hráče, kdy to vypadalo, že větvičku zabil řez o kus vedle
+    if (doy === sp.colorDoy) lateBudSet(s, sp, year);
+    if (doy === sp.fallDoy + 1) updateDeath(s);
+  }
   if (doy === P.shedEndDoy) {
     for (const sh of s.shoots) sh.shedding = false;
     if (leafy) ageSpurs(s, sp);
