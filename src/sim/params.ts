@@ -1,0 +1,262 @@
+// Druhové parametry: borovice lesní (Pinus sylvestris L.).
+// Každý další druh = další takový soubor. Zdroje a zdůvodnění hodnot: docs/KONCEPT.md.
+
+import type { PotType } from './types';
+
+export const P = {
+  // --- klima a fenologie (teplotní suma nad +5 °C od 1. ledna) ---
+  baseTemp: 5,
+  germGdd: 60, // klíčení semene po výsevu
+  flushGdd: 60, // začátek prodlužování svíček (~ 2. polovina dubna)
+  elongSpanGdd: 490, // délka prodlužování; konec ~ 550 d.d. (~ 2. polovina června)
+  needleStartGdd: 110, // jehlice začínají růst téměř současně s výhonem
+  needleSpanGdd: 900, // a rostou do přelomu července/srpna
+  budSetGdd: 800, // zakládání pupenů na příští rok (červenec)
+  budGrowGdd: 600, // jak dlouho pupen dorůstá
+  cambiumStartGdd: 150,
+  cambiumEndGdd: 1300,
+  shedStartDoy: 250, // opad nejstarších jehlic: září–říjen
+  shedEndDoy: 300,
+  needleRetention: 3, // jehlice vydrží 3 vegetační sezóny (stř. Evropa 2–4)
+
+  // --- semenáček ---
+  hypocotylLen: 2.4,
+  hypocotylDays: 14,
+  epicotylDelayDays: 18,
+  epicotylLen: 2.2,
+  epicotylGddSpan: 1000,
+  seedlingBudSetDoy: 235,
+  juvenileEfficiency: 2.5, // primární jehlice a dělohy jsou na jednotku plochy výkonnější
+
+  // --- alokace růstu (Borchert–Honda / Palubicki 2009) ---
+  growthPerFoliage: 2.0, // cm nového výhonu na jednotku osluněného olistění
+  lambdaLateral: 0.22, // apikální kontrola: váha bočních os proti hlavní
+  sinkExp: 0.95, // síla jímky ~ Q^exp; <1 tlumí převahu mohutných spodních větví nad terminálem
+  juvenileScale: 60, // olistění, při kterém je mladistvá výhoda poloviční
+  branchAutonomy: 0.5, // pravidla v3: podíl rozpočtu, který zůstává ve větvi, jež ho vyrobila
+  weightPinch: 0.7, // pupeny po zaštípnutí jsou slabší jímka než terminál
+  weightBack: 0.3, // zpětné pupeny na starším dřevě
+  whorlRatioTrunk: 0.55, // délka bočního výhonu přeslenu / délka terminálu
+  whorlRatioBranch: 0.6,
+  minShoot: 0.4, // slabší pupen se nezaloží (cm)
+  maxLeader: 60,
+  maxLateral: 35,
+  maxBackShoot: 5,
+  ageEff: [1, 0.8, 0.5], // účinnost jehlic podle stáří ročníku
+
+  // --- světlo (voxelová stínová mřížka) ---
+  voxelMin: 2.5,
+  voxelPerHeight: 22,
+  shadeK: 0.3,
+  shadeDecay: 0.7,
+  shadeLayers: 4,
+  lightDeath: 0.08, // pod touto hodnotou výhon nezakládá pupeny a shazuje jehlice
+
+  // --- jehlice ---
+  bareBase: 0.1, // spodních 10 % přírůstku je bez jehlic
+  needleLenMin: 2.0, // cm; slabé výhony
+  needleLenGain: 3.5, // cm; přídavek u silných výhonů (celkem až ~5,5 cm)
+  needleLenScale: 8, // cm délky výhonu, při které je získáno ~63 % přídavku
+
+  // --- tloušťkový růst (Presslerův zákon: přírůst plochy letokruhu ~ olistění nad místem) ---
+  areaPerFoliage: 0.0035, // cm² za rok na jednotku olistění
+  shootRadius0: 0.07, // cm
+  shootRadiusPerLen: 0.006,
+
+  // --- kořeny a přesazování ---
+  rootPerLiter: 40, // kolik kořenů (v jednotkách olistění, které uživí) se vejde do litru substrátu
+  rootGrowth: 0.35, // přírůst kořenů za rok na jednotku olistění (zpomaluje, jak se nádoba plní)
+  rootBoundStart: 0.75, // od tohoto zaplnění nádoby růst slábne
+  rootBoundFull: 1.6, // při tomto zaplnění je růst na minimu
+  rootBoundMin: 0.3,
+  rootMaxFill: 1.8,
+  // --- pravidla v9: nádoba růst opravdu omezuje (viz docs/KONCEPT.md)
+  rootCurve9: [[0.5, 1], [0.7, 0.9], [1.0, 0.55], [1.5, 0.15], [2.0, 0.03]] as [number, number][], // [zaplnění, podíl růstu]
+  rootMaxFill9: 2.2, // kořeny mohou nádobu přeplnit víc než dřív
+  rootTurnover9: 0.2, // roční odumírání kořenů – díky němu se přerostlý strom ustálí, místo aby se zhroutil
+  thickFloor9: 0.1, // tloustnutí = thickFloor + (1 - thickFloor) × podíl růstu
+  leaderPow9: 1.5, leaderFloor9: 0.03, // nejdelší možný výhon klesá strměji než celkový růst
+  leafShrink9: 0.2, // o kolik jsou listy a jehlice menší při úplném zastavení růstu
+  boundFrom9: 1.2, boundFull9: 1.5, // počítadlo let v přerostlé nádobě běží od 120 %, naplno od 150 %
+  boundGrace9: 3, boundSpan9: 7, // 3 roky jen stagnace, dalších 7 let chřadnutí až k úhynu
+  diebackPerYear9: 0.06, diebackMax9: 0.4, // podíl nejslabších koncových větviček, který za rok odumře
+  // --- pravidla v10: stín v koruně a velikost listů (viz docs/KONCEPT.md)
+  leafSizeMin10: 0.45, leafSizeLen10: 8, // délka listu = 45–100 % plné podle délky výhonu (čím víc drobných výhonů, tím menší listy)
+  reflushLeaf10: 0.75, // listy druhého rašení (po zaštípnutí nebo defoliaci) jsou menší
+  leafComp10: 1.15, // vyrovnání: menší listy by jinak neřezaným stromům ubraly sílu
+  leafK10: 0.7, // extinkční koeficient světla v olistění (bukové porosty 0,68–0,83)
+  leafCell10: 2.5, leafLayer10: 1, // jemná mřížka pro světlo u listů: vodorovně 2,5 cm, svisle 1 cm (u velkých stromů hrubší)
+  leafCellPerHeight10: 80, leafLayerPerHeight10: 200,
+  leafAreaPerUnit10: 9, // cm² listové plochy na jednotku olistění
+  shadeCheckDays10: 14, shadeDropDays10: 16, // jak často se stín vyhodnocuje a jak dlouho zastíněný list žloutne, než opadne
+  defolStress10: 0.25, // stres z odstranění všech listů (úměrně odstraněnému podílu)
+  repotBaseStress: 0.1, // stres ze samotného přesazení
+  repotPruneStress: 1.0, // stres na jednotku odstraněných kořenů
+  stressGrowthLoss: 0.7, // o kolik stres 1,0 sníží růstový rozpočet
+  stressDecay: 0.75, // podíl stresu, který odezní za vegetační sezónu
+
+  // --- drátování ---
+  wireMinSeasons: 1.0, // tenká větvička drží tvar po jedné sezóně tloustnutí
+  wireSeasonsPerCm: 1.0, // + sezóna na každý cm poloměru
+  wireBite: 1.45, // poměr průřezu, při kterém drát zarůstá (poloměr +20 %)
+  bendK: 28, // bezpečný ohyb ve stupních ≈ bendK / (poloměr cm + 0,25)
+  bendMin: 8,
+  bendMax: 80,
+  bendArcMax: 150,
+  bendStrain: 0.05, // oblouk: největší poměr poloměru větve k poloměru ohybu
+  // pravidla v6: tolerantnější drátování (i silnější větve jdou ohnout, riziko roste pomaleji)
+  bendK6: 45, bendMin6: 15, bendStrain6: 0.07, bendSpringFactor6: 0.8, bendRamp6: 1.0,
+  // pravidla v7: vrcholová dominance olistěných druhů (váha vrcholu podle výšky ve stromě)
+  apicalLow: 0.5, apicalHigh: 1.6, apicalExp: 1.5, leaderShare: 0.02,
+  bendSpringFactor: 0.6, // v době jarního růstu se kůra snadno odlupuje – menší bezpečný ohyb
+
+  // --- prověšování větví vahou ---
+  sagK: 0.02, // stupně za rok ≈ sagK · olistění větve · vodorovnost / průřez
+  sagMaxPerYear: 2.5,
+  sagFloor: 0.02, // větev se neprověsí pod tento sklon (složka y směru)
+
+  // --- napřimování náhradního vrcholu (pravidla v3) ---
+  heirUpK: 14, // stupně za rok ≈ heirUpK / (1 + 6 · poloměr cm): tenká větev se zvedne rychle, silná pomalu
+  heirUpMin: 1.5,
+  heirUpMax: 10,
+  heirUpDone: 0.88, // až sem (složka y směru) se dřevo zvedá; zbytek ohybu zůstane jako pohyb kmene
+
+  // --- šištice ---
+  coneMinAge: 8, // strom začíná plodit kolem 8.–15. roku
+  maleChance: 0.3, // slabší boční letorosty nesou samčí šištice
+  femaleChance: 0.07, // silné letorosty nesou šišky
+
+  maxShoots: 7000,
+};
+
+/** Typ stanoviště: growth = jak dobře substrát strom živí (mělká miska hůř než hluboký kontejner),
+ *  needle = vliv na délku jehlic. */
+export const POT: Record<PotType, { name: string; growth: number; needle: number }> = {
+  ground: { name: 'Volná půda', growth: 1.0, needle: 1.0 },
+  training: { name: 'Pěstební nádoba', growth: 0.9, needle: 0.9 },
+  bonsai: { name: 'Bonsajová miska', growth: 0.75, needle: 0.72 },
+};
+/** Účinnost stanoviště v původních pravidlech (v1): miska strom živila výrazně hůř. */
+export const POT_GROWTH_V1: Record<PotType, number> = { ground: 1.0, training: 0.85, bonsai: 0.5 };
+export const RULES_LATEST = 12;
+
+/** Katalog nádob. Velikost se sama nemění – nádobu volí pěstitel při přesazení.
+ *  Objem v litrech určuje, kolik kořenů se vejde (P.rootPerLiter); rozměry v cm slouží vykreslení:
+ *  kulatá = průměr a × výška h, oválná a obdélníková = šířka a × hloubka b × výška h. */
+export interface PotSpec {
+  id: string; type: PotType; name: string; liters: number;
+  shape: 'ground' | 'round' | 'oval' | 'rect'; a: number; b: number; h: number; color: number; glaze: boolean;
+  /** tvar stěny: straight rovná, taper zúžená ke dnu, flared rozevřená s vyhrnutým okrajem, belly vypouklá,
+   *  bowl zaoblené dno, banded rovná s pásky, cascade vysoká, nursery plastový květináč */
+  profile?: 'straight' | 'taper' | 'flared' | 'belly' | 'bowl' | 'banded' | 'cascade' | 'nursery';
+  corner?: number; // zaoblení půdorysu: 2 = ovál, 3–5 = zaoblený obdélník, 10+ = ostré rohy
+  lobes?: number; // laločnatý půdorys (mokko = 4)
+  feet?: 'block' | 'cloud' | 'none';
+  /** bonsajová miska: tvar (POT_FAMILIES) a zda je v nabídce přesazení (starší kusy z katalogu jen kvůli uloženým hrám) */
+  family?: string;
+  menu?: boolean;
+}
+export const POTS: PotSpec[] = [
+  { id: 'ground', type: 'ground', name: 'Volná půda (záhon)', liters: 0, shape: 'ground', a: 0, b: 0, h: 0, color: 0, glaze: false },
+  { id: 't05', type: 'training', name: 'Sadbovací kelímek 0,5 l', liters: 0.5, shape: 'round', a: 10, b: 10, h: 9, color: 0x2b2b2d, glaze: false },
+  { id: 't2', type: 'training', name: 'Květináč terakota 2 l', liters: 2, shape: 'round', a: 17, b: 17, h: 13, color: 0xa5583a, glaze: false },
+  { id: 't5', type: 'training', name: 'Květináč terakota 5 l', liters: 5, shape: 'round', a: 23, b: 23, h: 18, color: 0xa5583a, glaze: false },
+  { id: 't10', type: 'training', name: 'Kontejner 10 l', liters: 10, shape: 'round', a: 29, b: 29, h: 22, color: 0x2b2b2d, glaze: false },
+  { id: 't25', type: 'training', name: 'Kontejner 25 l', liters: 25, shape: 'round', a: 39, b: 39, h: 29, color: 0x2b2b2d, glaze: false },
+  { id: 'b02', type: 'bonsai', name: 'Kulatá miska mame 0,2 l', liters: 0.2, shape: 'round', a: 11, b: 11, h: 3.5, color: 0x6b4634, glaze: false },
+  { id: 'b07', type: 'bonsai', name: 'Oválná miska 0,7 l, modrá glazura', liters: 0.7, shape: 'oval', a: 20, b: 15, h: 4, color: 0x3d5266, glaze: true },
+  { id: 'b15', type: 'bonsai', name: 'Obdélníková miska 1,5 l, neglazovaná', liters: 1.5, shape: 'rect', a: 27, b: 19, h: 5, color: 0x4f3a30, glaze: false },
+  { id: 'b25', type: 'bonsai', name: 'Obdélníková miska 2,5 l, neglazovaná', liters: 2.5, shape: 'rect', a: 34, b: 24, h: 5.5, color: 0x5a3f33, glaze: false },
+  { id: 'b3', type: 'bonsai', name: 'Oválná miska 3 l, zelená glazura', liters: 3, shape: 'oval', a: 36, b: 27, h: 6, color: 0x5d7262, glaze: true },
+  { id: 'b6', type: 'bonsai', name: 'Obdélníková miska 6 l, neglazovaná', liters: 6, shape: 'rect', a: 46, b: 33, h: 7.5, color: 0x7a4a36, glaze: false },
+  { id: 'b12', type: 'bonsai', name: 'Hluboká obdélníková miska 12 l', liters: 12, shape: 'rect', a: 52, b: 38, h: 11, color: 0x3c3f44, glaze: true },
+  // další tvary
+  { id: 'b08d', type: 'bonsai', name: 'Kulatá bubnová miska 0,8 l', liters: 0.8, shape: 'round', a: 16, b: 16, h: 6, color: 0x5a4336, glaze: false, profile: 'belly' },
+  { id: 'b10o', type: 'bonsai', name: 'Oválná vypouklá miska 1 l', liters: 1, shape: 'oval', a: 24, b: 18, h: 5, color: 0x5e4a3e, glaze: false, profile: 'belly' },
+  { id: 'b18m', type: 'bonsai', name: 'Mokko (čtyřlaločná) miska 1,8 l', liters: 1.8, shape: 'oval', a: 26, b: 20, h: 6, color: 0x5b4a40, glaze: false, profile: 'bowl', lobes: 4 },
+  { id: 'b20r', type: 'bonsai', name: 'Obdélníková miska se zaoblenými rohy 2 l', liters: 2, shape: 'rect', a: 30, b: 22, h: 5.5, color: 0x5a4034, glaze: false, profile: 'bowl', corner: 4 },
+  { id: 'b22f', type: 'bonsai', name: 'Obdélníková rozevřená miska 2,2 l', liters: 2.2, shape: 'rect', a: 30, b: 21, h: 6.5, color: 0x77634c, glaze: false, profile: 'flared', corner: 7 },
+  { id: 'b35s', type: 'bonsai', name: 'Čtvercová rozevřená miska 3,5 l', liters: 3.5, shape: 'rect', a: 20, b: 20, h: 12, color: 0x5f4636, glaze: false, profile: 'flared', corner: 8 },
+  { id: 'b40d', type: 'bonsai', name: 'Oválná miska s pásky 4 l', liters: 4, shape: 'oval', a: 40, b: 30, h: 7, color: 0x5c4338, glaze: false, profile: 'banded' },
+  { id: 'b50c', type: 'bonsai', name: 'Kaskádová vysoká miska 5 l', liters: 5, shape: 'rect', a: 16, b: 16, h: 26, color: 0x9a4a2c, glaze: false, profile: 'cascade', corner: 9 },
+  { id: 'b80b', type: 'bonsai', name: 'Obdélníková miska s pásky 8 l', liters: 8, shape: 'rect', a: 44, b: 32, h: 10, color: 0x6a4034, glaze: false, profile: 'banded', feet: 'cloud' },
+];
+/** Bonsajové misky v nabídce: nejdřív se volí objem, pak tvar. Každý tvar se vyrábí v několika objemech;
+ *  rozměry se odvodí z předlohy (ref) podle třetí odmocniny poměru objemů. Starší misky z katalogu, které do
+ *  mřížky objemů zapadnou, se použijí beze změny – uložené hry tak kreslí i počítají stejně. */
+export interface PotFamily { id: string; name: string; ref: string; min: number; max: number; color?: number; glaze?: boolean }
+export const POT_VOLUMES = [0.2, 0.4, 0.7, 1, 1.5, 2.5, 4, 6, 10, 15];
+export const POT_FAMILIES: PotFamily[] = [
+  { id: 'rect', name: 'Obdélníková miska', ref: 'b15', min: 0.4, max: 15 },
+  { id: 'rectr', name: 'Obdélníková se zaoblenými rohy', ref: 'b20r', min: 0.7, max: 6 },
+  { id: 'rectf', name: 'Obdélníková rozevřená', ref: 'b22f', min: 0.7, max: 10 },
+  { id: 'rectband', name: 'Obdélníková s pásky na nožkách', ref: 'b80b', min: 2.5, max: 15 },
+  { id: 'deep', name: 'Hluboká obdélníková, glazovaná', ref: 'b12', min: 4, max: 15 },
+  { id: 'oval', name: 'Oválná miska', ref: 'b07', min: 0.4, max: 10, color: 0x5b4536, glaze: false },
+  { id: 'ovalb', name: 'Oválná vypouklá', ref: 'b10o', min: 0.4, max: 4 },
+  { id: 'ovalband', name: 'Oválná s pásky', ref: 'b40d', min: 1.5, max: 10 },
+  { id: 'mokko', name: 'Mokko (čtyřlaločná)', ref: 'b18m', min: 0.7, max: 6 },
+  { id: 'mame', name: 'Kulatá mělká (mame)', ref: 'b02', min: 0.2, max: 1 },
+  { id: 'drum', name: 'Kulatá bubnová', ref: 'b08d', min: 0.4, max: 4 },
+  { id: 'square', name: 'Čtvercová rozevřená', ref: 'b35s', min: 1, max: 6 },
+  { id: 'cascade', name: 'Kaskádová vysoká', ref: 'b50c', min: 1, max: 10 },
+];
+{
+  // starší misky z katalogu: ke kterému tvaru patří
+  const legacy: Record<string, string> = { b02: 'mame', b07: 'oval', b15: 'rect', b25: 'rect', b3: 'oval', b6: 'rect', b12: 'deep', b08d: 'drum', b10o: 'ovalb', b18m: 'mokko', b20r: 'rectr', b22f: 'rectf', b35s: 'square', b40d: 'ovalband', b50c: 'cascade', b80b: 'rectband' };
+  for (const p of POTS) if (legacy[p.id]) p.family = legacy[p.id];
+  for (const p of POTS) if (p.type === 'training') p.menu = true;
+  const round = (x: number, q: number) => Math.round(x / q) * q;
+  for (const f of POT_FAMILIES) {
+    const ref = POTS.find((p) => p.id === f.ref)!;
+    for (const L of POT_VOLUMES) {
+      if (L < f.min || L > f.max) continue;
+      const old = POTS.find((p) => p.family === f.id && p.liters === L);
+      if (old) { old.menu = true; continue; }
+      const k = Math.cbrt(L / ref.liters);
+      POTS.push({
+        ...ref, id: `b-${f.id}-${L}`, name: `${f.name} ${String(L).replace('.', ',')} l`, liters: L, family: f.id, menu: true,
+        a: round(ref.a * k, 0.5), b: round(ref.b * k, 0.5), h: round(ref.h * k, 0.25), color: f.color ?? ref.color, glaze: f.glaze ?? ref.glaze,
+      });
+    }
+  }
+}
+/** Bonsajová miska v nabídce daného tvaru a objemu. */
+export const potOf = (family: string, liters: number) => POTS.find((p) => p.menu && p.family === family && p.liters === liters);
+export const familyOf = (id: string | undefined) => POT_FAMILIES.find((f) => f.id === id);
+
+/** Barvy misek: neglazovaná kamenina a běžné glazury. '' = barva z katalogu. */
+export interface Glaze { id: string; name: string; color: number; glossy: boolean }
+export const GLAZES: Glaze[] = [
+  { id: '', name: 'Původní barva misky', color: 0, glossy: false },
+  { id: 'brown', name: 'Neglazovaná hnědá', color: 0x5a3f33, glossy: false },
+  { id: 'red', name: 'Neglazovaná červená (terakota)', color: 0x74402e, glossy: false },
+  { id: 'grey', name: 'Neglazovaná šedá', color: 0x5b5a57, glossy: false },
+  { id: 'cream', name: 'Krémová glazura', color: 0xb5a98a, glossy: true },
+  { id: 'blue', name: 'Modrá glazura (kobalt)', color: 0x1f3357, glossy: true },
+  { id: 'sky', name: 'Světle modrá glazura', color: 0x56758c, glossy: true },
+  { id: 'green', name: 'Zelená glazura (celadon)', color: 0x4d6b57, glossy: true },
+  { id: 'oxblood', name: 'Tmavě červená glazura', color: 0x4a1512, glossy: true },
+  { id: 'ochre', name: 'Okrová glazura', color: 0x8a6426, glossy: true },
+  { id: 'black', name: 'Černá glazura', color: 0x1c1c1f, glossy: true },
+  { id: 'white', name: 'Bílá glazura', color: 0xc9c6bd, glossy: true },
+];
+/** Plevel v nádobě (pravidla v12). load = jakou část kapacity nádoby pro kořeny zabere dorostlá rostlina,
+ *  gdd = teplotní suma do plné velikosti, w = podíl mezi náletem, variants = počet tvarů v src/weeds.json. */
+export type WeedKind = 'dandelion' | 'grass' | 'celandine' | 'nettle';
+export const WEEDS: Record<WeedKind, { name: string; load: number; gdd: number; w: number; size: number; winter: number }> = {
+  dandelion: { name: 'Pampeliška', load: 0.045, gdd: 2200, w: 0.34, size: 9, winter: 0.85 },
+  grass: { name: 'Trs trávy', load: 0.05, gdd: 1600, w: 0.3, size: 11, winter: 0.7 },
+  celandine: { name: 'Orsej', load: 0.03, gdd: 900, w: 0.2, size: 8, winter: 0.35 },
+  nettle: { name: 'Kopřiva', load: 0.035, gdd: 1400, w: 0.16, size: 7, winter: 0.5 },
+};
+export const WEED_RATE = 0.9; // náletů za rok na odmocninu z plochy substrátu v dm² (miska 27×19 cm ≈ 2 za rok)
+export const WEED_MAX = 8;
+
+export const potById = (id: string | undefined): PotSpec => POTS.find((p) => p.id === id) ?? POTS[1];
+/** Výchozí nádoba pro daný typ (starší uložené hry znají jen typ). */
+export const defaultPotId = (type: PotType) => (type === 'ground' ? 'ground' : type === 'training' ? 't5' : 'b15');
+export const START_POT = 't05';
+
+export const START_DOY = 90; // výsev 1. dubna
+export const MAX_YEARS = 30;
