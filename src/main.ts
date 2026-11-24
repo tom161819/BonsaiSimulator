@@ -5,6 +5,8 @@ import { TreeView, Pick, wireGauge } from './render/view';
 import { GLAZES, P, POT, POTS, POT_FAMILIES, POT_VOLUMES, MAX_YEARS, RULES_LATEST, WEEDS, familyOf, potById, potOf } from './sim/params';
 import type { PotSpec } from './sim/params';
 import { createPicker, uiZoom } from './picker';
+import { createBackend, czError, shrinkThumb, type CloudTree } from './online';
+import { initOnline } from './onlineUi';
 import { BACKDROPS, TABLES, loadSettings, saveSettings } from './scenery';
 import type { Quality } from './scenery';
 import { MONTHS, dateOf } from './sim/climate';
@@ -64,6 +66,7 @@ function setThemeAttr(mode: ThemeMode) {
 setThemeAttr(themeMode);
 hostWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 const view = new TreeView($<HTMLCanvasElement>('scene'));
+const online = createBackend(); // null = hra bez serveru (stromy jen v prohlížeči)
 
 function start(save: Save | null) {
   tl = new Timeline(save?.seed ?? Math.floor(Math.random() * 1e9), save?.actions ?? [], save ? save.rules ?? 1 : RULES_LATEST, save?.species ?? 'pine');
@@ -969,7 +972,7 @@ function applyUiScale() {
 }
 
 keyHints = createKeyHints($('keys'), (t) => {
-  if (repotOpen || !$('chooser').hidden || !$('shelf').hidden) return false;
+  if (repotOpen || !$('chooser').hidden || !$('shelf').hidden || !$('expo').hidden) return false;
   if (t === 'leaf' && $<HTMLButtonElement>('tool-leaf').disabled) { flash('Odstraňování listů je až v pravidlech v10.'); return false; }
   setTool(t);
   return true;
@@ -1056,9 +1059,22 @@ function saveShelf(list: Kept[]): boolean {
 }
 function syncShelfBtn() { const n = loadShelf().length; $('shelfBtn').textContent = n ? `Moje sbírka (${n})` : 'Moje sbírka'; }
 
-$('keep').onclick = () => {
+$('keep').onclick = async () => {
   const s = tl.state;
   if (s.stage === 'seed') { flash('Semínko ještě nevyklíčilo – do sbírky přidejte až strom.'); return; }
+  if (online?.user()) {
+    // přihlášený hráč: strom se uloží do účtu (náhled jako WebP)
+    const btn = $<HTMLButtonElement>('keep');
+    btn.disabled = true;
+    try {
+      const thumb = await shrinkThumb(view.capture());
+      await online.saveTree({ name: `${speciesOf(s).name} · ${yearOf(s.day) + 1}. rok`, species: tl.species, seed: tl.seed, rules: tl.rules, day: s.day, actions: tl.actions.filter((a) => a.day <= s.day), thumb, height: stats(s).height });
+      flash('Strom je uložený ve vašem účtu. Ve sbírce ho můžete i vystavit.');
+      onlineUi.refreshStats();
+    } catch (e) { flash(`Do účtu se strom neuložil: ${czError(e)}`); }
+    btn.disabled = false;
+    return;
+  }
   const list = loadShelf();
   const st = stats(s);
   list.push({
@@ -1147,25 +1163,54 @@ function renderSamples() {
 }
 $('samplesBtn').onclick = () => { playing = false; renderSamples(); $('shelf').hidden = false; refresh(); };
 
-function renderShelf() {
+/** Strom ve sbírce – z prohlížeče (local) nebo z účtu (cloud). */
+interface ShelfEntry { key: string; name: string; thumb: string | null; species: string; seed: number; rules: number; day: number; actions: Action[]; height: number; cloud?: CloudTree }
+let shelfToken = 0;
+async function renderShelf() {
   $('shelfTitle').textContent = 'Moje sbírka';
-  const list = loadShelf();
-  $('shelfEmpty').hidden = list.length > 0;
-  $('shelfCount').textContent = list.length ? `${list.length} ${list.length === 1 ? 'strom' : list.length < 5 ? 'stromy' : 'stromů'}` : '';
+  const token = ++shelfToken;
+  const user = online?.user() ?? null;
+  let entries: ShelfEntry[];
+  const scores = new Map<string, { votes: number; avg: number | null }>();
+  if (user) {
+    $('shelfCount').textContent = 'načítám z účtu…';
+    try {
+      const list = await online!.myTrees();
+      if (list.some((t) => t.exhibitedAt)) for (const e of await online!.exhibition()) scores.set(e.id, { votes: e.votes, avg: e.avg });
+      entries = list.map((t) => ({ key: t.id, name: t.name, thumb: t.thumb, species: t.species, seed: t.seed, rules: t.rules, day: t.day, actions: t.actions, height: t.height, cloud: t }));
+    } catch (e) {
+      if (token !== shelfToken) return;
+      $('shelfCount').textContent = '';
+      $('shelfEmpty').hidden = false;
+      $('shelfEmpty').textContent = `Sbírku z účtu se nepodařilo načíst: ${czError(e)}`;
+      layoutBench([]);
+      return;
+    }
+  } else entries = loadShelf().map((k) => ({ key: k.id, name: k.name, thumb: k.thumb, species: k.species ?? 'pine', seed: k.seed, rules: k.rules ?? 1, day: k.day, actions: k.actions, height: k.height }));
+  if (token !== shelfToken) return;
+  $('shelfEmpty').hidden = entries.length > 0;
+  $('shelfEmpty').textContent = user ? 'Ve vašem účtu zatím nejsou žádné stromy. Tlačítkem „Přidat do sbírky“ uložíte strom ve stavu, v jakém právě je.' : 'Sbírka je zatím prázdná. Tlačítkem „Přidat do sbírky“ uložíte strom ve stavu, v jakém právě je.';
+  const n = entries.length;
+  $('shelfCount').textContent = n ? `${n} ${n === 1 ? 'strom' : n < 5 ? 'stromy' : 'stromů'}${user ? ' v účtu' : ' v prohlížeči'}` : '';
   const items: BenchItem[] = [];
-  for (const k of list) {
+  for (const k of entries) {
     const el = document.createElement('div');
     el.className = 'kept';
     const img = document.createElement('img');
-    img.src = k.thumb; img.alt = k.name;
+    if (k.thumb) img.src = k.thumb;
+    img.alt = k.name;
     const card = document.createElement('div');
     card.className = 'card';
     const name = document.createElement('input');
-    name.value = k.name; name.id = `kept-${k.id}`; name.setAttribute('aria-label', 'Název stromu');
-    name.onchange = () => { const l = loadShelf(); const x = l.find((y) => y.id === k.id); if (x) { x.name = name.value.trim() || k.name; saveShelf(l); } };
+    name.value = k.name; name.id = `kept-${k.key}`; name.setAttribute('aria-label', 'Název stromu'); name.maxLength = 60;
+    name.onchange = async () => {
+      const v = name.value.trim() || k.name;
+      if (k.cloud) { try { await online!.renameTree(k.key, v); } catch (e) { flash(`Název se neuložil: ${czError(e)}`); } }
+      else { const l = loadShelf(); const x = l.find((y) => y.id === k.key); if (x) { x.name = v; saveShelf(l); } }
+    };
     const info = document.createElement('small');
     const na = k.actions.length;
-    info.textContent = `${fmtDate(k.day)} · ${cm(k.height)} · ${na} ${na === 1 ? 'zásah' : na >= 2 && na <= 4 ? 'zásahy' : 'zásahů'} · pravidla v${k.rules ?? 1}`;
+    info.textContent = `${fmtDate(k.day)} · ${cm(k.height)} · ${na} ${na === 1 ? 'zásah' : na >= 2 && na <= 4 ? 'zásahy' : 'zásahů'} · pravidla v${k.rules}`;
     const row = document.createElement('div');
     row.className = 'row';
     const open = document.createElement('button');
@@ -1174,19 +1219,43 @@ function renderShelf() {
     open.onclick = () => {
       if (Date.now() - armedOpen > 10000) { armedOpen = Date.now(); open.textContent = 'Nahradit rozpracovaný strom?'; return; }
       lastLogKey = '';
-      start({ seed: k.seed, actions: k.actions, day: k.day, rules: k.rules ?? 1, species: k.species ?? 'pine' });
+      start({ seed: k.seed, actions: k.actions, day: k.day, rules: k.rules, species: k.species });
       buildTrack(); persist();
       $('shelf').hidden = true;
     };
+    row.append(open);
+    if (k.cloud) {
+      // výstava: strom ze sbírky jde vystavit a zase stáhnout
+      const t = k.cloud, sc = scores.get(t.id);
+      if (t.exhibitedAt) {
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = sc && sc.votes ? `Na výstavě · ${String(sc.avg ?? 0).replace('.', ',')} ★ (${sc.votes})` : 'Na výstavě';
+        el.appendChild(badge);
+      }
+      const ex = document.createElement('button');
+      ex.textContent = t.exhibitedAt ? 'Stáhnout z výstavy' : 'Vystavit';
+      ex.title = t.exhibitedAt ? 'Strom zmizí z výstavy; získané hvězdičky vám zůstanou' : 'Pošle strom na výstavu, kde ho ostatní hráči ohodnotí';
+      ex.onclick = async () => {
+        ex.disabled = true;
+        try {
+          await online!.setExhibited(t.id, !t.exhibitedAt);
+          flash(t.exhibitedAt ? 'Strom je stažený z výstavy.' : 'Strom je na výstavě. Ostatní hráči ho teď mohou hodnotit.');
+          onlineUi.refreshStats(); renderShelf();
+        } catch (e) { flash(czError(e)); ex.disabled = false; }
+      };
+      row.append(ex);
+    }
     const del = document.createElement('button');
     del.textContent = 'Odebrat';
     let armedDel = 0;
-    del.onclick = () => {
-      if (Date.now() - armedDel > 10000) { armedDel = Date.now(); del.textContent = 'Opravdu odebrat?'; return; }
-      saveShelf(loadShelf().filter((y) => y.id !== k.id));
+    del.onclick = async () => {
+      if (Date.now() - armedDel > 10000) { armedDel = Date.now(); del.textContent = k.cloud?.exhibitedAt ? 'Odebrat i z výstavy?' : 'Opravdu odebrat?'; return; }
+      if (k.cloud) { try { await online!.deleteTree(k.key); onlineUi.refreshStats(); } catch (e) { flash(czError(e)); return; } }
+      else saveShelf(loadShelf().filter((y) => y.id !== k.key));
       syncShelfBtn(); renderShelf();
     };
-    row.append(open, del);
+    row.append(del);
     card.append(name, info, row);
     el.append(img, placard((SPECIES[k.species as keyof typeof SPECIES] ?? SPECIES.pine).name));
     items.push({ tree: el, card });
@@ -1194,6 +1263,44 @@ function renderShelf() {
   layoutBench(items);
 }
 $('shelfBtn').onclick = () => { playing = false; renderShelf(); $('shelf').hidden = false; refresh(); };
+
+// ---- online: účet hráče, sbírka v cloudu, výstava (src/online.ts, src/onlineUi.ts)
+const onlineUi = initOnline(online, {
+  flash,
+  loadTree: (t, note) => {
+    lastLogKey = '';
+    start({ seed: t.seed, actions: t.actions, day: t.day, rules: t.rules, species: t.species });
+    buildTrack(); persist();
+    $('shelf').hidden = true;
+    flash(note);
+    refresh();
+  },
+  speciesName: (id) => (SPECIES[id as keyof typeof SPECIES] ?? SPECIES.pine).name,
+  fmtDate, cm,
+  localCount: () => loadShelf().length,
+  uploadLocal: async () => {
+    // stromy z prohlížeče se zkopírují do účtu (v prohlížeči zůstanou)
+    let n = 0;
+    for (const k of loadShelf()) {
+      await online!.saveTree({ name: k.name, species: k.species ?? 'pine', seed: k.seed, rules: k.rules ?? 1, day: k.day, actions: k.actions, thumb: await shrinkThumb(k.thumb), height: k.height });
+      n++;
+    }
+    return n;
+  },
+  userChanged: (u) => {
+    $('keep').title = u ? 'Uloží strom do vašeho účtu' : 'Uloží strom do sbírky v tomto prohlížeči';
+    if (!$('shelf').hidden && $('shelfTitle').textContent === 'Moje sbírka') renderShelf();
+  },
+  pause: () => { playing = false; },
+});
+$('expoBtn').hidden = !online;
+$('expoBtn').onclick = () => { playing = false; onlineUi.openExpo(); refresh(); };
+if (online?.kind === 'demo' && online._seed) {
+  // ukázka bez serveru: vzorové stromy jako vystavené stromy ukázkových hráčů, s několika hodnoceními
+  online._seed(SAMPLES.map((k, i) => ({ username: ['Ukázka-Jana', 'Ukázka-Petr', 'Ukázka-Eva'][i % 3], name: `${k.style}`, species: 'pine', seed: k.seed, rules: k.rules, day: k.day, actions: k.actions, thumb: THUMBS[k.id] || null, height: k.height })),
+    [[8, 9, 7, 10], [6, 7], [9, 9, 8], [5, 7, 6, 8, 7], []]);
+  flash('Ukázkový režim online části: účty a výstava běží jen v paměti této stránky.');
+}
 // přepínač verze pravidel: strom se přepočítá od semínka podle zvolených pravidel (zásahy zůstávají)
 $<HTMLSelectElement>('rules').onchange = () => {
   const rules = Number($<HTMLSelectElement>('rules').value);
@@ -1527,7 +1634,7 @@ function loop(now: number) {
       if (now - lastSave > 3000) { lastSave = now; persist(); }
     }
   }
-  if ($('shelf').hidden && $('chooser').hidden) view.frame(); // při prohlížení sbírky a výběru druhu scéna stojí
+  if ($('shelf').hidden && $('chooser').hidden && $('expo').hidden) view.frame(); // při prohlížení sbírky, výstavy a výběru druhu scéna stojí
   requestAnimationFrame(loop);
 }
 

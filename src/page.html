@@ -166,7 +166,7 @@
   .spCard button { align-self: flex-start; margin-top: auto; }
   #chooser header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto 12px; }
   #chooser header h1 { font-size: 22px; } #chooser header h1 i { display: inline; margin-left: 8px; }
-  #shelf header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto 8px; }
+  #shelf header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; max-width: 1400px; margin: 0 auto 14px; }
   #shelf header h1 { font-size: 22px; } #shelf header h1 i { display: inline; margin-left: 8px; }
   #shelfEmpty { max-width: 1100px; margin: 24px auto; color: var(--muted); }
   /* sbírka: plot z prken (assets/tex/fence.jpg), před ním mahagonové lavice (bench.jpg) se stromy */
@@ -178,7 +178,77 @@
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #shelf { background: linear-gradient(180deg, rgba(8, 12, 10, 0.55), rgba(8, 12, 10, 0.72)), url("tex/fence.jpg") center top / 620px auto repeat, #3a2e22; background-attachment: local; } }
   #shelf header { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
   #shelfEmpty { background: var(--panel); border-radius: 10px; padding: 10px 14px; }
-  #bench { --item: 220px; --pad: 58px; --treeH: 250px; --legW: 42px; display: flex; flex-direction: column; align-items: center; gap: 30px; max-width: 1100px; margin: 22px auto 0; }
+  /* sbírka a výstava: vlevo panel hráče, vpravo lavice (u výstavy ještě žebříčky) */
+  .shelfBody { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 18px; max-width: 1400px; margin: 0 auto; align-items: start; }
+  .expoBody { grid-template-columns: 260px minmax(0, 1fr) 300px; }
+  @media (max-width: 1100px) { .expoBody { grid-template-columns: 240px minmax(0, 1fr); } .expoBody .boards { grid-column: 1 / -1; } }
+  @media (max-width: 760px) { .shelfBody, .expoBody { grid-template-columns: minmax(0, 1fr); } }
+  .shelfMain { min-width: 0; }
+  .userCard { display: flex; flex-direction: column; gap: 10px; padding: 14px; position: sticky; top: 0; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .ucHead { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .ucAvatar { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font: 600 18px var(--display); color: var(--accent-fg); background: linear-gradient(140deg, color-mix(in srgb, var(--accent) 80%, #fff), var(--accent)); box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.15); }
+  .ucWho { display: flex; flex-direction: column; min-width: 0; }
+  .ucName { font: 600 16px var(--display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ucWho small { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ucText { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+  .ucStats { gap: 4px 10px; font-size: 13px; }
+  .ucStats dd { color: var(--hl, var(--accent)); font-weight: 600; }
+  .ucUpload { font-size: 12px; text-align: left; }
+  button.link { border: 0; background: none; padding: 0; min-height: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; font-size: inherit; }
+  #expo { position: absolute; inset: 0; z-index: 8; overflow-y: auto; zoom: var(--uis, 1); padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    background: linear-gradient(180deg, rgba(255, 246, 228, 0.06), rgba(30, 20, 10, 0.12) 60%, rgba(20, 14, 8, 0.38)), url("tex/fence.jpg") center top / 620px auto repeat, #b89770; background-attachment: local; }
+  :root[data-theme="dark"] #expo { background: linear-gradient(180deg, rgba(8, 12, 10, 0.55), rgba(8, 12, 10, 0.72)), url("tex/fence.jpg") center top / 620px auto repeat, #3a2e22; background-attachment: local; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #expo { background: linear-gradient(180deg, rgba(8, 12, 10, 0.55), rgba(8, 12, 10, 0.72)), url("tex/fence.jpg") center top / 620px auto repeat, #3a2e22; background-attachment: local; } }
+  #expo header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; max-width: 1400px; margin: 0 auto 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+  #expo header h1 { font-size: 22px; } #expo header h1 i { display: inline; margin-left: 8px; }
+  .expoMain { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  #expoEmpty { padding: 14px; margin: 0; }
+  #expoStage[hidden] { display: none; }
+  .stage { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: end; gap: 8px; }
+  .expoTree { margin: 0; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+  .expoTree img { width: min(100%, 420px); height: min(52vh, 480px); object-fit: contain; object-position: bottom; display: block; position: relative; z-index: 1; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.25)); }
+  .expoTree img.loading { opacity: 0.35; }
+  .expoTree .stand { width: min(100%, 460px); height: 46px; border-radius: 4px 4px 2px 2px; margin-top: -8px;
+    background: linear-gradient(rgba(255, 225, 190, 0.25), rgba(255, 210, 170, 0.06) 22%, rgba(0, 0, 0, 0.02) 24%, rgba(0, 0, 0, 0.32)), url("tex/bench.jpg") 0 0 / 420px auto;
+    box-shadow: 0 16px 20px -10px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 230, 200, 0.45); }
+  .expoNav { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; padding: 0; margin-bottom: 120px; background: var(--panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .expoNav svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .expoInfo { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
+  .expoHead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .expoHead b { font: 600 19px var(--display); } #expoPos { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  #expoMeta { color: var(--muted); font-size: 12.5px; }
+  #expoScore { font-weight: 600; color: var(--hl, var(--accent)); font-size: 13.5px; }
+  .stars { display: flex; gap: 2px; flex-wrap: wrap; }
+  .star { font-size: 26px; line-height: 1; padding: 2px 3px; min-height: 0; border: 0; background: none; color: color-mix(in srgb, var(--fg) 22%, transparent); transition: transform .12s ease, color .12s ease; }
+  .star.on { color: #e8a317; }
+  .star.hover { color: #f3bd3a; transform: scale(1.12); }
+  .star:disabled { cursor: default; opacity: 1; }
+  .stars:has(.star:disabled) .star:not(.on) { color: color-mix(in srgb, var(--fg) 14%, transparent); }
+  #expoNote { margin: 0; }
+  .boards { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .boards section { padding: 12px 14px; }
+  .boards ol { margin: 0; padding: 0; list-style: none; counter-reset: r; display: flex; flex-direction: column; gap: 2px; }
+  .boards li { counter-increment: r; display: flex; align-items: center; gap: 8px; }
+  .boards li::before { content: counter(r); flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; font-weight: 600; background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--muted); }
+  .boards li:nth-child(1)::before { background: #e8b923; color: #3b2a00; } .boards li:nth-child(2)::before { background: #c9cdd2; color: #24272b; } .boards li:nth-child(3)::before { background: #d08b4f; color: #2e1803; }
+  .boards li.empty { color: var(--muted); font-size: 12.5px; } .boards li.empty::before { display: none; }
+  .boardRow { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "n s" "w s"; column-gap: 8px; text-align: left; padding: 4px 6px; border: 0; background: none; min-height: 0; border-radius: 6px; font-size: 13px; }
+  button.boardRow:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .bName { grid-area: n; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bWho { grid-area: w; color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bScore { grid-area: s; align-self: center; font-weight: 600; color: #c98a0b; font-variant-numeric: tabular-nums; }
+  .modal { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(10, 16, 13, 0.45); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); padding: 16px; }
+  .modal[hidden] { display: none; }
+  #authForm { zoom: var(--uis, 1); width: min(380px, 100%); box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 18px; background: var(--panel-solid); box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5); animation: pickIn .14s ease-out; }
+  #authForm h1 { font-size: 20px; margin: 0; }
+  #authForm label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
+  #authForm label[hidden], #authTabs[hidden] { display: none; }
+  #authForm input { font: 500 14px var(--body); color: var(--fg); background: var(--panel-solid); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; }
+  #authForm input:focus-visible { border-color: var(--accent); }
+  #authMsg { margin: 0; min-height: 1.2em; } #authMsg.bad, .hint.bad { color: var(--danger); }
+  #authForm .row { justify-content: flex-start; } #authForgot { margin-left: auto; }
+  .kept .badge { position: absolute; z-index: 2; right: 6px; top: 6px; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: #e8b923; color: #3b2a00; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+  #bench { --item: 220px; --pad: 58px; --treeH: 250px; --legW: 42px; display: flex; flex-direction: column; align-items: center; gap: 30px; max-width: 1100px; margin: 4px auto 0; }
   #bench.narrow { --item: 150px; --pad: 30px; --treeH: 175px; --legW: 22px; }
   .bRow { position: relative; display: flex; flex-direction: column; max-width: 100%; }
   .bTrees, .bCards { display: flex; padding: 0 var(--pad); }
@@ -403,6 +473,7 @@
     <button id="keep">Přidat do sbírky</button>
     <button id="shelfBtn">Moje sbírka</button>
     <button id="samplesBtn">Vzorová sbírka</button>
+    <button id="expoBtn" title="Stromy hráčů, hodnocení a žebříčky">Výstava</button>
     <select id="rules" aria-label="Verze pravidel růstu" title="Verze pravidel růstu. v1 = původní; v2 = miska strom uživí, slabé výhony se větví, seříznutý vrchol nahradí větev; v3 = navíc soběstačné větve (spodní větve neodumírají kvůli silnému vrcholu); v6 = tolerantnější drátování; v7 = vrcholová dominance listnáčů a modřínu (strom roste hlavně nahoře, spodní patra méně obrůstají, zkrácený kmen vyžene nový vrchol); v8 = opakované drátování počítá jen ohyb navíc proti tvaru, který větev už drží; v9 = nádoba růst opravdu omezuje (přerostlý strom stagnuje a po letech chřadne, dokud ho nepřesadíte); v10 = na drobných výhonech jsou listy menší, zastíněné listy žloutnou a opadávají, nástroj Listy na prosvětlení; v11 = výhonky z druhého rašení po zaštípnutí si zakládají pupeny a v zimě neusychají; v12 = v nádobě roste plevel a bere kořenům místo.">
       <option value="12">Pravidla v12</option>
       <option value="11">Pravidla v11</option>
@@ -550,8 +621,62 @@
     <h1><span id="shelfTitle">Moje sbírka</span> <i id="shelfCount"></i></h1>
     <button id="shelfClose">Zpět ke stromu</button>
   </header>
-  <p id="shelfEmpty" hidden>Sbírka je zatím prázdná. Tlačítkem „Přidat do sbírky“ uložíte strom ve stavu, v jakém právě je.</p>
-  <div id="bench"></div>
+  <div class="shelfBody">
+    <aside class="userCard panel" aria-label="Hráč"></aside>
+    <div class="shelfMain">
+      <p id="shelfEmpty" hidden>Sbírka je zatím prázdná. Tlačítkem „Přidat do sbírky“ uložíte strom ve stavu, v jakém právě je.</p>
+      <div id="bench"></div>
+    </div>
+  </div>
+</div>
+<div id="expo" hidden>
+  <header>
+    <h1>Výstava <i id="expoCount"></i></h1>
+    <button id="expoClose">Zpět ke stromu</button>
+  </header>
+  <div class="shelfBody expoBody">
+    <aside class="userCard panel" aria-label="Hráč"></aside>
+    <div class="expoMain">
+      <p id="expoEmpty" class="panel" hidden></p>
+      <div id="expoStage">
+        <div class="stage">
+          <button class="expoNav prev" aria-label="Předchozí strom" title="Předchozí (←)"><svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg></button>
+          <figure class="expoTree"><img id="expoImg" alt=""><div class="stand" aria-hidden="true"></div></figure>
+          <button class="expoNav next" aria-label="Další strom" title="Další (→)"><svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+        </div>
+        <div class="expoInfo panel">
+          <div class="expoHead"><b id="expoName"></b><span id="expoPos"></span></div>
+          <small id="expoMeta"></small>
+          <div id="expoScore"></div>
+          <div class="stars" id="expoStars" role="radiogroup" aria-label="Vaše hodnocení"></div>
+          <p class="hint" id="expoNote"></p>
+          <div class="row"><button id="expoOpen">Prohlédnout ve hře</button></div>
+        </div>
+      </div>
+    </div>
+    <aside class="boards">
+      <section class="panel"><h2>Nejlépe hodnocené stromy</h2><ol id="topTrees"></ol></section>
+      <section class="panel"><h2>Hráči s nejvíc hvězdičkami</h2><ol id="topUsers"></ol></section>
+    </aside>
+  </div>
+</div>
+<div id="authDlg" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="authTitle">
+  <form class="panel" id="authForm" novalidate>
+    <h1 id="authTitle">Přihlášení</h1>
+    <div class="seg" id="authTabs" role="group" aria-label="Přihlášení nebo registrace">
+      <button type="button" data-mode="in">Přihlásit</button>
+      <button type="button" data-mode="up">Registrovat</button>
+    </div>
+    <label id="authNameRow">Přezdívka<input id="authName" maxlength="24" autocomplete="nickname" spellcheck="false"></label>
+    <label id="authMailRow">E-mail<input id="authMail" type="email" autocomplete="email" spellcheck="false"></label>
+    <label id="authPassRow">Heslo<input id="authPass" type="password" minlength="6" autocomplete="current-password"></label>
+    <p id="authMsg" class="hint" aria-live="polite"></p>
+    <div class="row">
+      <button class="primary" type="submit" id="authOk">Přihlásit</button>
+      <button type="button" id="authCancel">Zavřít</button>
+      <button type="button" class="link" id="authForgot">Zapomenuté heslo</button>
+    </div>
+  </form>
 </div>
 <div class="panel" id="settings" role="dialog" aria-label="Nastavení" hidden>
   <section>

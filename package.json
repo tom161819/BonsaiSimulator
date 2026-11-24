@@ -22,6 +22,7 @@
   },
   "homepage": "https://github.com/tom161819/BonsaiSimulator#readme",
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.2",
     "three": "^0.160.0"
   },
   "devDependencies": {

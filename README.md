@@ -24,7 +24,12 @@ Vývojový server běží na http://localhost:5173. `npm run build` vytvoří st
 | `npm test` | testy simulačního jádra (bez grafiky) |
 | `npm run calibrate -- 12` | tabulka růstu po letech pro půdu / nádobu / misku |
 | `npm run typecheck` | kontrola typů |
+| `bash scripts/db/test.sh` | zkouška databázových migrací a pravidel přístupu na dočasném Postgresu |
 | `npm run samples` | přepočítá vzorovou sbírku a její portréty (nutné po každé změně modelu růstu; potřebuje Playwright s Chromiem) |
+
+## Online: účty, sbírka v cloudu a výstava
+
+Hra je připravená na GitHub Pages se Supabase: přihlášení a registrace, sbírka uložená v účtu, **výstava** stromů s hodnocením 1–10 hvězdičkami a žebříčky stromů a hráčů. Zprovoznění, ochrana dat a vlastní doména: [docs/ONLINE.md](docs/ONLINE.md). Bez serveru se stromy ukládají jen v prohlížeči; vyzkoušet online část bez serveru jde s `?online=demo`.
 
 ## Ovládání
 
@@ -36,7 +41,7 @@ Vývojový server běží na http://localhost:5173. `npm run build` vytvoří st
 - Tažení mimo strom otáčí pohled, kolečko přibližuje, pravé tlačítko (nebo Shift + tažení) posouvá.
 - **Plevel** (pravidla v12): v nádobě občas vyroste pampeliška, tráva, orsej nebo kopřiva a bere kořenům místo (vidět v řádku *Kořeny v nádobě*). Pinzetou ho vytrhnete, tlačítko *Odplevelit* pod Pinzetou odstraní všechen; přesazení také.
 - Mezerník spouští a zastavuje čas, Ctrl+Z vrací poslední zásah.
-- **Nastavení** (ozubené kolo vedle přepínače vzhledu): kvalita vykreslení (úsporná / vyvážená / vysoká), stín stromu, nápověda ovládání vlevo dole, nůžky a drát na stole; **pozadí** (rozostřená zahrada, fotky čínské zahrady, školky pod stínovkou, zahrady pod sklem a krytého patia, světlé a tmavé studio) a **deska pracovního stolu** (prkna, teak, mahagon, ořech, bambus, staré dřevo, tatami, žula). Najetím myší se volba hned ukáže, kliknutím se uloží v prohlížeči.
+- **Nastavení** (ozubené kolo vedle přepínače vzhledu): velikost rozhraní a textů (80–150 %), kvalita vykreslení (úsporná / vyvážená / vysoká), stín stromu, nápověda ovládání vlevo dole, nůžky a drát na stole; **pozadí** (rozostřená zahrada, fotky čínské zahrady, školky pod stínovkou, zahrady pod sklem a krytého patia, světlé a tmavé studio) a **deska pracovního stolu** (prkna, teak, mahagon, ořech, bambus, staré dřevo, tatami, žula). Najetím myší se volba hned ukáže, kliknutím se uloží v prohlížeči.
 - **Vzhled:** trojice ikon vedle výběru pravidel přepíná *podle systému* / *světlý* / *tmavý*. Volba se pamatuje v prohlížeči; v režimu *podle systému* hra následuje i změnu systému za běhu. Pokud vzhled nastaví hostitelská stránka (atribut `data-theme` na `<html>`), má její volba přednost.
 - **Nápověda ovládání vlevo dole** ukazuje klávesy a tlačítka myši zvoleného nástroje; Ctrl a Shift se v ní zamáčknou, když je držíte, a odpovídající řádek se zvýrazní. Klávesy **1–4** přepínají nástroje (Nůžky, Pinzeta, Listy – u borovice Svíčky, Drát). Panel jde sbalit a podle volného místa se sám zmenšuje (na dotykových zařízeních a v nejmenších oknech se skryje).
 - Posuvník času jde i dozadu. Zásah v minulosti přepíše pozdější zásahy v deníku.
