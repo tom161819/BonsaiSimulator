@@ -126,6 +126,12 @@ export const RULES_LATEST = 8;
 export interface PotSpec {
   id: string; type: PotType; name: string; liters: number;
   shape: 'ground' | 'round' | 'oval' | 'rect'; a: number; b: number; h: number; color: number; glaze: boolean;
+  /** tvar stěny: straight rovná, taper zúžená ke dnu, flared rozevřená s vyhrnutým okrajem, belly vypouklá,
+   *  bowl zaoblené dno, banded rovná s pásky, cascade vysoká, nursery plastový květináč */
+  profile?: 'straight' | 'taper' | 'flared' | 'belly' | 'bowl' | 'banded' | 'cascade' | 'nursery';
+  corner?: number; // zaoblení půdorysu: 2 = ovál, 3–5 = zaoblený obdélník, 10+ = ostré rohy
+  lobes?: number; // laločnatý půdorys (mokko = 4)
+  feet?: 'block' | 'cloud' | 'none';
 }
 export const POTS: PotSpec[] = [
   { id: 'ground', type: 'ground', name: 'Volná půda (záhon)', liters: 0, shape: 'ground', a: 0, b: 0, h: 0, color: 0, glaze: false },
@@ -141,6 +147,16 @@ export const POTS: PotSpec[] = [
   { id: 'b3', type: 'bonsai', name: 'Oválná miska 3 l, zelená glazura', liters: 3, shape: 'oval', a: 36, b: 27, h: 6, color: 0x5d7262, glaze: true },
   { id: 'b6', type: 'bonsai', name: 'Obdélníková miska 6 l, neglazovaná', liters: 6, shape: 'rect', a: 46, b: 33, h: 7.5, color: 0x7a4a36, glaze: false },
   { id: 'b12', type: 'bonsai', name: 'Hluboká obdélníková miska 12 l', liters: 12, shape: 'rect', a: 52, b: 38, h: 11, color: 0x3c3f44, glaze: true },
+  // další tvary
+  { id: 'b08d', type: 'bonsai', name: 'Kulatá bubnová miska 0,8 l', liters: 0.8, shape: 'round', a: 16, b: 16, h: 6, color: 0x5a4336, glaze: false, profile: 'belly' },
+  { id: 'b10o', type: 'bonsai', name: 'Oválná vypouklá miska 1 l', liters: 1, shape: 'oval', a: 24, b: 18, h: 5, color: 0x5e4a3e, glaze: false, profile: 'belly' },
+  { id: 'b18m', type: 'bonsai', name: 'Mokko (čtyřlaločná) miska 1,8 l', liters: 1.8, shape: 'oval', a: 26, b: 20, h: 6, color: 0x5b4a40, glaze: false, profile: 'bowl', lobes: 4 },
+  { id: 'b20r', type: 'bonsai', name: 'Obdélníková miska se zaoblenými rohy 2 l', liters: 2, shape: 'rect', a: 30, b: 22, h: 5.5, color: 0x5a4034, glaze: false, profile: 'bowl', corner: 4 },
+  { id: 'b22f', type: 'bonsai', name: 'Obdélníková rozevřená miska 2,2 l', liters: 2.2, shape: 'rect', a: 30, b: 21, h: 6.5, color: 0x77634c, glaze: false, profile: 'flared', corner: 7 },
+  { id: 'b35s', type: 'bonsai', name: 'Čtvercová rozevřená miska 3,5 l', liters: 3.5, shape: 'rect', a: 20, b: 20, h: 12, color: 0x5f4636, glaze: false, profile: 'flared', corner: 8 },
+  { id: 'b40d', type: 'bonsai', name: 'Oválná miska s pásky 4 l', liters: 4, shape: 'oval', a: 40, b: 30, h: 7, color: 0x5c4338, glaze: false, profile: 'banded' },
+  { id: 'b50c', type: 'bonsai', name: 'Kaskádová vysoká miska 5 l', liters: 5, shape: 'rect', a: 16, b: 16, h: 26, color: 0x9a4a2c, glaze: false, profile: 'cascade', corner: 9 },
+  { id: 'b80b', type: 'bonsai', name: 'Obdélníková miska s pásky 8 l', liters: 8, shape: 'rect', a: 44, b: 32, h: 10, color: 0x6a4034, glaze: false, profile: 'banded', feet: 'cloud' },
 ];
 /** Barvy misek: neglazovaná kamenina a běžné glazury. '' = barva z katalogu. */
 export interface Glaze { id: string; name: string; color: number; glossy: boolean }

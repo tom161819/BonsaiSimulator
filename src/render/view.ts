@@ -411,6 +411,9 @@ export function wireGauge(r: number): number {
   return G.reduce((a, b) => (Math.abs(b - want) < Math.abs(a - want) ? b : a));
 }
 
+/** Exponent superelipsy půdorysu nádoby: 2 = ovál/kruh, větší = hranatější. */
+const potExp = (p: { shape: string; corner?: number }) => p.corner ?? (p.shape === 'rect' ? 14 : 2);
+
 export class TreeView {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -796,7 +799,14 @@ export class TreeView {
     // poloha stromu vůči středu nádoby a tvar povrchu substrátu: kopeček s vrcholem u kmene, u okraje nádoby na nule
     const tx = spec.shape === 'ground' ? 0 : off[0] * (spec.a / 2) * 0.8, tz = spec.shape === 'ground' ? 0 : off[1] * (spec.b / 2) * 0.8;
     const ha = spec.a / 2, hb = spec.b / 2, Mh = mound * Math.min(spec.a, spec.b) * 0.2, sig = 0.55 * Math.min(ha, hb);
-    const rhoOf = (x: number, z: number) => (spec.shape === 'rect' ? Math.max(Math.abs(x) / ha, Math.abs(z) / hb) : Math.hypot(x / ha, z / hb));
+    // půdorys: superelipsa (2 = ovál, velký exponent = obdélník), případně laločnatá (mokko)
+    const ex = potExp(spec), lob = spec.lobes ?? 0;
+    const lobe = (th: number) => (lob ? 1 + 0.05 * Math.cos(lob * th) - 0.05 : 1);
+    const outline = (th: number, hx: number, hz: number): [number, number] => {
+      const c = Math.cos(th), si = Math.sin(th), k = lobe(th);
+      return [Math.sign(c) * Math.pow(Math.abs(c), 2 / ex) * hx * k, Math.sign(si) * Math.pow(Math.abs(si), 2 / ex) * hz * k];
+    };
+    const rhoOf = (x: number, z: number) => Math.pow(Math.pow(Math.abs(x) / ha, ex) + Math.pow(Math.abs(z) / hb, ex), 1 / ex) / lobe(Math.atan2(z / hb, x / ha));
     const hill = (x: number, z: number) => { // v souřadnicích nádoby
       if (Mh <= 0) return 0;
       const rho = Math.min(1, rhoOf(x, z)), rim = Math.pow(1 - rho * rho, 0.85);
@@ -856,7 +866,9 @@ export class TreeView {
     const dense = this.soilPhoto ? 1 : 0.25;
     const discGeo = (ra: number, rb: number) => soilGeo((i, j) => {
       const r = Math.pow(i / Math.round(70 * dense + 6), 0.9), a = (j / Math.round(160 * dense + 24)) * 6.2832;
-      return [Math.cos(a) * r * ra, Math.sin(a) * r * rb];
+      if (spec.shape === 'ground') return [Math.cos(a) * r * ra, Math.sin(a) * r * rb];
+      const [ox, oz] = outline(a, ra, rb);
+      return [ox * r, oz * r];
     }, Math.round(70 * dense + 6), Math.round(160 * dense + 24), true);
     const rectGeo = (wa: number, wb: number) => soilGeo((i, j) => [(i / Math.round(120 * dense + 8) - 0.5) * wa, (j / Math.round(120 * dense + 8) - 0.5) * wb], Math.round(120 * dense + 8), Math.round(120 * dense + 8), false);
     const add = (g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0, sx = 1, sz = 1) => {
@@ -876,34 +888,93 @@ export class TreeView {
     const glossy = glaze ? glaze.glossy : spec.glaze;
     const wall = new THREE.MeshStandardMaterial({ color: glaze ? glaze.color : spec.color, roughness: glossy ? 0.22 : 0.85, metalness: glossy ? 0.05 : 0, envMapIntensity: glossy ? 0.8 : 0.3, side: THREE.DoubleSide });
     const { a, b, h } = spec;
-    const lip = Math.max(0.35, h * 0.06); // okraj nad substrátem
     const dish = spec.type === 'bonsai';
-    const footH = dish ? Math.max(0.5, h * 0.14) : 0;
-    if (spec.shape === 'rect') {
-      const t = Math.max(0.5, a * 0.03), top = lip, hh = h + lip;
-      add(new THREE.BoxGeometry(a, hh, t), wall, 0, top - hh / 2, b / 2 - t / 2);
-      add(new THREE.BoxGeometry(a, hh, t), wall, 0, top - hh / 2, -b / 2 + t / 2);
-      add(new THREE.BoxGeometry(t, hh, b), wall, a / 2 - t / 2, top - hh / 2, 0);
-      add(new THREE.BoxGeometry(t, hh, b), wall, -a / 2 + t / 2, top - hh / 2, 0);
-      add(new THREE.BoxGeometry(a, t, b), wall, 0, -h + t / 2, 0);
-      // přesahující horní lem, typický pro obdélníkové misky
-      add(new THREE.BoxGeometry(a + t * 1.6, t * 0.7, t * 1.8), wall, 0, top - t * 0.35, b / 2 - t * 0.1);
-      add(new THREE.BoxGeometry(a + t * 1.6, t * 0.7, t * 1.8), wall, 0, top - t * 0.35, -b / 2 + t * 0.1);
-      add(new THREE.BoxGeometry(t * 1.8, t * 0.7, b + t * 1.6), wall, a / 2 - t * 0.1, top - t * 0.35, 0);
-      add(new THREE.BoxGeometry(t * 1.8, t * 0.7, b + t * 1.6), wall, -a / 2 + t * 0.1, top - t * 0.35, 0);
-      add(rectGeo(a - t * 2, b - t * 2), soil);
-      for (const [fx, fz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(new THREE.BoxGeometry(a * 0.16, footH, b * 0.16), wall, fx * a * 0.38, -h - footH / 2, fz * b * 0.36);
-    } else {
-      const r = a / 2, sz = b / a, taper = dish ? 0.88 : 0.76;
-      add(new THREE.CylinderGeometry(r, r * taper, h + lip, 56, 1, true), wall, 0, lip - (h + lip) / 2, 0, 1, sz);
-      add(new THREE.TorusGeometry(r, Math.max(0.3, r * 0.045), 10, 56).rotateX(Math.PI / 2), wall, 0, lip, 0, 1, sz);
-      add(new THREE.CylinderGeometry(r * taper, r * taper, 0.4, 56), wall, 0, -h + 0.2, 0, 1, sz);
-      add(discGeo(r * 0.985, r * 0.985 * sz), soil);
-      if (dish) for (let k = 0; k < 3; k++) {
-        const ang = (k / 3) * 6.2832 + 0.5;
-        add(new THREE.BoxGeometry(r * 0.3, footH, r * 0.22), wall, Math.cos(ang) * r * 0.62, -h - footH / 2, Math.sin(ang) * r * 0.62 * sz);
+    const prof = spec.profile ?? (dish ? (spec.shape === 'rect' ? 'straight' : 'taper') : 'nursery');
+    const lip = Math.max(0.35, Math.min(1.2, h * 0.06)); // okraj nad substrátem
+    const t = Math.max(0.35, Math.min(1.4, Math.min(a, b) * 0.035)); // síla stěny
+    const m = Math.min(ha, hb);
+    const footH = !dish || spec.feet === 'none' ? 0 : Math.max(0.5, Math.min(2.2, h * 0.14 + 0.2));
+    // Profil stěny: [výška y (0 = povrch substrátu), odsazení půdorysu v cm]. Vnější plášť odspodu nahoru,
+    // přes okraj a kousek dovnitř pod úroveň substrátu. Dvojice bodů těsně u sebe dávají ostrou hranu.
+    const P2: [number, number][] = [];
+    const yOf = (f: number) => -h + f * (h + lip);
+    const body = (f: number): number => {
+      switch (prof) {
+        case 'taper': return -0.12 * m * Math.pow(1 - f, 1.1);
+        case 'nursery': return -0.24 * m * (1 - f);
+        case 'flared': return -Math.min(0.3 * m, 0.34 * h) * Math.pow(1 - f, 0.85) + (f > 0.86 ? ((f - 0.86) / 0.14) ** 2 * t * 1.3 : 0);
+        case 'belly': return 0.14 * m * Math.sin(Math.PI * Math.pow(f, 0.85)) - 0.1 * m * Math.pow(1 - f, 2) - 0.03 * m;
+        case 'bowl': return -Math.min(0.32 * m, 0.9 * h) * Math.pow(1 - f, 2.6);
+        case 'cascade': return -0.06 * m * (1 - f);
+        default: return 0;
+      }
+    };
+    const bands: [number, number][] = prof === 'banded' ? [[0.16, 0.3], [0.3, 0.44]] : prof === 'cascade' ? [[0.03, 0.09]] : [];
+    const band = (f: number) => (bands.some(([f0, f1]) => f >= f0 && f <= f1) ? t * 0.55 : 0);
+    const fs = new Set<number>();
+    for (let k = 0; k <= 22; k++) fs.add(k / 22);
+    for (const [f0, f1] of bands) for (const f of [f0 - 0.004, f0, f1, f1 + 0.004]) fs.add(clamp(f, 0, 1));
+    const rimF = prof === 'belly' ? 0.9 : prof === 'nursery' ? 0.86 : 0.84; // odkud začíná horní lem
+    const rimOut = prof === 'belly' ? t * 0.9 : prof === 'bowl' || prof === 'flared' ? t * 0.5 : prof === 'nursery' ? t * 0.9 : t * 1.1;
+    for (const f of [rimF - 0.004, rimF]) fs.add(f);
+    for (const f of [...fs].sort((x, y) => x - y)) P2.push([yOf(f), body(f) + band(f) + (f >= rimF ? rimOut : 0)]);
+    const top = P2[P2.length - 1];
+    P2.push([top[0] + 0.02, top[1] - t * 0.25], [top[0] + 0.02, top[1] - rimOut - t * 0.95], [top[0] - 0.05, top[1] - rimOut - t], [-0.6, body(1) - t]);
+    const NS = 128;
+    // body po obvodu rovnoměrně podle délky oblouku (u hranatých tvarů by se jinak nahrnuly do rohů)
+    const ths: number[] = [];
+    {
+      const M = 2400, cum = [0];
+      let px = outline(0, ha, hb);
+      for (let q = 1; q <= M; q++) { const c = outline((q / M) * 6.2832, ha, hb); cum.push(cum[q - 1] + Math.hypot(c[0] - px[0], c[1] - px[1])); px = c; }
+      let j = 0;
+      for (let q = 0; q <= NS; q++) { const want = (q / NS) * cum[M]; while (j < M && cum[j + 1] < want) j++; ths.push(((j + (want - cum[j]) / Math.max(1e-9, cum[j + 1] - cum[j])) / M) * 6.2832); }
+      ths[NS] = 6.2832;
+    }
+    {
+      const pos: number[] = [], idx: number[] = [];
+      for (const [y, dOff] of P2) for (let q = 0; q <= NS; q++) {
+        const [x, z] = outline(ths[q], ha + dOff, hb + dOff);
+        pos.push(x, y, z);
+      }
+      const W = NS + 1;
+      for (let k = 0; k < P2.length - 1; k++) for (let q = 0; q < NS; q++) {
+        const a0 = k * W + q, a1 = a0 + 1, b0 = a0 + W, b1 = b0 + 1;
+        idx.push(a0, b0, a1, a1, b0, b1);
+      }
+      // dno
+      const c0 = pos.length / 3;
+      pos.push(0, -h, 0);
+      for (let q = 0; q < NS; q++) idx.push(c0, q + 1, q);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      add(g, wall);
+    }
+    // nožky: hranatá miska má čtyři rohové (u „cloud“ širší a nižší), oblá tři až čtyři po obvodu
+    if (footH > 0) {
+      const d0 = body(0), cloud = spec.feet === 'cloud' || prof === 'straight';
+      if (ex > 2.5 && !lob) {
+        const fw = (cloud ? 0.3 : 0.2) * a, fd = (cloud ? 0.3 : 0.2) * b, ft = Math.max(t * 1.6, 0.8);
+        for (const [fx, fz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          const kc = Math.pow(0.5, 0.6 / ex) * 0.97; // roh zaobleného půdorysu leží uvnitř opsaného obdélníku
+          const cx = fx * ((ha + d0) * kc - ft * 0.5), cz = fz * ((hb + d0) * kc - ft * 0.5);
+          add(new THREE.BoxGeometry(fw, footH, ft), wall, cx - fx * (fw / 2 - ft * 0.5) * 0.92, -h - footH / 2, cz);
+          add(new THREE.BoxGeometry(ft, footH, fd), wall, cx, -h - footH / 2, cz - fz * (fd / 2 - ft * 0.5) * 0.92);
+        }
+      } else {
+        const nf = b / a < 0.8 || lob ? 4 : 3;
+        for (let k = 0; k < nf; k++) {
+          const ang = (k / nf) * 6.2832 + (nf === 4 ? 0.7854 : 0.5);
+          const [fx, fz] = outline(ang, (ha + d0) * 0.8, (hb + d0) * 0.8);
+          const foot = add(new THREE.BoxGeometry(m * 0.3, footH, m * 0.2), wall, fx, -h - footH / 2, fz);
+          foot.rotation.y = -Math.atan2(fz, fx) + Math.PI / 2;
+        }
       }
     }
+    // povrch substrátu sahá k vnitřní stěně u okraje
+    add(discGeo(ha + body(1) - t * 0.9, hb + body(1) - t * 0.9), soil);
     if (moss > 0.01) {
       // Mech: druhá vrstva nad substrátem s fotografickou texturou. Kde už roste, určuje maska ze šumu –
       // s pokryvností se ostrůvky rozrůstají, až se spojí v souvislý koberec.
@@ -934,7 +1005,7 @@ export class TreeView {
         ? new THREE.MeshStandardMaterial({ color: 0xb4bf98, map: this.mossPhoto.d, normalMap: this.mossPhoto.n, normalScale: new THREE.Vector2(1.4, 1.4), displacementMap: this.mossPhoto.h, displacementScale: 0.55, displacementBias: 0, alphaMap: mask, alphaTest: 0.5, roughness: 1, envMapIntensity: 0.2 })
         : new THREE.MeshStandardMaterial({ color: 0x4a6628, alphaMap: mask, alphaTest: 0.5, roughness: 1, envMapIntensity: 0.15 });
       yOff = 0.12; tileCm = 9;
-      const g = spec.shape === 'rect' ? rectGeo(a - Math.max(0.5, a * 0.03) * 2, b - Math.max(0.5, a * 0.03) * 2) : discGeo(a / 2 * 0.985, (a / 2) * 0.985 * (b / a));
+      const g = discGeo(ha + body(1) - t * 0.95, hb + body(1) - t * 0.95);
       this.mossMesh = add(g, mm);
       this.mossMesh.castShadow = false;
       yOff = 0; tileCm = TILE;
@@ -1732,7 +1803,7 @@ export class TreeView {
             const px = off[0] * (pr.a / 2) * 0.8, pz = off[1] * (pr.b / 2) * 0.8; // poloha stromu vůči středu nádoby
             const dx = Math.cos(root.az), dz = Math.sin(root.az), ha = pr.a / 2 * 0.94, hb = pr.b / 2 * 0.94;
             let reach: number;
-            if (pr.shape === 'rect') reach = Math.min(dx > 0 ? (ha - px) / dx : dx < 0 ? (-ha - px) / dx : 1e9, dz > 0 ? (hb - pz) / dz : dz < 0 ? (-hb - pz) / dz : 1e9);
+            if (potExp(pr) > 6) reach = Math.min(dx > 0 ? (ha - px) / dx : dx < 0 ? (-ha - px) / dx : 1e9, dz > 0 ? (hb - pz) / dz : dz < 0 ? (-hb - pz) / dz : 1e9);
             else {
               const A = (dx * dx) / (ha * ha) + (dz * dz) / (hb * hb), Bq = 2 * ((px * dx) / (ha * ha) + (pz * dz) / (hb * hb)), Cq = (px * px) / (ha * ha) + (pz * pz) / (hb * hb) - 1;
               reach = (-Bq + Math.sqrt(Math.max(0, Bq * Bq - 4 * A * Cq))) / (2 * A);
