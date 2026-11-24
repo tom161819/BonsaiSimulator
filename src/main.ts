@@ -8,6 +8,7 @@ import { YEAR, bendLimit, bendStress, breakRisk, computeFrames, heldArc, mossCov
 import type { Action, ActionInput, PotType, State, Vec3 } from './sim/types';
 import { bendShoot, deadwood, splitShoot, wholeBranch } from './sim/actions';
 import { computeLeafLight } from './sim/light';
+import { createKeyHints } from './keyhints';
 import { SPECIES, SPECIES_ORDER, speciesOf } from './sim/species';
 import samplesJson from './samples.json';
 import sampleThumbs from './sampleThumbs.json';
@@ -36,6 +37,7 @@ let pending: Described | null = null;
 type Tool = 'cut' | 'bud' | 'leaf' | 'wire'; // bud = pinzeta: zasahuje jen pupeny; leaf = odstraňování listů (prosvětlení)
 let tool: Tool = 'cut';
 let repotOpen = false;
+let keyHints: ReturnType<typeof createKeyHints> | null = null; // nápověda ovládání vlevo dole
 
 const view = new TreeView($<HTMLCanvasElement>('scene'));
 
@@ -397,6 +399,7 @@ function refresh() {
     lb.title = leafOk ? 'Prosvětlování: odstraňuje listy, dřevo ani pupeny se nedotkne' : s.rules < 10 ? 'Odstraňování listů je až v pravidlech v10' : 'Jen pro listnáče a modřín';
     if (!leafOk && tool === 'leaf') { tool = 'cut'; for (const b of $('toolSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.tool === tool)); $('cutOpts').hidden = false; }
     $('leafOpts').hidden = tool !== 'leaf';
+    keyHints?.show(tool, leafOk);
     const any = leafOk && s.shoots.some((x) => leavesOn(x) > 0);
     $<HTMLButtonElement>('leafInner').disabled = !any; $<HTMLButtonElement>('leafHalf').disabled = !any;
   }
@@ -730,6 +733,15 @@ function setTool(t: Tool) {
 for (const b of $('toolSeg').querySelectorAll('button')) {
   b.onclick = () => setTool(b.dataset.tool as Tool);
 }
+// nápověda ovládání: čísla 1–4 přepínají nástroje (kromě otevřeného přesazení a překryvných obrazovek)
+keyHints = createKeyHints($('keys'), (t) => {
+  if (repotOpen || !$('chooser').hidden || !$('shelf').hidden) return false;
+  if (t === 'leaf' && $<HTMLButtonElement>('tool-leaf').disabled) { flash(speciesOf(tl.state).kind !== 'leafy' ? 'Listy se odstraňují jen u listnáčů a modřínu.' : 'Odstraňování listů je až v pravidlech v10.'); return false; }
+  setTool(t);
+  return true;
+}, { avoid: $('left'), watch: [$('left'), $('bottom'), $('ui')] });
+for (const [id, k] of [['tool-cut', '1'], ['tool-bud', '2'], ['tool-leaf', '3'], ['tool-wire', '4']]) $(id).setAttribute('aria-keyshortcuts', k);
+keyHints.show(tool, !$<HTMLButtonElement>('tool-leaf').disabled);
 // najetí na tlačítko Drát nebo na řádek „Dráty“ zvýrazní všechny dráty na stromu
 for (const el of [$('tool-wire'), $('sWires'), $('sWires').previousElementSibling as HTMLElement]) {
   el.addEventListener('pointerenter', () => view.showWires(true));

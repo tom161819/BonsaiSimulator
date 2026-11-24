@@ -148,6 +148,98 @@
   .kept .row button { min-height: 28px; padding: 3px 8px; font-size: 12px; }
   .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; line-height: 1.35; }
   .swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--line); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
+  /* ===== nápověda ovládání vlevo dole: klávesy a myš podle zvoleného nástroje ===== */
+  #keys {
+    grid-area: left; align-self: end; justify-self: start; width: 100%; max-width: 300px; box-sizing: border-box; z-index: 2;
+    --tc: #e5482f;
+    --key-a: color-mix(in srgb, var(--panel-solid) 94%, #fff); --key-b: color-mix(in srgb, var(--panel-solid) 88%, var(--fg));
+    padding: 8px 11px 9px 10px; border-left: 3px solid var(--tc);
+    transition: border-left-color .35s ease; animation: kPanel .6s cubic-bezier(.2, .8, .2, 1) .3s backwards;
+  }
+  #keys[data-tool="cut"] { --tc: #e5482f; } #keys[data-tool="bud"] { --tc: #d6456f; }
+  #keys[data-tool="leaf"] { --tc: #2fa860; } #keys[data-tool="wire"] { --tc: #d98324; }
+  #keys .khead { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+  #keys .ktitle { display: flex; align-items: center; gap: 8px; min-width: 0; margin-right: auto; }
+  #keys .kdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--tc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tc) 22%, transparent); transition: background .35s, box-shadow .35s; }
+  #keys .kname-wrap { display: inline-block; overflow: hidden; }
+  #keys #kName { display: inline-block; font: 600 13px/1.5 var(--display); letter-spacing: -0.005em; }
+  #keys #kName.swap { animation: kName .34s cubic-bezier(.2, .8, .2, 1) backwards; }
+  /* klávesa: plastická, při stisku se zamáčkne */
+  #keys kbd {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 25px; height: 23px; padding: 0 7px;
+    font: 600 11px/1 var(--body); letter-spacing: 0.01em; color: var(--fg);
+    background: linear-gradient(var(--key-a), var(--key-b)); border: 1px solid var(--line); border-bottom-width: 3px; border-radius: 6px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45) inset, 0 1px 2px rgba(0, 0, 0, 0.08);
+    transition: transform .09s ease, border-bottom-width .09s ease, background .18s, color .18s, border-color .18s, box-shadow .18s;
+  }
+  #keys kbd.down {
+    transform: translateY(2px); border-bottom-width: 1px; color: #fff; border-color: color-mix(in srgb, var(--tc) 70%, #000);
+    background: linear-gradient(color-mix(in srgb, var(--tc) 88%, #fff), var(--tc)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tc) 22%, transparent);
+  }
+  #keys .ksw { display: flex; gap: 3px; }
+  #keys .ksw-b { min-height: 0; padding: 0; border: 0; background: transparent; border-radius: 6px; }
+  #keys .ksw-b kbd { min-width: 21px; height: 20px; padding: 0 5px; font-size: 10.5px; color: var(--muted); border-bottom-width: 2px; }
+  #keys .ksw-b:hover kbd { color: var(--fg); border-color: var(--tc); transform: translateY(-1px); }
+  #keys .ksw-b.on kbd { color: #fff; border-color: color-mix(in srgb, var(--tc) 70%, #000); background: linear-gradient(color-mix(in srgb, var(--tc) 88%, #fff), var(--tc)); transform: translateY(1px); border-bottom-width: 1px; }
+  #keys .ksw-b.off kbd { opacity: .35; }
+  #keys .kbtn { min-height: 0; width: 22px; height: 22px; padding: 0; border: 0; display: grid; place-items: center; border-radius: 6px; color: var(--muted); }
+  #keys .kbtn:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
+  #keys .kbtn svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; transition: transform .32s cubic-bezier(.4, 0, .2, 1); }
+  #keys[data-collapsed="1"] .kbtn svg { transform: rotate(180deg); }
+  /* sbalení: výška se plynule zmenší na nulu */
+  #keys .kbody { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .34s cubic-bezier(.4, 0, .2, 1), opacity .26s ease; }
+  #keys .kinner { overflow: hidden; min-height: 0; }
+  #keys[data-collapsed="1"] .kbody { grid-template-rows: 0fr; opacity: 0; }
+  #keys .krows { display: flex; flex-direction: column; gap: 2px; padding-top: 7px; }
+  #keys .krow {
+    display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px; padding: 5px 7px 5px 6px; border-radius: 8px; border-left: 3px solid transparent;
+    animation: kIn .36s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i) * 55ms);
+    transition: opacity .22s, background .22s, border-color .22s, transform .22s;
+  }
+  #keys .krow.on { background: color-mix(in srgb, var(--tc) 13%, transparent); border-left-color: var(--tc); transform: translateX(2px); }
+  #keys.mod .krow:not(.on) { opacity: .4; }
+  #keys .kkeys { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  #keys .kplus { color: var(--muted); font-size: 11px; margin: 0 -1px; }
+  #keys .ktext { display: flex; flex-direction: column; min-width: 0; line-height: 1.22; }
+  #keys .ktext b { font: 600 12.5px var(--body); }
+  #keys .ktext small { font-size: 11px; color: var(--muted); }
+  /* ikony: myš se zvýrazněným tlačítkem, tažení, klik, kolečko */
+  #keys .ico { flex: none; display: block; overflow: visible; }
+  #keys .mouse .body, #keys .wheel .body { fill: none; stroke: currentColor; stroke-width: 1.3; opacity: .8; }
+  #keys .mouse .div, #keys .wheel .div { fill: none; stroke: currentColor; stroke-width: 1; opacity: .4; }
+  #keys .mouse .bL, #keys .mouse .bR, #keys .mouse .wh, #keys .wheel .bL, #keys .wheel .bR, #keys .wheel .wh { fill: transparent; transition: fill .12s; }
+  #keys .m-L .bL { fill: color-mix(in srgb, var(--tc) 80%, transparent); }
+  #keys .m-R .bR { fill: color-mix(in srgb, var(--fg) 42%, transparent); }
+  #keys[data-btn*="L"] .m-L .bL { fill: var(--tc); }
+  #keys[data-btn*="R"] .m-R .bR { fill: var(--tc); }
+  #keys .drag, #keys .wheel .arr { color: var(--muted); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: color .15s; }
+  #keys .krow.on .drag { color: var(--tc); }
+  #keys[data-btn*="L"] .krow .drag { color: var(--tc); }
+  #keys[data-btn*="L"] .krow .drag { animation: kNudge .7s ease-in-out infinite; }
+  /* pohled: drobná druhá řada */
+  #keys .kview { display: flex; flex-wrap: wrap; gap: 3px 13px; margin-top: 6px; padding: 7px 4px 0; border-top: 1px solid var(--line); color: var(--muted); }
+  #keys .kv { display: inline-flex; align-items: center; gap: 4px; }
+  #keys .kv em { font-style: normal; font-size: 11px; }
+  #keys .kview .m-L .bL, #keys .kview .m-R .bR { fill: color-mix(in srgb, var(--fg) 42%, transparent); }
+  #keys[data-btn*="L"] .kview .m-L .bL, #keys[data-btn*="R"] .kview .m-R .bR { fill: var(--accent); }
+  #keys .kwheel .wheel .wh { fill: color-mix(in srgb, var(--fg) 50%, transparent); }
+  #keys.wheeling .kwheel .wheel .wh { fill: var(--accent); }
+  #keys.wheeling .kwheel .wheel .arr { color: var(--accent); animation: kTick .32s ease-in-out; }
+  @keyframes kPanel { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+  @keyframes kIn { from { opacity: 0; transform: translateX(-10px); } }
+  @keyframes kName { from { opacity: 0; transform: translateY(7px); } }
+  @keyframes kNudge { 0%, 100% { transform: translateX(-2px); } 50% { transform: translateX(2px); } }
+  @keyframes kTick { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
+  @media (max-width: 760px), (pointer: coarse) { #keys { display: none; } }
+  /* přizpůsobení volnému místu (viz fit() v keyhints.ts) */
+  #keys[data-fit="1"] .kview, #keys[data-fit="2"] .kview { display: none; }
+  #keys[data-fit="2"] .ktext small { display: none; }
+  #keys[data-fit="2"] .krow { padding-block: 3px; }
+  #keys[data-fit="3"] .kbody { grid-template-rows: 0fr; opacity: 0; }
+  #keys[data-fit="4"] { visibility: hidden; opacity: 0; pointer-events: none; }
+  #keys[data-fit="3"] .kbtn { opacity: .3; cursor: default; }
+  #keys.nofx, #keys.nofx * { transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { #keys, #keys * { animation: none !important; transition: none !important; } }
   #cutLine { position: fixed; height: 0; border-top: 2px dashed #ff3b1f; transform-origin: 0 0; pointer-events: none; z-index: 5; }
   #tip {
     position: absolute; pointer-events: none; max-width: 260px; background: var(--panel-solid); border: 1px solid var(--line);
@@ -294,6 +386,7 @@
     </div>
   </div>
   <div class="panel" id="banner" hidden></div>
+  <div class="panel" id="keys" data-tool="cut" aria-label="Ovládání zvoleného nástroje"></div>
   <div class="panel" id="bottom">
     <div class="row">
       <button id="play" class="primary" aria-label="Spustit čas">▶</button>

@@ -34,4 +34,5 @@ Vývojový server běží na http://localhost:5173. `npm run build` vytvoří st
 - **Přidat do sbírky** uloží strom v dnešním stavu; **Moje sbírka** ukáže uložené stromy na lavici, odkud jde v kterémkoli pokračovat. Sbírka se ukládá v prohlížeči. **Vzorová sbírka** obsahuje pět stromů v různých stylech, které hru „odehrál“ skript `scripts/gardener.ts`; každý jde otevřít a projít po časové ose.
 - Tažení mimo strom otáčí pohled, kolečko přibližuje, pravé tlačítko (nebo Shift + tažení) posouvá.
 - Mezerník spouští a zastavuje čas, Ctrl+Z vrací poslední zásah.
+- **Nápověda ovládání vlevo dole** ukazuje klávesy a tlačítka myši zvoleného nástroje; Ctrl a Shift se v ní zamáčknou, když je držíte, a odpovídající řádek se zvýrazní. Klávesy **1–4** přepínají nástroje (Nůžky, Pinzeta, Listy, Drát). Panel jde sbalit a podle volného místa se sám zmenšuje (na dotykových zařízeních a v nejmenších oknech se skryje).
 - Posuvník času jde i dozadu. Zásah v minulosti přepíše pozdější zásahy v deníku.
