@@ -99,7 +99,7 @@ function cut(s: State, id: number, t: number) {
         s.pendingFlush = (s.pendingFlush ?? 0) + nb;
       }
     } else {
-      const bare = sh.kind === 'shoot' ? P.bareBase : 0;
+      const bare = sh.kind === 'shoot' && !sh.split ? P.bareBase : 0;
       sh.needleCount = Math.round((sh.needleCount * Math.max(0, t - bare)) / (1 - bare));
     }
     for (const a of [sh.arc, sh.wire && sh.wire.z > 0 ? sh.wire : null]) {
@@ -127,6 +127,47 @@ function turnAlongArc(s: State, sh: Shoot, axis: Vec3, angle: number, z: number)
   const f = (t: number) => angle * Math.min(1, t / Math.max(z, 1e-3));
   for (const c of s.shoots.filter((x) => x.parent === sh.id)) rotateSubtree(s, c.id, axis, f(c.attachT));
   for (const b of sh.buds) b.dir = norm(rotate(b.dir, axis, f(b.t)));
+}
+
+/** Rozdělí vyzrálý výhon v místě t (0..1) na dva navazující úseky a vrátí ten vnější. Tvar stromu se nezmění;
+ *  díky tomu jde větev ohnout v libovolném místě, ne jen v nasazení ročního přírůstku. Když dělit nejde
+ *  (měkká svíčka, děložní část, místo uvnitř už ohnutého oblouku nebo moc blízko konci), vrátí null. */
+export function splitShoot(s: State, id: number, t: number): Shoot | null {
+  const i = s.shoots.findIndex((x) => x.id === id);
+  const sh = s.shoots[i];
+  if (!sh || sh.dead || sh.elong || sh.kind !== 'shoot' || !(t > 0.04 && t < 0.96)) return null;
+  if (sh.arc && t < sh.arc.z - 1e-6) return null;
+  const sp = speciesOf(s), per = sp.kind === 'leafy' && sp.phyllotaxis === 'opposite' ? 2 : 1;
+  const nB = Math.round((sh.needleCount * (1 - t)) / per) * per;
+  const dB = sh.dormant === undefined ? undefined : Math.round(sh.dormant * (1 - t));
+  const out: Shoot = {
+    ...sh, id: s.nextId++, parent: sh.id, attachT: 1, isMain: true, split: true,
+    dir: sh.arc ? norm(rotate(sh.dir, sh.arc.axis, sh.arc.angle)) : [...sh.dir] as Vec3,
+    len: sh.len * (1 - t), targetLen: sh.len * (1 - t), needleCount: nB, dormant: dB,
+    buds: sh.buds.filter((b) => b.t > t).map((b) => ({ ...b, t: (b.t - t) / (1 - t) })),
+    wire: null, arc: null, stimulus: 0, male: false,
+  };
+  for (const c of s.shoots) {
+    if (c.parent !== sh.id) continue;
+    if (c.attachT > t) { c.parent = out.id; c.attachT = (c.attachT - t) / (1 - t); } else c.attachT = c.attachT / t;
+  }
+  sh.buds = sh.buds.filter((b) => b.t <= t).map((b) => ({ ...b, t: b.t / t }));
+  sh.len *= t; sh.targetLen = sh.len; sh.tipCut = false; sh.cone = false; sh.cutId = undefined;
+  sh.needleCount -= nB;
+  if (dB !== undefined) sh.dormant = (sh.dormant ?? 0) - dB;
+  // oblouk i drát vnitřní části se vztahují k její délce
+  if (sh.arc) sh.arc.z = Math.min(1, sh.arc.z / t);
+  if (sh.wire && sh.wire.z > 0) { sh.wire.z = Math.min(1, sh.wire.z / t); if (sh.wire.from) sh.wire.from.z = Math.min(1, sh.wire.from.z / t); }
+  s.shoots.splice(i + 1, 0, out);
+  return out;
+}
+
+/** Ohyb v daném místě výhonu: at > 0 výhon nejdřív rozdělí a ohne jeho vnější část. Vrací id ohnutého úseku.
+ *  Používá ho zásah drátem i náhled při tažení. */
+export function bendAt(s: State, id: number, at: number, axis: Vec3, angle: number, z: number): number {
+  const out = at > 0 ? splitShoot(s, id, at) : null;
+  bendShoot(s, out ? out.id : id, axis, angle, z);
+  return out ? out.id : id;
 }
 
 /** Samotná geometrie ohybu (bez drátu a bez rizika) – používá ji i náhled při tažení.
@@ -294,7 +335,7 @@ export function applyAction(s: State, a: Action) {
     sh.buds = sh.buds.filter((b) => b.id !== a.bud);
     updateDeath(s);
   } else if (a.type === 'repot') repot(s, a);
-  else if (a.type === 'wire') wire(s, a.shoot, a.axis, a.angle, a.z ?? 0);
+  else if (a.type === 'wire') wire(s, (a.at ? splitShoot(s, a.shoot, a.at)?.id : undefined) ?? a.shoot, a.axis, a.angle, a.z ?? 0);
   else if (a.type === 'unwire') unwire(s, a.shoot);
   else if (a.type === 'cutMany') for (const c of a.cuts) cut(s, c.shoot, c.t);
   else if (a.type === 'moss') s.mossAge = 0;

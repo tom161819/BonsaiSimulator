@@ -1,7 +1,7 @@
 // Testy simulačního jádra (bez grafiky): node scripts/run.mjs scripts/test.ts
 import assert from 'node:assert/strict';
 import { Timeline } from '../src/sim/timeline';
-import { wholeBranch } from '../src/sim/actions';
+import { splitShoot, wholeBranch } from '../src/sim/actions';
 import { YEAR, bendLimit, breakRisk, computeFrames, mossCover, potExhaust, potStatus, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
 import type { Action, State, Vec3 } from '../src/sim/types';
 import samples from '../src/samples.json';
@@ -563,6 +563,63 @@ test('v10: odstranění listů – v červnu vyraší znovu menší, jde vrátit
   tl.seek(at(5, 200));
   assert.equal(tl.state.stage, 'growing');
   assert.ok(leafStats(tl.state).n > before.n * 0.5, 'příští rok strom znovu olistí');
+});
+
+// ---- drátování v libovolném místě větve
+test('rozdělení výhonu nezmění tvar stromu, olistění ani pupeny', () => {
+  for (const [sp, yr] of [['pine', 6], ['maple', 4]] as [string, number][]) {
+    const tl = new Timeline(4, [{ day: 300, type: 'repot', pot: 'training', potId: 't10', prune: 0 }], 10, sp); tl.seek(at(yr, 200));
+    const s = tl.state;
+    const before = computeFrames(s);
+    const tipOf = new Map(s.shoots.map((q, i) => [q.id, [before.tip[i * 3], before.tip[i * 3 + 1], before.tip[i * 3 + 2]]]));
+    const fol0 = s.shoots.reduce((u, q) => u + q.needleCount, 0), buds0 = s.shoots.reduce((u, q) => u + q.buds.length, 0), n0 = s.shoots.length;
+    const cand = s.shoots.filter((q) => !q.dead && !q.elong && q.kind === 'shoot' && q.len > 4 && s.shoots.some((c) => c.parent === q.id)).slice(0, 6);
+    assert.ok(cand.length >= 3, sp);
+    const outs = cand.map((q) => [q.id, splitShoot(s, q.id, 0.45)!.id]);
+    assert.equal(s.shoots.length, n0 + cand.length);
+    assert.equal(s.shoots.reduce((u, q) => u + q.needleCount, 0), fol0);
+    assert.equal(s.shoots.reduce((u, q) => u + q.buds.length, 0), buds0);
+    const fr = computeFrames(s);
+    s.shoots.forEach((q, i) => {
+      const src = outs.find((o) => o[0] === q.id); // vnitřní část rozděleného výhonu končí dřív – její špičku teď nese vnější část
+      const want = tipOf.get(src ? -1 : outs.find((o) => o[1] === q.id)?.[0] ?? q.id);
+      if (!want) return;
+      const e = Math.hypot(fr.tip[i * 3] - want[0], fr.tip[i * 3 + 1] - want[1], fr.tip[i * 3 + 2] - want[2]);
+      assert.ok(e < 1e-3, `${sp}: špička výhonu ${q.id} se posunula o ${e}`);
+    });
+    // rodič je v poli vždy před potomkem
+    const pos = new Map(s.shoots.map((q, i) => [q.id, i]));
+    assert.ok(s.shoots.every((q, i) => q.parent < 0 || pos.get(q.parent)! < i));
+    tl.seek(at(yr + 2, 200));
+    assert.equal(tl.state.stage, 'growing');
+  }
+});
+
+test('ohyb v místě větve: část před ním zůstane, držené místo míří tam, kam má; jde vrátit', () => {
+  const tl = new Timeline(4, [{ day: 300, type: 'repot', pot: 'training', potId: 't10', prune: 0 }], 10, 'pine'); tl.seek(at(6, 320));
+  const s = tl.state;
+  const sh = s.shoots.filter((q) => !q.dead && !q.elong && q.kind === 'shoot' && q.order === 0 && q.len > 6)[1];
+  const fr0 = computeFrames(s), i0 = fr0.index.get(sh.id)!;
+  const B = [fr0.base[i0 * 3], fr0.base[i0 * 3 + 1], fr0.base[i0 * 3 + 2]];
+  const mid = [0, 1, 2].map((k) => B[k] + sh.dir[k] * sh.len * 0.4);
+  const n0 = s.shoots.length, len0 = sh.len;
+  // oblouk přes 30 % délky za místem 0,4; tětiva má mířit o 10° stranou
+  const want = norm(rotate(sh.dir, norm(cross(sh.dir, [1, 0, 0.3])), 10 / 57.2958));
+  const axis = norm(cross(sh.dir, want));
+  tl.act({ type: 'wire', shoot: sh.id, at: 0.4, axis, angle: 20 / 57.2958, z: 0.5 });
+  const t = tl.state, fr = computeFrames(t);
+  assert.equal(t.shoots.length, n0 + 1);
+  const a = t.shoots.find((q) => q.id === sh.id)!, b = t.shoots.find((q) => q.parent === sh.id && q.split)!;
+  assert.ok(Math.abs(a.len - len0 * 0.4) < 1e-9 && !a.wire && b.wire && b.arc);
+  const ia = fr.index.get(a.id)!, ib = fr.index.get(b.id)!;
+  assert.ok(Math.hypot(fr.tip[ia * 3] - mid[0], fr.tip[ia * 3 + 1] - mid[1], fr.tip[ia * 3 + 2] - mid[2]) < 1e-3, 'část před ohybem se nepohnula');
+  const gp = shootPoint(b, 0.5), gl = Math.hypot(gp[0], gp[1], gp[2]);
+  const dot = (gp[0] * want[0] + gp[1] * want[1] + gp[2] * want[2]) / gl;
+  assert.ok(dot > 0.999999, `konec oblouku míří jinam (cos ${dot})`);
+  void ib;
+  tl.undo();
+  assert.equal(tl.state.shoots.length, n0);
+  assert.equal(tl.state.shoots.find((q) => q.id === sh.id)!.len, len0);
 });
 
 console.log(`\n${n} testů prošlo`);

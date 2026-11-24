@@ -206,6 +206,31 @@ Konkrétní práh světla pro opad listu jsme v literatuře nenašli; druhové h
 listové plochy blízký naměřeným porostům. Ani po úpravě není hustota shluků úplně reálná (kolem 40 m²/m³) –
 zbytek je daný počtem výhonů.
 
+### Ovládání drátu (není verze pravidel – platí pro všechny)
+
+Původní ovládání mířilo směr větve do roviny obrazovky procházející jejím nasazením. Měření (`window.bonsai`,
+borovice a javor, 50–60 větví): už při pouhém uchopení, bez pohybu myši, chtělo větev ohnout o medián 47°
+(u ostrého zlomu 31°, v 10 % případů přes 88°), protože ji „přicvaklo“ do té roviny; u oblouku se pak směr
+k drženému místu lišil od směru ke kurzoru o medián 11°, nejvýš 39°. Výběr navíc bral i pupeny, takže se občas
+chytil jiný výhon, než byl zvýrazněný, a ohnutý výhon šel chytit jen na tětivě oblouku, ne tam, kde je vidět.
+
+Nové ovládání je přímá manipulace:
+
+- *Držené místo jde za kurzorem.* Cíl leží v rovině rovnoběžné s obrazovkou, která prochází **drženým bodem**
+  (ne nasazením), takže na začátku tažení je ohyb nulový. Oblouk končí přesně v drženém místě: jeho tětiva svírá
+  se směrem větve polovinu celkového stočení, proto stačí `stočení = 2 × úhel(směr větve, směr k cíli)` a směr
+  od začátku ohybu k drženému místu na obrazovce přesně míří ke kurzoru. Shift při tažení posouvá cíl od kamery
+  nebo k ní.
+- *Ohyb kdekoli na větvi.* Ohýbá se úsek těsně před drženým místem; jeho délku určuje posuvník (100 % = od kloubu
+  až k ruce). Když úsek nezačíná v nasazení ročního přírůstku, výhon se v tom místě rozdělí na dva navazující
+  (`splitShoot`): tvar, olistění ani pupeny se nemění, potomci se přepojí. Zásah `wire` má k tomu nepovinné `at`.
+  Na jednom ročním přírůstku tak může být víc ohybů za sebou. Už ohnutý oblouk se nedělí – doohýbá se celý.
+- *Živý náhled.* Při tažení se strom překresluje ohnutý (u stromů nad 5000 výhonů jen kostra) a pohled se sám
+  nepřerámovává. Značka při najetí ukazuje, odkud se větev ohne.
+
+Vlastní kontrola `window.bonsai.wireCheck()` po přepracování: skok na začátku 0 px, odchylka směru 0° (u všech
+zkoušených větví, s rozdělením i bez).
+
 Ve v3 se také větev, která převzala vrchol, postupně zvedá ke svislici i ve stávajícím dřevě (tenká rychle,
 silná pomalu), a osu může převzít i větev nasazená níž na pahýlu bez jehlic.
 

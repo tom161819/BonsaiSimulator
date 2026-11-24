@@ -649,8 +649,10 @@ export class TreeView {
     this.needsRender = true;
   }
 
+  /** Při tažení větve se pohled nesmí sám přerámovat – kurzor by přestal sedět na drženém místě. */
+  holdCamera = false;
   private updateCamera() {
-    if (this.auto) {
+    if (this.auto && !this.holdCamera) {
       const H = Math.max(4, this.height);
       const narrow = this.camera.aspect < 0.8 ? 1.5 : 1;
       // záběr zahrnuje i nádobu a desku stolu s nářadím
@@ -1733,7 +1735,7 @@ export class TreeView {
       else { cr = 0.27; cg = 0.48; cb = 0.35; }
       const nao = 0.6 + 0.4 * sh.light;
       const dying = sh.needleLive < 1 && shedSeason;
-      const bare = fasc ? P.bareBase : sh.kind === 'hypocotyl' ? 1 : 0.05;
+      const bare = fasc ? (sh.split ? 0.02 : P.bareBase) : sh.kind === 'hypocotyl' ? 1 : 0.05;
       const alpha = sh.kind === 'hypocotyl'
         ? 0.12 + 1.05 * smooth((s.day - sh.bornDay - 9) / 14)
         : fasc ? (age === 0 ? 0.22 + 0.6 * g : 0.9 + 0.12 * Math.min(age, 2)) : 1.15;
@@ -1917,7 +1919,7 @@ export class TreeView {
   // ------------------------------------------------------------ výběr
 
   /** Najde pupen nebo výhon nejblíž kurzoru (v obrazovkových pixelech – tenké větvičky se dají trefit). */
-  pick(x: number, y: number, budsOnly = false, leafMode = false): Pick | null {
+  pick(x: number, y: number, budsOnly = false, leafMode = false, noBuds = false): Pick | null {
     const s = this.state, fr = this.frames;
     if (!s || !fr) return null;
     const W = this.canvas.clientWidth, Hh = this.canvas.clientHeight;
@@ -1938,22 +1940,38 @@ export class TreeView {
       const [ax, ay, az] = proj(b[i * 3], b[i * 3 + 1], b[i * 3 + 2]);
       const [cx, cy, cz] = proj(tp[i * 3], tp[i * 3 + 1], tp[i * 3 + 2]);
       if (az > 1 || cz > 1) continue;
-      if (!leafMode) for (const bud of sh.buds) {
+      if (!leafMode && !noBuds) for (const bud of sh.buds) {
         const wx = b[i * 3] + (tp[i * 3] - b[i * 3]) * bud.t + bud.dir[0] * 0.3, wy = b[i * 3 + 1] + (tp[i * 3 + 1] - b[i * 3 + 1]) * bud.t + bud.dir[1] * 0.3, wz = b[i * 3 + 2] + (tp[i * 3 + 2] - b[i * 3 + 2]) * bud.t + bud.dir[2] * 0.3;
         const [qx, qy] = proj(wx, wy, wz);
         const e = Math.hypot(qx - x, qy - y) - 6;
         if (e < (budsOnly ? 12 : 5)) hits.push({ p: { type: 'bud', shoot: sh.id, bud: bud.id }, e: Math.max(0, e), rpx: 1, d: Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z), R: 0.1 });
       }
       if (budsOnly) continue;
-      const ex = cx - ax, ey = cy - ay, l2 = ex * ex + ey * ey;
-      if (l2 < 1) continue;
-      const t = clamp(((x - ax) * ex + (y - ay) * ey) / l2, 0, 1);
-      const wx = b[i * 3] + (tp[i * 3] - b[i * 3]) * t, wy = b[i * 3 + 1] + (tp[i * 3 + 1] - b[i * 3 + 1]) * t, wz = b[i * 3 + 2] + (tp[i * 3 + 2] - b[i * 3 + 2]) * t;
-      const d = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z), R = radiusOf(sh), rpx = R * pxPerCm(d);
       // nástroj Listy: trefit stačí list – počítá se okolí výhonu na dosah jeho listů; výhony bez listů se přeskočí
       if (leafMode && !(sh.needleCount > 0 && sh.needleLive > 0.02 && !sh.dead)) continue;
-      const e = Math.hypot(ax + ex * t - x, ay + ey * t - y) - rpx - (leafMode ? sh.needleLen * pxPerCm(d) * 0.8 : 0);
-      if (e < 7) hits.push({ p: { type: 'shoot', shoot: sh.id, t }, e: Math.max(0, e), rpx, d, R });
+      // Ohnutý výhon (oblouk) neleží na spojnici paty a špičky: testuje se po kouscích podél skutečného tvaru,
+      // jinak by šel chytit jen v místě, kde vidět není.
+      const K = sh.arc && Math.abs(sh.arc.angle) > 0.05 ? 8 : 1;
+      let bestE = 1e9, bestT = 0, bestD = 0, bestR = 0;
+      let px0 = ax, py0 = ay, w0x = b[i * 3], w0y = b[i * 3 + 1], w0z = b[i * 3 + 2];
+      for (let k = 1; k <= K; k++) {
+        let w1x = tp[i * 3], w1y = tp[i * 3 + 1], w1z = tp[i * 3 + 2], px1 = cx, py1 = cy;
+        if (k < K) {
+          const q = shootPoint(sh, k / K);
+          w1x = b[i * 3] + q[0]; w1y = b[i * 3 + 1] + q[1]; w1z = b[i * 3 + 2] + q[2];
+          [px1, py1] = proj(w1x, w1y, w1z);
+        }
+        const ex = px1 - px0, ey = py1 - py0, l2 = ex * ex + ey * ey;
+        if (l2 >= 1 / (K * K)) {
+          const u = clamp(((x - px0) * ex + (y - py0) * ey) / l2, 0, 1);
+          const wx = w0x + (w1x - w0x) * u, wy = w0y + (w1y - w0y) * u, wz = w0z + (w1z - w0z) * u;
+          const d = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z), rpx = radiusOf(sh) * pxPerCm(d);
+          const e = Math.hypot(px0 + ex * u - x, py0 + ey * u - y) - rpx - (leafMode ? sh.needleLen * pxPerCm(d) * 0.8 : 0);
+          if (e < bestE) { bestE = e; bestT = (k - 1 + u) / K; bestD = d; bestR = rpx; }
+        }
+        px0 = px1; py0 = py1; w0x = w1x; w0y = w1y; w0z = w1z;
+      }
+      if (bestE < 7) hits.push({ p: { type: 'shoot', shoot: sh.id, t: bestT }, e: Math.max(0, bestE), rpx: bestR, d: bestD, R: radiusOf(sh) });
     }
     if (!hits.length) return null;
     // schované = přímo pod kurzorem leží něco znatelně silnějšího a blíž ke kameře
@@ -2060,24 +2078,29 @@ export class TreeView {
     this.marker.visible = false;
   }
 
-  /** Kam by se větev ohnula, kdyby její špička šla za kurzorem (v rovině obrazovky procházející patou). */
-  bendTarget(id: number, x: number, y: number): { axis: Vec3; angle: number } | null {
-    const s = this.state, fr = this.frames;
-    const i = fr?.index.get(id);
-    if (!s || !fr || i === undefined) return null;
-    const B = new THREE.Vector3(fr.base[i * 3], fr.base[i * 3 + 1], fr.base[i * 3 + 2]);
-    const ndc = new THREE.Vector2((x / this.canvas.clientWidth) * 2 - 1, -(y / this.canvas.clientHeight) * 2 + 1);
+  /** Bod ve světě → souřadnice na obrazovce (px v plátně). */
+  toScreen(p: number[]): [number, number] {
+    const v = new THREE.Vector3(p[0], p[1], p[2]).project(this.camera);
+    return [(v.x * 0.5 + 0.5) * this.canvas.clientWidth, (-v.y * 0.5 + 0.5) * this.canvas.clientHeight];
+  }
+
+  /** Bod pod kurzorem v rovině rovnoběžné s obrazovkou, která prochází bodem g; depth (cm) ho posune od kamery
+   *  (kladné) nebo k ní. Chycený bod větve se díky tomu pohybuje přesně pod kurzorem a nemění hloubku. */
+  dragPoint(g: number[], x: number, y: number, depth = 0): Vec3 | null {
     const ray = new THREE.Raycaster();
-    ray.setFromCamera(ndc, this.camera);
-    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(this.camera.getWorldDirection(new THREE.Vector3()), B);
+    ray.setFromCamera(new THREE.Vector2((x / this.canvas.clientWidth) * 2 - 1, -(y / this.canvas.clientHeight) * 2 + 1), this.camera);
+    const n = this.camera.getWorldDirection(new THREE.Vector3());
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(g[0], g[1], g[2]));
     const hit = ray.ray.intersectPlane(plane, new THREE.Vector3());
     if (!hit) return null;
-    const d = new THREE.Vector3(...s.shoots[i].dir);
-    const nd = hit.sub(B).normalize();
-    const axis = new THREE.Vector3().crossVectors(d, nd);
-    if (axis.length() < 1e-4) return null;
-    axis.normalize();
-    return { axis: [axis.x, axis.y, axis.z], angle: d.angleTo(nd) };
+    hit.addScaledVector(n, depth);
+    return [hit.x, hit.y, hit.z];
+  }
+
+  /** Kolik centimetrů ve scéně odpovídá jednomu pixelu v místě bodu p. */
+  cmPerPx(p: number[]): number {
+    const d = this.camera.position.distanceTo(new THREE.Vector3(p[0], p[1], p[2]));
+    return (2 * Math.tan((this.camera.fov * Math.PI) / 360) * d) / this.canvas.clientHeight;
   }
 
   /** Náhled ohybu: kostra větve z pokusného stavu (po ohybu); barva podle rizika. */
@@ -2135,14 +2158,19 @@ export class TreeView {
       m = at(i, bud ? bud.t : 1);
       if (bud) m = [m[0] + bud.dir[0] * 0.3, m[1] + bud.dir[1] * 0.3, m[2] + bud.dir[2] * 0.3];
     } else {
-      m = at(i, p.t);
-      pts.push(...m, ...at(i, 1));
+      // ohnutý výhon se zvýrazní podél skutečného oblouku, ne po tětivě
+      const shI = s.shoots[i];
+      const curve = (j: number, t: number) => { const c = s.shoots[j]; if (!c.arc) return at(j, t); const q = shootPoint(c, t); return [b[j * 3] + q[0], b[j * 3 + 1] + q[1], b[j * 3 + 2] + q[2]]; };
+      m = curve(i, p.t);
+      if (shI.arc) { let prev = m; for (let k = 1; k <= 8; k++) { const q = curve(i, p.t + ((1 - p.t) * k) / 8); pts.push(...prev, ...q); prev = q; } }
+      else pts.push(...m, ...at(i, 1));
       const gone = new Set<number>([-2]);
       for (let j = i + 1; j < s.shoots.length && !own; j++) {
         const c = s.shoots[j];
         if ((c.parent === p.shoot && c.attachT > p.t) || gone.has(c.parent)) {
           gone.add(c.id);
-          pts.push(...at(j, 0), ...at(j, 1));
+          if (c.arc) { let prev = at(j, 0); for (let k = 1; k <= 6; k++) { const q = curve(j, k / 6); pts.push(...prev, ...q); prev = q; } }
+          else pts.push(...at(j, 0), ...at(j, 1));
         }
       }
     }

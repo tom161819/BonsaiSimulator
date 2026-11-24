@@ -4,9 +4,9 @@ import { Timeline } from './sim/timeline';
 import { TreeView, Pick, wireGauge } from './render/view';
 import { GLAZES, P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
-import { YEAR, bendLimit, bendStress, breakRisk, computeFrames, heldArc, mossCover, potStatus, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
-import type { Action, ActionInput, PotType, State } from './sim/types';
-import { bendShoot, deadwood, wholeBranch } from './sim/actions';
+import { YEAR, bendLimit, bendStress, breakRisk, computeFrames, heldArc, mossCover, potStatus, shootPoint, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
+import type { Action, ActionInput, PotType, State, Vec3 } from './sim/types';
+import { bendShoot, deadwood, splitShoot, wholeBranch } from './sim/actions';
 import { computeLeafLight } from './sim/light';
 import { SPECIES, SPECIES_ORDER, speciesOf } from './sim/species';
 import samplesJson from './samples.json';
@@ -144,7 +144,9 @@ function describeWire(p: Pick): Described | null {
   const s = tl.state;
   const sh = s.shoots.find((x) => x.id === p.shoot);
   if (!sh || sh.dead) return null;
-  const pick: Pick = { type: 'shoot', shoot: sh.id, t: 0 };
+  // značka ukazuje, odkud se větev ohne; zvýrazněná část se pohne
+  const pl = p.type === 'shoot' && !sh.elong && sh.parent >= 0 ? bendHint(s, sh, p.t) : null;
+  const pick: Pick = { type: 'shoot', shoot: sh.id, t: pl ? pl.at : 0 };
   if (sh.wire) {
     const hold = Math.round(sh.wire.set * 100);
     return {
@@ -159,7 +161,7 @@ function describeWire(p: Pick): Described | null {
   const spring = s.gdd >= P.flushGdd && s.gdd < P.budSetGdd;
   return {
     title: 'Nadrátovat a ohnout', pick,
-    detail: `Táhněte větev tam, kam ji chcete ohnout. Bezpečný ohyb do ${deg(bendLimit(s, sh, arcZ()))}°, měděný drát ø ${String(wireGauge(radiusOf(sh))).replace('.', ',')} mm.`,
+    detail: `Chyťte větev a táhněte: místo, které držíte, jde přesně za kurzorem. Ohne se ${pl ? cm(pl.zone) : 'úsek'} před ním, od značky. Shift při tažení = od sebe / k sobě. Bezpečný ohyb do ${deg(pl ? pl.safe : bendLimit(s, sh, 1))}°, drát ø ${String(wireGauge(radiusOf(sh))).replace('.', ',')} mm.`,
     danger: spring ? 'Strom je v růstu a kůra se snadno odlupuje – větve teď praskají dřív. Lepší je podzim až předjaří.' : '',
     action: null,
   };
@@ -258,7 +260,7 @@ function describe(p: Pick): Described | null {
       action: { type: 'cut', shoot: sh.id, t, label: young ? `Zaštípnut letorost o ${pctL} %` : sub ? `Zkrácena větev o ${pctL} %` : `Zkrácen výhon o ${pctL} %` },
     };
   }
-  const bare = sh.kind === 'shoot' ? P.bareBase : 0;
+  const bare = sh.kind === 'shoot' && !sh.split ? P.bareBase : 0;
   const needlesLeft = sh.kind !== 'hypocotyl' && sh.needleLive > 0.02 && Math.round((sh.needleCount * Math.max(0, t - bare)) / (1 - bare)) > 0;
   const kidsLeft = s.shoots.some((c) => c.parent === sh.id && c.attachT <= t && !c.dead) || sh.buds.some((b) => b.t <= t);
   const danger = needlesLeft || kidsLeft ? '' : 'Pod řezem nezůstanou žádné jehlice – výhon odumře. Borovice z holého dřeva neobráží.';
@@ -471,11 +473,68 @@ for (const ev of ['keydown', 'keyup'] as const) window.addEventListener(ev, (e) 
 });
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-let bend: { id: number; axis: [number, number, number]; angle: number; z: number } | null = null;
+// ---- drátování: místo, které držíte, jde přesně za kurzorem; ohýbá se úsek těsně před ním
+/** Plán ohybu: který úsek se ohne (po případném rozdělení výhonu), odkud a kde ho držíme. */
+interface BendPlan {
+  id: number; // výhon, za který se tahá
+  at: number; // kde se rozdělí (0 = nedělí se, ohýbá se od jeho nasazení)
+  z: number; // podíl délky ohýbaného úseku, přes který jde oblouk – končí v drženém místě
+  base: State; tid: number; // stav po rozdělení a id ohýbaného úseku
+  P: Vec3; d0: Vec3; G: Vec3; // začátek ohybu, směr větve v něm a držené místo (svět)
+  zone: number; // délka ohýbaného úseku v cm
+  held: number; safe: number;
+}
 const arcZ = () => Number($<HTMLInputElement>('wArc').value) / 100;
+/** Kde se větev ohne, když ji chytím v místě t: [místo rozdělení, držené místo]. */
+function bendSpot(sh: State['shoots'][number], t: number): [number, number] {
+  // držené místo: úplně u nasazení by nebyla žádná páka
+  const tg = Math.min(1, Math.max(t, 0.15, Math.min(0.9, 1.2 / Math.max(sh.len, 0.1))));
+  let at = tg * (1 - arcZ());
+  if (sh.kind !== 'shoot' || at < 0.06 || at > 0.94 || (sh.arc && at < sh.arc.z)) at = 0; // už ohnutý oblouk se doohýbá celý
+  return [at, tg];
+}
+/** Jen pro nápovědu při najetí (bez kopírování stromu): odkud se větev ohne, jak dlouhý úsek a kolik snese. */
+function bendHint(s: State, sh: State['shoots'][number], t: number): { at: number; zone: number; safe: number } {
+  const [at, tg] = bendSpot(sh, t);
+  const part = at > 0 ? { ...sh, len: sh.len * (1 - at), arc: null } : sh;
+  const z = at > 0 ? Math.min(1, (tg - at) / (1 - at)) : tg;
+  return { at, zone: z * part.len, safe: bendLimit(s, part, z) };
+}
+function planBend(s: State, id: number, t: number): BendPlan | null {
+  const sh = s.shoots.find((x) => x.id === id);
+  if (!sh || sh.dead || sh.elong || sh.parent < 0) return null;
+  // eslint-disable-next-line prefer-const
+  let [at, tg] = bendSpot(sh, t);
+  const base = structuredClone(s);
+  const out = at > 0 ? splitShoot(base, id, at) : null;
+  if (!out) at = 0;
+  const tid = out ? out.id : id;
+  const z = out ? Math.min(1, (tg - at) / (1 - at)) : tg;
+  const fr = computeFrames(base), j = fr.index.get(tid)!, tgt = base.shoots[j];
+  const P: Vec3 = [fr.base[j * 3], fr.base[j * 3 + 1], fr.base[j * 3 + 2]];
+  const gp = shootPoint(tgt, z);
+  return {
+    id, at, z, base, tid, P, d0: [...tgt.dir] as Vec3, G: [P[0] + gp[0], P[1] + gp[1], P[2] + gp[2]], zone: z * tgt.len,
+    held: s.rules >= 8 ? heldArc(tgt)?.angle ?? 0 : 0, safe: bendLimit(base, tgt, z),
+  };
+}
+/** Ohyb, po kterém držené místo míří od začátku ohybu přesně k bodu T: oblouk končí v drženém místě,
+ *  jeho tětiva tedy svírá se směrem větve polovinu celkového stočení. */
+function solveBend(pl: BendPlan, T: Vec3): { axis: Vec3; angle: number } {
+  const v: Vec3 = [T[0] - pl.P[0], T[1] - pl.P[1], T[2] - pl.P[2]];
+  const vl = Math.hypot(v[0], v[1], v[2]);
+  if (vl < 1e-6) return { axis: [0, 1, 0], angle: 0 };
+  const d = pl.d0, c = (d[0] * v[0] + d[1] * v[1] + d[2] * v[2]) / vl;
+  const ax: Vec3 = [d[1] * v[2] - d[2] * v[1], d[2] * v[0] - d[0] * v[2], d[0] * v[1] - d[1] * v[0]];
+  const al = Math.hypot(ax[0], ax[1], ax[2]);
+  if (al < 1e-7 * vl) return { axis: [0, 1, 0], angle: 0 };
+  const cap = pl.held + pl.safe * (pl.base.rules >= 6 ? 2 : 1.5); // dál už je prasknutí jisté
+  return { axis: [ax[0] / al, ax[1] / al, ax[2] / al], angle: Math.min(2 * Math.acos(Math.max(-1, Math.min(1, c))), cap) };
+}
+let bend: (BendPlan & { axis: Vec3; angle: number; depth: number; cx: number; cy: number }) | null = null;
 function syncArc() {
   const z = arcZ();
-  $('wArcV').textContent = z === 0 ? 'ostrý zlom v nasazení' : z === 1 ? 'oblouk po celé délce' : `oblouk přes ${Math.round(z * 100)} % délky`;
+  $('wArcV').textContent = z >= 1 ? 'od kloubu až k ruce' : `${Math.round(z * 100)} % délky před rukou`;
 }
 $<HTMLInputElement>('wArc').oninput = syncArc;
 syncArc();
@@ -493,9 +552,10 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   else if (tool === 'wire' && e.button === 0 && !repotOpen) {
     // tažení za větev = ohyb drátem; tažení mimo strom otáčí pohled
-    const p = view.pick(e.offsetX, e.offsetY);
+    const p = view.pick(e.offsetX, e.offsetY, false, false, true); // jen výhony – pupen by chytil jiný výhon, než je zvýrazněný
     const sh = p && tl.state.shoots.find((x) => x.id === p.shoot);
-    if (sh && !sh.dead && !sh.elong && sh.parent >= 0) bend = { id: sh.id, axis: [0, 1, 0], angle: 0, z: arcZ() };
+    const pl = sh && p.type === 'shoot' ? planBend(tl.state, sh.id, p.t) : null;
+    if (pl) bend = { ...pl, axis: [0, 1, 0], angle: 0, depth: 0, cx: e.offsetX, cy: e.offsetY };
   }
 });
 canvas.addEventListener('pointermove', (e) => {
@@ -526,30 +586,33 @@ canvas.addEventListener('pointermove', (e) => {
       return;
     }
     if (bend) {
-      const sh = tl.state.shoots.find((x) => x.id === bend!.id)!;
-      const tgt = view.bendTarget(bend.id, e.offsetX, e.offsetY);
-      if (tgt) {
-        const z = bend.z;
-        const safe = bendLimit(tl.state, sh, z);
-        bend.axis = tgt.axis;
-        // kurzor určuje směr špičky; u oblouku je celkové stočení větší než úhel tětivy
-        // strop tažení: kde riziko dosáhne 100 % (ve v8 se počítá od tvaru, který větev už drží)
-        const held = tl.state.rules >= 8 && z > 0 ? heldArc(sh)?.angle ?? 0 : 0;
-        bend.angle = Math.min(tgt.angle / (1 - z / 2), held + safe * (tl.state.rules >= 6 ? 2 : 1.5));
-        const risk = breakRisk(tl.state, sh, bend.angle, z, bend.axis);
-        const extra = bendStress(tl.state, sh, bend.axis, bend.angle, z);
+      // Shift: svislý pohyb myši posouvá držené místo od sebe / k sobě; jinak jde přesně za kurzorem
+      if (e.shiftKey) bend.depth -= dy * view.cmPerPx(bend.G);
+      else { bend.cx = e.offsetX; bend.cy = e.offsetY; }
+      const T = view.dragPoint(bend.G, bend.cx, bend.cy, bend.depth);
+      if (T) {
+        const sol = solveBend(bend, T);
+        bend.axis = sol.axis; bend.angle = sol.angle;
+        const tgt = bend.base.shoots.find((x) => x.id === bend!.tid)!;
+        const risk = breakRisk(bend.base, tgt, bend.angle, bend.z, bend.axis);
+        const extra = bendStress(bend.base, tgt, bend.axis, bend.angle, bend.z);
         const more = Math.abs(extra - bend.angle) > 0.02 ? `, z toho nově ${deg(extra)}°` : '';
-        const tmp = structuredClone(tl.state);
-        bendShoot(tmp, bend.id, bend.axis, bend.angle, z);
-        view.previewState(tmp, bend.id, risk > 0);
-        const radius = z > 0 && bend.angle > 0.01 ? ` · poloměr ${cm((z * sh.len) / bend.angle)}` : '';
+        const tmp = structuredClone(bend.base);
+        bendShoot(tmp, bend.tid, bend.axis, bend.angle, bend.z);
+        // živý náhled: strom se překreslí ohnutý, takže větev jde opravdu pod kurzorem (u obřích stromů jen kostra)
+        view.holdCamera = true;
+        if (tmp.shoots.length <= 5000) view.setState(tmp);
+        view.previewState(tmp, bend.tid, risk > 0);
+        const radius = bend.angle > 0.01 ? ` · poloměr ${cm(bend.zone / bend.angle)}` : '';
+        const dep = Math.abs(bend.depth) > 0.3 ? ` · ${bend.depth > 0 ? 'od sebe' : 'k sobě'} ${cm(Math.abs(bend.depth))}` : '';
         tip.hidden = false;
         tip.className = risk > 0 ? 'danger' : '';
         tip.textContent = risk > 0
-          ? `Ohyb ${deg(bend.angle)}°${more}${radius} · riziko prasknutí ${Math.round(risk * 100)} % (bezpečně do ${deg(safe)}°)`
-          : `Ohyb ${deg(bend.angle)}°${more}${radius} · bezpečně do ${deg(safe)}°${more ? ' navíc' : ''}`;
-        tip.style.left = `${Math.min(window.innerWidth - 270, e.clientX + 16)}px`;
-        tip.style.top = `${Math.max(8, e.clientY - 44)}px`;
+          ? `Ohyb ${deg(bend.angle)}°${more}${radius}${dep} · riziko prasknutí ${Math.round(risk * 100)} % (bezpečně do ${deg(bend.safe)}°)`
+          : `Ohyb ${deg(bend.angle)}°${more}${radius}${dep} · bezpečně do ${deg(bend.safe)}°${more ? ' navíc' : ''}`;
+        // údaj stranou pod kurzorem, aby nezakrýval ohýbanou větev
+        tip.style.left = `${Math.min(window.innerWidth - 270, e.clientX + 34)}px`;
+        tip.style.top = `${Math.min(window.innerHeight - 60, e.clientY + 30)}px`;
       }
       return;
     }
@@ -560,7 +623,7 @@ canvas.addEventListener('pointermove', (e) => {
   ctrlHeld = e.ctrlKey || e.metaKey;
   lastMouse = { ox: e.offsetX, oy: e.offsetY, cx: e.clientX, cy: e.clientY };
   if (e.pointerType === 'mouse' && !repotOpen) {
-    const pTree = view.pick(e.offsetX, e.offsetY, tool === 'bud', tool === 'leaf');
+    const pTree = view.pick(e.offsetX, e.offsetY, tool === 'bud', tool === 'leaf', tool === 'wire');
     const onTool = pTree ? null : view.pickTool(e.offsetX, e.offsetY);
     if (onTool) {
       setHover(null);
@@ -601,11 +664,14 @@ const up = (e: PointerEvent) => {
   if (bend && !wasTap) {
     const b = bend;
     bend = null;
+    view.holdCamera = false;
     setHover(null);
-    if (b.angle > 0.05) {
-      tl.act({ type: 'wire', shoot: b.id, axis: b.axis, angle: b.angle, z: b.z });
-      const broke = tl.state.shoots.find((x) => x.id === b.id)?.dead;
-      tl.actions[tl.actions.length - 1].label = broke ? `Větev při ohybu o ${deg(b.angle)}° praskla` : `Nadrátováno, ${b.z > 0 ? 'oblouk' : 'ohyb'} o ${deg(b.angle)}°`;
+    if (b.angle <= 0.03) refresh(); // nic se neohnulo – vrátit skutečný stav místo náhledu
+    if (b.angle > 0.03) {
+      const newId = tl.state.nextId; // rozdělený výhon dostane při zásahu právě tohle id
+      tl.act({ type: 'wire', shoot: b.id, at: b.at || undefined, axis: b.axis, angle: b.angle, z: b.z });
+      const broke = tl.state.shoots.find((x) => x.id === (b.at ? newId : b.id))?.dead;
+      tl.actions[tl.actions.length - 1].label = broke ? `Větev při ohybu o ${deg(b.angle)}° praskla` : `Nadrátováno, ohyb o ${deg(b.angle)}° na ${cm(b.zone)}`;
       lastLogKey = '';
       persist();
       refresh();
@@ -615,7 +681,7 @@ const up = (e: PointerEvent) => {
   }
   bend = null;
   if (!wasTap || repotOpen) return;
-  const p = view.pick(e.offsetX, e.offsetY, tool === 'bud', tool === 'leaf');
+  const p = view.pick(e.offsetX, e.offsetY, tool === 'bud', tool === 'leaf', tool === 'wire');
   if (!p && tool === 'bud' && view.pickMoss(e.offsetX, e.offsetY)) {
     tl.act({ type: 'moss', label: 'Odstraněn mech' });
     tip.hidden = true; lastLogKey = ''; persist(); refresh();
@@ -629,7 +695,7 @@ const up = (e: PointerEvent) => {
   else setHover(d, e.clientX, e.clientY, true);
 };
 canvas.addEventListener('pointerup', up);
-canvas.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); downAt = null; bend = null; cutLine = null; lineEl.hidden = true; });
+canvas.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); downAt = null; if (bend) { bend = null; view.holdCamera = false; refresh(); } cutLine = null; lineEl.hidden = true; });
 canvas.addEventListener('pointerleave', () => { if (!pending) setHover(null); });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.zoom(Math.exp(e.deltaY * 0.0012)); }, { passive: false });
 window.addEventListener('resize', () => view.resize());
@@ -846,7 +912,52 @@ $('shelfClose').onclick = () => { $('shelf').hidden = true; };
 syncShelfBtn();
 
 // háček pro skripty (tvorba vzorové sbírky, testy v prohlížeči): načtení hry a portrét z daného úhlu
+/** Vlastní kontrola ovládání drátu: jde držené místo za kurzorem? Pro každou větev se zkusí chytit ji ve 70 %
+ *  délky a táhnout o 60 px čtyřmi směry. Skok = o kolik se větev pohne, když se myš ještě nehnula;
+ *  odchylka směru = úhel na obrazovce mezi směrem ke kurzoru a směrem k drženému místu po ohybu. */
+function wireCheck(frac = 1) {
+  const slider = $<HTMLInputElement>('wArc'), keep = slider.value;
+  slider.value = String(Math.round(frac * 100));
+  const s = tl.state;
+  const jump: number[] = [], ang: number[] = [];
+  let capped = 0, split = 0;
+  const grab = (pl: BendPlan, sol: { axis: Vec3; angle: number }) => {
+    const tmp = structuredClone(pl.base);
+    bendShoot(tmp, pl.tid, sol.axis, sol.angle, pl.z);
+    const fr = computeFrames(tmp), j = fr.index.get(pl.tid)!, q = shootPoint(tmp.shoots[j], pl.z);
+    return view.toScreen([fr.base[j * 3] + q[0], fr.base[j * 3 + 1] + q[1], fr.base[j * 3 + 2] + q[2]]);
+  };
+  for (const sh of s.shoots.filter((q) => !q.dead && !q.elong && q.parent >= 0 && q.len > 3).slice(0, 80)) {
+    const pl = planBend(s, sh.id, 0.7);
+    if (!pl) continue;
+    if (pl.at) split++;
+    const g = view.toScreen(pl.G), p = view.toScreen(pl.P);
+    if (Math.hypot(g[0] - p[0], g[1] - p[1]) < 12) continue; // míří skoro přímo na kameru
+    const T0 = view.dragPoint(pl.G, g[0], g[1]);
+    if (!T0) continue;
+    const g0 = grab(pl, solveBend(pl, T0));
+    jump.push(Math.hypot(g0[0] - g[0], g0[1] - g[1]));
+    const cap = pl.held + pl.safe * (s.rules >= 6 ? 2 : 1.5);
+    for (const [dx, dy] of [[60, 0], [-60, 0], [0, 60], [0, -60]]) {
+      const c = [g[0] + dx, g[1] + dy];
+      const T = view.dragPoint(pl.G, c[0], c[1]);
+      if (!T) continue;
+      const sol = solveBend(pl, T);
+      if (sol.angle >= cap - 1e-6) { capped++; continue; } // dál už větev nejde, směr se neposuzuje
+      const g2 = grab(pl, sol);
+      const a1 = Math.atan2(c[1] - p[1], c[0] - p[0]), a2 = Math.atan2(g2[1] - p[1], g2[0] - p[0]);
+      let da = Math.abs(a1 - a2); if (da > Math.PI) da = 2 * Math.PI - da;
+      ang.push(da * 57.3);
+    }
+  }
+  slider.value = keep;
+  const st = (a: number[]) => { const b = [...a].sort((x, y) => x - y); return { n: b.length, median: +(b[Math.floor(b.length / 2)] ?? 0).toFixed(1), p90: +(b[Math.floor(b.length * 0.9)] ?? 0).toFixed(1), max: +(b[b.length - 1] ?? 0).toFixed(1) }; };
+  return { skokNaZacatkuPx: st(jump), odchylkaSmeruStupne: st(ang), naDorazu: capped, rozdelenych: split };
+}
 (window as any).bonsai = {
+  wireCheck,
+  // body na obrazovce, za které jde větve chytit (pro zkoušky ovládání drátu)
+  wirePoints: (t = 0.7) => tl.state.shoots.filter((q) => !q.dead && !q.elong && q.parent >= 0 && q.len > 5).map((q) => { const pl = planBend(tl.state, q.id, t); return pl ? { id: q.id, order: q.order, len: q.len, g: view.toScreen(pl.G), p: view.toScreen(pl.P) } : null; }).filter(Boolean),
   load: (save: Save) => { lastLogKey = ''; start(save); buildTrack(); },
   pickCheck: (d?: number, f?: number, sh?: boolean) => view.pickCheck(d, f, sh),
   jointGap: () => ({ ...view.jointGap, attach: view.attachGap }),
