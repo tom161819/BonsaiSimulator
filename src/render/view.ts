@@ -10,6 +10,8 @@ import { mossCover } from '../sim/util';
 import { LeafShape, speciesOf } from '../sim/species';
 import leafAtlasJson from '../leafAtlas.json';
 import type { Vec3 } from '../sim/types';
+import { BACKDROPS, TABLES } from '../scenery';
+import type { Quality } from '../scenery';
 import { Frames, basis, clamp, computeFrames, spreadNebari, doyOf, needleGrowth, radiusOf, rnd, rotate, shootPoint, smooth, yearOf } from '../sim/util';
 
 export type Pick =
@@ -315,6 +317,22 @@ function woodTexture(): THREE.CanvasTexture {
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
+  return t;
+}
+
+/** Studiové pozadí: plynulý přechod, nejsvětlejší kousek nad obzorem za stromem. */
+function studioTexture(dark: boolean): THREE.CanvasTexture {
+  const W = 512, H = 256;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d')!;
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  const c = dark ? ['#191d1b', '#2b302d', '#343a36', '#1d211f', '#101311'] : ['#d4d8d2', '#eceee9', '#f6f6f2', '#e2e4de', '#c9cdc6'];
+  g.addColorStop(0, c[0]); g.addColorStop(0.35, c[1]); g.addColorStop(0.5, c[2]); g.addColorStop(0.62, c[3]); g.addColorStop(1, c[4]);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 
@@ -769,9 +787,105 @@ export class TreeView {
   }
   private paintBackdrop() {
     if (this.themeK < 0) this.themeK = this.themeTarget();
-    const s = this.season, k = this.themeK;
+    // fotka má vlastní světlo a barvy – roční období ji tónuje jen napůl
+    const photo = !!BACKDROPS.find((b) => b.id === this.bgShown)?.photo;
+    const s = photo ? this.season.map((x) => 1 - (1 - x) * 0.5) : this.season, k = this.themeK * (photo ? 0.97 : 1);
     (this.backdrop.material as THREE.MeshBasicMaterial).color.setRGB(s[0] * k, s[1] * k, s[2] * k);
     this.needsRender = true;
+  }
+
+  // ------------------------------------------------------------ nastavení scény
+
+  private bgShown = 'default';
+  private bgCache = new Map<string, THREE.Texture>();
+  private bgDefault: THREE.Texture | null = null;
+  /** Pozadí scény (BACKDROPS). Fotka se načte při první volbě; než dorazí, zůstane předchozí pozadí. */
+  setBackdrop(id: string) {
+    const mat = this.backdrop.material as THREE.MeshBasicMaterial;
+    if (!this.bgDefault) this.bgDefault = mat.map;
+    this.bgWanted = id;
+    const show = (t: THREE.Texture | null) => {
+      if (this.bgWanted !== id) return;
+      mat.map = t; mat.needsUpdate = true;
+      this.bgShown = id;
+      this.paintBackdrop();
+    };
+    const spec = BACKDROPS.find((b) => b.id === id);
+    if (!spec || id === 'default') { show(this.bgDefault); return; }
+    const cached = this.bgCache.get(id);
+    if (cached) { show(cached); return; }
+    if (!spec.photo) { const t = studioTexture(id === 'studioDark'); this.bgCache.set(id, t); show(t); return; }
+    new THREE.TextureLoader().load(`tex/bg_${id}.jpg`, (t) => {
+      t.colorSpace = THREE.SRGBColorSpace;
+      // koule se kreslí zevnitř: obraz se zrcadlí zpět a natočí tak, aby za stromem byl střed záběru (spec.center)
+      t.wrapS = THREE.RepeatWrapping;
+      t.repeat.x = -1;
+      t.offset.x = (0.75 + (spec.center ?? 0.5)) % 1;
+      t.anisotropy = 4;
+      this.bgCache.set(id, t);
+      show(t);
+    }, undefined, () => undefined);
+  }
+  private bgWanted = 'default';
+
+  private tableSkin = 'default';
+  private tableDefault: THREE.Texture | null = null;
+  private tableCache = new Map<string, { d: THREE.Texture; n: THREE.Texture; r: THREE.Texture }>();
+  private tableSize: [number, number] = [60, 40];
+  /** Deska stolu (TABLES): fotografické dřevo, tatami nebo kámen s normálovou a drsnostní mapou. */
+  setTable(id: string) {
+    const m = this.table.material as THREE.MeshStandardMaterial;
+    if (!this.tableDefault) this.tableDefault = m.map;
+    this.tableSkin = id;
+    const apply = () => {
+      if (this.tableSkin !== id) return;
+      const set = this.tableCache.get(id);
+      if (id === 'default' || !set) { m.map = this.tableDefault; m.normalMap = null; m.roughnessMap = null; m.roughness = 0.75; }
+      else { m.map = set.d; m.normalMap = set.n; m.roughnessMap = set.r; m.roughness = 1; m.normalScale.set(0.8, 0.8); }
+      m.needsUpdate = true;
+      this.fitTableTexture();
+      this.needsRender = true;
+    };
+    if (id === 'default' || this.tableCache.has(id)) { apply(); return; }
+    const L = new THREE.TextureLoader(), spec = TABLES.find((t) => t.id === id);
+    if (!spec) return;
+    L.load(`tex/table_${id}_d.jpg`, (d) => L.load(`tex/table_${id}_n.jpg`, (n) => L.load(`tex/table_${id}_r.jpg`, (r) => {
+      for (const t of [d, n, r]) {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+        if (spec.rot) { t.center.set(0.5, 0.5); t.rotation = Math.PI / 2; }
+      }
+      d.colorSpace = THREE.SRGBColorSpace;
+      this.tableCache.set(id, { d, n, r });
+      apply();
+    }, undefined, () => undefined), undefined, () => undefined), undefined, () => undefined);
+  }
+  /** Opakování textury podle velikosti desky: jedna dlaždice pokryje spec.tile cm. */
+  private fitTableTexture() {
+    const m = this.table.material as THREE.MeshStandardMaterial;
+    const spec = TABLES.find((t) => t.id === this.tableSkin) ?? TABLES[0];
+    const [w, d] = this.tableSize, tile = m.map === this.tableDefault ? 60 : spec.tile;
+    // u otočené textury jde délka stolu po její svislé ose
+    const rx = spec.rot && m.map !== this.tableDefault ? d / tile : w / tile, ry = spec.rot && m.map !== this.tableDefault ? w / tile : d / tile;
+    for (const t of [m.map, m.normalMap, m.roughnessMap]) if (t) t.repeat.set(rx, ry);
+  }
+
+  private propsOn = true;
+  /** Nůžky a drát ležící na stole. */
+  setProps(on: boolean) { this.propsOn = on; if (this.state) this.build(); }
+  /** Stín stromu. */
+  setShadows(on: boolean) { this.sun.castShadow = on; this.sun.shadow.needsUpdate = true; this.needsRender = true; }
+  /** Kvalita vykreslení: hustota pixelů plátna a rozlišení stínu. */
+  setQuality(q: Quality) {
+    const dpr = window.devicePixelRatio || 1;
+    this.renderer.setPixelRatio(q === 'low' ? 1 : q === 'mid' ? Math.min(2, dpr) : Math.min(3, dpr * 1.25));
+    const size = q === 'low' ? 1024 : q === 'mid' ? 2048 : 4096;
+    if (this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+      this.sun.shadow.needsUpdate = true;
+    }
+    this.resize();
   }
   /** Vzhled stránky se změnil (přepínač, systém, hostitelská stránka): pozadí scény se plynule přelije. */
   applyTheme(animate = true) {
@@ -2140,12 +2254,13 @@ export class TreeView {
       const potW = Math.max(ps.a, ps.b);
       const size = Math.max(9, potW * 0.6);
       for (const [g, sx, id] of [[this.toolScissors, -1, 'cut'], [this.toolWire, 1, 'wire']] as [THREE.Group, number, string][]) {
-        g.visible = this.table.visible;
+        g.visible = this.table.visible && this.propsOn;
         g.scale.setScalar(size * (id === 'wire' ? 0.75 : 1));
         g.position.set(ox + sx * (ps.a / 2 + size * 0.75), this.tableTop + (this.activeTool === id ? size * 0.12 : 0), oz + ps.b * 0.35 * -sx); // z výchozího pohledu nůžky vlevo, drát vpravo
         g.rotation.set(0, id === 'cut' ? 0.9 : 0.3, this.activeTool === id ? 0.12 : 0);
       }
-      (this.table.material as THREE.MeshStandardMaterial).map!.repeat.set(wdt / 60, dep / 60);
+      this.tableSize = [wdt, dep];
+      this.fitTableTexture();
     }
 
     // slunce a rozsah stínové mapy podle velikosti stromu

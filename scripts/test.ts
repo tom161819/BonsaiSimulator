@@ -6,7 +6,7 @@ import { YEAR, bendLimit, breakRisk, computeFrames, mossCover, potExhaust, potSt
 import type { Action, State, Vec3 } from '../src/sim/types';
 import samples from '../src/samples.json';
 import { SPECIES_ORDER } from '../src/sim/species';
-import { P } from '../src/sim/params';
+import { P, POTS, POT_FAMILIES, POT_VOLUMES, potById, potOf } from '../src/sim/params';
 import { computeLeafLight } from '../src/sim/light';
 
 const sig = (s: State) => JSON.stringify(s.shoots.map((x) => [x.id, x.parent, +x.len.toFixed(4), x.buds.length, x.dead]));
@@ -737,6 +737,34 @@ test('v12: plevel nemění čísla výhonů – bez plevele roste strom stejně 
   const a = new Timeline(4, [{ day: 300, type: 'repot', pot: 'ground', potId: 'ground', prune: 0 }], 11, 'maple'); a.seek(at(4, 200));
   const b = new Timeline(4, [{ day: 300, type: 'repot', pot: 'ground', potId: 'ground', prune: 0 }], 12, 'maple'); b.seek(at(4, 200));
   assert.equal(JSON.stringify(a.state.shoots), JSON.stringify(b.state.shoots));
+});
+
+test('misky: každý tvar ve více objemech, staré misky z katalogu beze změny', () => {
+  const ids = POTS.map((p) => p.id);
+  assert.equal(new Set(ids).size, ids.length, 'čísla nádob se neopakují');
+  // starší misky (uložené hry) mají stále stejné rozměry a objem
+  assert.deepEqual([potById('b15').a, potById('b15').b, potById('b15').h, potById('b15').liters], [27, 19, 5, 1.5]);
+  assert.deepEqual([potById('b12').a, potById('b12').liters], [52, 12]);
+  for (const f of POT_FAMILIES) {
+    const vols = POT_VOLUMES.filter((L) => potOf(f.id, L));
+    assert.ok(vols.length >= 3, `${f.name}: aspoň tři objemy (${vols.length})`);
+    for (const L of vols) {
+      const p = potOf(f.id, L)!;
+      assert.equal(p.type, 'bonsai'); assert.equal(p.liters, L);
+      // větší objem = větší miska (stejný tvar)
+      const prev = vols[vols.indexOf(L) - 1];
+      if (prev !== undefined) assert.ok(p.a > potOf(f.id, prev)!.a, `${f.name} ${L} l je širší než ${prev} l`);
+    }
+  }
+  // tam, kde starší miska do mřížky zapadne, se použije ona (žádný dvojník)
+  assert.equal(potOf('rect', 1.5)!.id, 'b15');
+  assert.equal(potOf('rect', 2.5)!.id, 'b25');
+  // nová miska funguje v přesazení a kapacita roste s objemem
+  const t = new Timeline(4, [{ day: 300, type: 'repot', pot: 'bonsai', potId: potOf('mokko', 4)!.id, prune: 0 }], 12, 'maple');
+  t.seek(at(2, 200));
+  assert.equal(t.state.potId, 'b-mokko-4');
+  const small = new Timeline(4, [{ day: 300, type: 'repot', pot: 'bonsai', potId: 'b15', prune: 0 }], 12, 'maple'); small.seek(at(2, 200));
+  assert.ok(t.state.potCap > small.state.potCap * 2, 'miska 4 l pojme víc kořenů než 1,5 l');
 });
 
 console.log(`\n${n} testů prošlo`);

@@ -152,6 +152,9 @@ export interface PotSpec {
   corner?: number; // zaoblení půdorysu: 2 = ovál, 3–5 = zaoblený obdélník, 10+ = ostré rohy
   lobes?: number; // laločnatý půdorys (mokko = 4)
   feet?: 'block' | 'cloud' | 'none';
+  /** bonsajová miska: tvar (POT_FAMILIES) a zda je v nabídce přesazení (starší kusy z katalogu jen kvůli uloženým hrám) */
+  family?: string;
+  menu?: boolean;
 }
 export const POTS: PotSpec[] = [
   { id: 'ground', type: 'ground', name: 'Volná půda (záhon)', liters: 0, shape: 'ground', a: 0, b: 0, h: 0, color: 0, glaze: false },
@@ -178,6 +181,50 @@ export const POTS: PotSpec[] = [
   { id: 'b50c', type: 'bonsai', name: 'Kaskádová vysoká miska 5 l', liters: 5, shape: 'rect', a: 16, b: 16, h: 26, color: 0x9a4a2c, glaze: false, profile: 'cascade', corner: 9 },
   { id: 'b80b', type: 'bonsai', name: 'Obdélníková miska s pásky 8 l', liters: 8, shape: 'rect', a: 44, b: 32, h: 10, color: 0x6a4034, glaze: false, profile: 'banded', feet: 'cloud' },
 ];
+/** Bonsajové misky v nabídce: nejdřív se volí objem, pak tvar. Každý tvar se vyrábí v několika objemech;
+ *  rozměry se odvodí z předlohy (ref) podle třetí odmocniny poměru objemů. Starší misky z katalogu, které do
+ *  mřížky objemů zapadnou, se použijí beze změny – uložené hry tak kreslí i počítají stejně. */
+export interface PotFamily { id: string; name: string; ref: string; min: number; max: number; color?: number; glaze?: boolean }
+export const POT_VOLUMES = [0.2, 0.4, 0.7, 1, 1.5, 2.5, 4, 6, 10, 15];
+export const POT_FAMILIES: PotFamily[] = [
+  { id: 'rect', name: 'Obdélníková miska', ref: 'b15', min: 0.4, max: 15 },
+  { id: 'rectr', name: 'Obdélníková se zaoblenými rohy', ref: 'b20r', min: 0.7, max: 6 },
+  { id: 'rectf', name: 'Obdélníková rozevřená', ref: 'b22f', min: 0.7, max: 10 },
+  { id: 'rectband', name: 'Obdélníková s pásky na nožkách', ref: 'b80b', min: 2.5, max: 15 },
+  { id: 'deep', name: 'Hluboká obdélníková, glazovaná', ref: 'b12', min: 4, max: 15 },
+  { id: 'oval', name: 'Oválná miska', ref: 'b07', min: 0.4, max: 10, color: 0x5b4536, glaze: false },
+  { id: 'ovalb', name: 'Oválná vypouklá', ref: 'b10o', min: 0.4, max: 4 },
+  { id: 'ovalband', name: 'Oválná s pásky', ref: 'b40d', min: 1.5, max: 10 },
+  { id: 'mokko', name: 'Mokko (čtyřlaločná)', ref: 'b18m', min: 0.7, max: 6 },
+  { id: 'mame', name: 'Kulatá mělká (mame)', ref: 'b02', min: 0.2, max: 1 },
+  { id: 'drum', name: 'Kulatá bubnová', ref: 'b08d', min: 0.4, max: 4 },
+  { id: 'square', name: 'Čtvercová rozevřená', ref: 'b35s', min: 1, max: 6 },
+  { id: 'cascade', name: 'Kaskádová vysoká', ref: 'b50c', min: 1, max: 10 },
+];
+{
+  // starší misky z katalogu: ke kterému tvaru patří
+  const legacy: Record<string, string> = { b02: 'mame', b07: 'oval', b15: 'rect', b25: 'rect', b3: 'oval', b6: 'rect', b12: 'deep', b08d: 'drum', b10o: 'ovalb', b18m: 'mokko', b20r: 'rectr', b22f: 'rectf', b35s: 'square', b40d: 'ovalband', b50c: 'cascade', b80b: 'rectband' };
+  for (const p of POTS) if (legacy[p.id]) p.family = legacy[p.id];
+  for (const p of POTS) if (p.type === 'training') p.menu = true;
+  const round = (x: number, q: number) => Math.round(x / q) * q;
+  for (const f of POT_FAMILIES) {
+    const ref = POTS.find((p) => p.id === f.ref)!;
+    for (const L of POT_VOLUMES) {
+      if (L < f.min || L > f.max) continue;
+      const old = POTS.find((p) => p.family === f.id && p.liters === L);
+      if (old) { old.menu = true; continue; }
+      const k = Math.cbrt(L / ref.liters);
+      POTS.push({
+        ...ref, id: `b-${f.id}-${L}`, name: `${f.name} ${String(L).replace('.', ',')} l`, liters: L, family: f.id, menu: true,
+        a: round(ref.a * k, 0.5), b: round(ref.b * k, 0.5), h: round(ref.h * k, 0.25), color: f.color ?? ref.color, glaze: f.glaze ?? ref.glaze,
+      });
+    }
+  }
+}
+/** Bonsajová miska v nabídce daného tvaru a objemu. */
+export const potOf = (family: string, liters: number) => POTS.find((p) => p.menu && p.family === family && p.liters === liters);
+export const familyOf = (id: string | undefined) => POT_FAMILIES.find((f) => f.id === id);
+
 /** Barvy misek: neglazovaná kamenina a běžné glazury. '' = barva z katalogu. */
 export interface Glaze { id: string; name: string; color: number; glossy: boolean }
 export const GLAZES: Glaze[] = [

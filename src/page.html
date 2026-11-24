@@ -108,6 +108,31 @@
   #repot { display: flex; flex-direction: column; gap: 4px; }
   #repot label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-top: 4px; }
   #repot output { color: var(--fg); font-variant-numeric: tabular-nums; }
+  #repot .rGroup { display: flex; flex-direction: column; gap: 4px; }
+  #repot .rGroup[hidden] { display: none; }
+  #rKind button { font-size: 12px; padding-inline: 4px; }
+  /* rozbalovací výběr s náhledem (src/picker.ts) */
+  .pickBtn { width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; background-color: var(--panel-solid); }
+  .pickBtn .pickLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pickBtn svg { flex: none; color: var(--muted); transition: transform .15s ease; }
+  .pickBtn[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .pickList {
+    position: fixed; z-index: 30; overflow-y: auto; overscroll-behavior: contain; background: var(--panel-solid); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 9px; padding: 4px; box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.12);
+    font: 500 13px var(--body); max-width: min(360px, calc(100vw - 16px)); animation: pickIn .12s ease-out;
+  }
+  .pickList:focus { outline: none; }
+  @keyframes pickIn { from { opacity: 0; transform: translateY(-3px); } }
+  .pickGroup { padding: 8px 8px 3px; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+  .pickOpt { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  .pickOpt .pickTxt { display: flex; flex-direction: column; min-width: 0; }
+  .pickOpt small { color: var(--muted); font-size: 11.5px; font-weight: 400; font-variant-numeric: tabular-nums; }
+  .pickOpt.chosen { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .pickOpt.chosen::after { content: ''; margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+  .pickOpt.active { background: var(--accent); color: var(--accent-fg); }
+  .pickOpt.active small { color: color-mix(in srgb, var(--accent-fg) 78%, transparent); }
+  .pickOpt .swatch { flex: none; }
+  @media (prefers-reduced-motion: reduce) { .pickList { animation: none; } }
   #repot input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
   #rPotSel { width: 100%; }
   #rInfo { margin: 6px 0; font-size: 12.5px; }
@@ -141,21 +166,59 @@
   #shelf header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto 8px; }
   #shelf header h1 { font-size: 22px; } #shelf header h1 i { display: inline; margin-left: 8px; }
   #shelfEmpty { max-width: 1100px; margin: 24px auto; color: var(--muted); }
-  /* lavice: každý strom stojí na svém dílu prkna; díly na sebe navazují, takže řada tvoří jednu polici */
-  #bench { display: flex; flex-wrap: wrap; align-items: flex-start; row-gap: 26px; max-width: 1100px; margin: 0 auto; }
-  .kept { width: 220px; max-width: 50%; display: flex; flex-direction: column; min-width: 0; }
-  .kept img { width: 100%; height: 250px; object-fit: contain; object-position: bottom; display: block; }
-  .kept .plank {
-    height: 16px; background: linear-gradient(var(--wood-a), var(--wood-b)); border-bottom: 5px solid var(--wood-c);
-    box-shadow: 0 6px 8px -4px rgba(0, 0, 0, 0.35);
+  /* sbírka: plot z prken (assets/tex/fence.jpg), před ním mahagonové lavice (bench.jpg) se stromy */
+  #shelf {
+    background: linear-gradient(180deg, rgba(255, 246, 228, 0.06), rgba(30, 20, 10, 0.12) 60%, rgba(20, 14, 8, 0.38)), url("tex/fence.jpg") center top / 620px auto repeat, #b89770;
+    background-attachment: local;
   }
-  .kept .card { padding: 8px 8px 0; display: flex; flex-direction: column; gap: 4px; }
-  .kept input { font: 600 13px var(--body); color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 5px; padding: 2px 4px; width: 100%; min-width: 0; }
-  .kept input:hover, .kept input:focus { border-color: var(--line); }
-  .kept p { margin: 0; padding: 0 4px; font-size: 12px; line-height: 1.35; color: var(--muted); }
-  .kept b.title { padding: 2px 4px; font-size: 13px; }
-  .kept small { color: var(--muted); font-size: 11.5px; padding: 0 4px; font-variant-numeric: tabular-nums; }
-  .kept .row button { min-height: 28px; padding: 3px 8px; font-size: 12px; }
+  :root[data-theme="dark"] #shelf { background: linear-gradient(180deg, rgba(8, 12, 10, 0.55), rgba(8, 12, 10, 0.72)), url("tex/fence.jpg") center top / 620px auto repeat, #3a2e22; background-attachment: local; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #shelf { background: linear-gradient(180deg, rgba(8, 12, 10, 0.55), rgba(8, 12, 10, 0.72)), url("tex/fence.jpg") center top / 620px auto repeat, #3a2e22; background-attachment: local; } }
+  #shelf header { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #shelfEmpty { background: var(--panel); border-radius: 10px; padding: 10px 14px; }
+  #bench { --item: 220px; --pad: 58px; --treeH: 250px; --legW: 42px; display: flex; flex-direction: column; align-items: center; gap: 30px; max-width: 1100px; margin: 22px auto 0; }
+  #bench.narrow { --item: 150px; --pad: 30px; --treeH: 175px; --legW: 22px; }
+  .bRow { position: relative; display: flex; flex-direction: column; max-width: 100%; }
+  .bTrees, .bCards { display: flex; padding: 0 var(--pad); }
+  .kept { position: relative; width: var(--item); flex: none; display: flex; flex-direction: column; justify-content: flex-end; }
+  .kept img { position: relative; z-index: 1; width: 100%; height: var(--treeH); object-fit: contain; object-position: bottom; display: block; }
+  /* stín misky na desce lavice */
+  .kept::after { content: ''; position: absolute; left: 18%; right: 18%; bottom: -5px; height: 12px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.45), transparent); }
+  .placard {
+    position: absolute; z-index: 2; left: 6px; bottom: -8px; max-width: 44%; padding: 3px 6px 4px; font: 600 9.5px/1.15 var(--body); color: #2b2620;
+    background: linear-gradient(#ffffff, #ece9e2); border-radius: 2px; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 2px 3px 4px rgba(0, 0, 0, 0.25); transform: perspective(160px) rotateX(14deg);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #bench.narrow .placard { display: none; }
+  .bTop {
+    height: 11px; border-radius: 3px 3px 0 0; position: relative; z-index: 0;
+    background: linear-gradient(rgba(255, 225, 190, 0.28), rgba(255, 210, 170, 0.08)), url("tex/bench.jpg") 0 0 / 420px auto;
+    box-shadow: inset 0 1px 0 rgba(255, 230, 200, 0.45);
+  }
+  .bFront {
+    height: 32px; position: relative; z-index: 1;
+    background: linear-gradient(rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.3)), url("tex/bench.jpg") 0 -60px / 420px auto;
+    box-shadow: 0 12px 16px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(0, 0, 0, 0.35), inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+  }
+  #bench.narrow .bFront { height: 20px; }
+  .bLeg {
+    position: absolute; bottom: 0; top: calc(var(--treeH) + 11px + 32px); width: var(--legW); z-index: 0;
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0.05) 30%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.4)), url("tex/bench.jpg") 0 -200px / 420px auto;
+    box-shadow: 0 6px 6px -2px rgba(0, 0, 0, 0.35);
+  }
+  #bench.narrow .bLeg { top: calc(var(--treeH) + 11px + 20px); }
+  .bLeg.l { left: 12px; } .bLeg.r { right: 12px; }
+  #bench.narrow .bLeg.l { left: 5px; } #bench.narrow .bLeg.r { right: 5px; }
+  .bRow::after { content: ''; position: absolute; left: 0; right: 0; bottom: -10px; height: 16px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.35), transparent); z-index: -1; }
+  .bCards { gap: 0; padding-top: 10px; padding-bottom: 10px; position: relative; z-index: 1; }
+  .bCards .card { width: var(--item); flex: none; box-sizing: border-box; margin: 0 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 7px 8px !important; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .bCards .card:first-child { margin-left: 0; } .bCards .card:last-child { margin-right: 0; }
+  .kept .card, .bCards .card { padding: 8px 8px 0; display: flex; flex-direction: column; gap: 4px; }
+  .bCards input { font: 600 13px var(--body); color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 5px; padding: 2px 4px; width: 100%; min-width: 0; }
+  .bCards input:hover, .bCards input:focus { border-color: var(--line); }
+  .bCards p { margin: 0; padding: 0 4px; font-size: 12px; line-height: 1.35; color: var(--muted); }
+  .bCards b.title { padding: 2px 4px; font-size: 13px; }
+  .bCards small { color: var(--muted); font-size: 11.5px; padding: 0 4px; font-variant-numeric: tabular-nums; }
+  .bCards .row button { min-height: 28px; padding: 3px 8px; font-size: 12px; }
   .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; line-height: 1.35; }
   .swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--line); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
   /* ===== nápověda ovládání vlevo dole: klávesy a myš podle zvoleného nástroje ===== */
@@ -257,6 +320,30 @@
   @keyframes themePop { from { transform: scale(.6) rotate(-40deg); } }
   /* při přepnutí se barvy panelů plynule přelijí (třída je jen na chvíli) */
   .themefx .panel, .themefx button, .themefx select, .themefx #tip, .themefx #keys kbd { transition: background-color .38s ease, color .38s ease, border-color .38s ease, box-shadow .38s ease; }
+  /* nastavení: tlačítko s ozubeným kolem a rozbalovací panel */
+  #settingsBtn { display: inline-flex; align-items: center; gap: 6px; }
+  #settingsBtn svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; transition: transform .35s cubic-bezier(.2, .8, .2, 1); }
+  #settingsBtn[aria-expanded="true"] { border-color: var(--accent); }
+  #settingsBtn[aria-expanded="true"] svg { transform: rotate(90deg); }
+  #settings {
+    position: fixed; z-index: 20; width: min(372px, calc(100vw - 16px)); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column; gap: 14px; padding: 14px; background: var(--panel-solid);
+    box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.12); animation: pickIn .14s ease-out;
+  }
+  #settings[hidden] { display: none; }
+  #settings section { display: flex; flex-direction: column; gap: 6px; }
+  #settings h2 { margin: 0 0 2px; }
+  #settings .setLabel { font-size: 12.5px; color: var(--muted); }
+  #settings .check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; padding: 2px 0; }
+  #settings .check input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+  #settings .hint { margin: 0; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; }
+  .tile { display: flex; flex-direction: column; padding: 0; overflow: hidden; text-align: left; min-height: 0; border-radius: 8px; background: var(--panel-solid); }
+  .tile .th { display: block; height: 46px; background-size: cover; background-position: center; border-bottom: 1px solid var(--line); }
+  .tile .nm { padding: 5px 7px; font-size: 11.5px; line-height: 1.2; }
+  .tile:hover .th { filter: brightness(1.06); }
+  button.tile[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, var(--panel-solid)); color: var(--fg); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  #keys.off { display: none !important; }
   #cutLine { position: fixed; height: 0; border-top: 2px dashed #ff3b1f; transform-origin: 0 0; pointer-events: none; z-index: 5; }
   #tip {
     position: absolute; pointer-events: none; max-width: 260px; background: var(--panel-solid); border: 1px solid var(--line);
@@ -330,6 +417,7 @@
       <button data-theme-mode="light" aria-pressed="false" title="Světlý vzhled" aria-label="Světlý vzhled"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3"/></svg></button>
       <button data-theme-mode="dark" aria-pressed="false" title="Tmavý vzhled" aria-label="Tmavý vzhled"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.4 9.7A5.7 5.7 0 0 1 6.3 2.6a5.7 5.7 0 1 0 7.1 7.1z"/></svg></button>
     </div>
+    <button id="settingsBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" title="Zobrazení, pozadí a pracovní stůl"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M8.6 1.8h2.8l.4 2.3 1.5.8 2.2-.9 1.4 2.4-1.8 1.5v1.8l1.8 1.5-1.4 2.4-2.2-.9-1.5.8-.4 2.3H8.6l-.4-2.3-1.5-.8-2.2.9-1.4-2.4 1.8-1.5V8.4L3.1 6.9l1.4-2.4 2.2.9 1.5-.8z"/><circle cx="10" cy="10" r="2.6"/></svg><span>Nastavení</span></button>
   </div>
   <div class="panel" id="phases">
     <h2>Období roku</h2>
@@ -380,8 +468,17 @@
     </div>
     <div class="panel" id="repot" hidden>
       <h2>Přesazení</h2>
-      <label for="rPotSel">Nádoba</label>
-      <select id="rPotSel"></select>
+      <label>Nádoba</label>
+      <div class="seg" id="rKind" role="group" aria-label="Druh nádoby">
+        <button type="button" data-kind="ground">Volná půda</button>
+        <button type="button" data-kind="training">Pěstební</button>
+        <button type="button" data-kind="bonsai" title="Bonsajová miska">Bonsajová</button>
+      </div>
+      <div id="rTrainRow" class="rGroup"><label>Velikost nádoby</label><div class="picker" id="rTrain"></div></div>
+      <div id="rBonsaiRow" class="rGroup">
+        <label>Objem misky <output id="rDims"></output></label><div class="picker" id="rVol"></div>
+        <label>Tvar misky</label><div class="picker" id="rShape"></div>
+      </div>
       <label for="rPrune">Zakrátit kořeny <output id="rPruneV"></output></label>
       <input type="range" id="rPrune" min="0" max="70" step="5" value="30">
       <label for="rYaw">Otočit strom <output id="rYawV"></output></label>
@@ -396,14 +493,10 @@
       <input type="range" id="rOffZ" min="-80" max="80" step="5" value="0">
       <label for="rMound">Výška substrátu u kmene <output id="rMoundV"></output></label>
       <input type="range" id="rMound" min="0" max="100" step="10" value="0">
-      <label for="rMoss">Mech</label>
-      <select id="rMoss">
-        <option value="none">Bez mechu (naroste sám za 1–2 roky)</option>
-        <option value="keep">Vrátit původní mech</option>
-        <option value="full">Položit mech po celé misce</option>
-      </select>
-      <label for="rGlaze">Barva misky <span id="rGlazeSw" class="swatch" aria-hidden="true"></span></label>
-      <select id="rGlaze"></select>
+      <label>Mech</label>
+      <div class="picker" id="rMoss"></div>
+      <label>Barva misky</label>
+      <div class="picker" id="rGlaze"></div>
       <label for="rSpread">Rozprostřít kořeny do stran <output id="rSpreadV"></output></label>
       <input type="range" id="rSpread" min="0" max="100" step="10" value="0">
       <p id="rInfo"></p>
@@ -454,6 +547,29 @@
   </header>
   <p id="shelfEmpty" hidden>Sbírka je zatím prázdná. Tlačítkem „Přidat do sbírky“ uložíte strom ve stavu, v jakém právě je.</p>
   <div id="bench"></div>
+</div>
+<div class="panel" id="settings" role="dialog" aria-label="Nastavení" hidden>
+  <section>
+    <h2>Zobrazení</h2>
+    <label class="setLabel">Kvalita vykreslení</label>
+    <div class="seg" id="setQuality" role="group" aria-label="Kvalita vykreslení">
+      <button data-q="low" title="Méně pixelů a hrubší stín – rychlejší na slabších počítačích">Úsporná</button>
+      <button data-q="mid">Vyvážená</button>
+      <button data-q="high" title="Jemnější hrany a ostřejší stín – náročnější na grafiku">Vysoká</button>
+    </div>
+    <label class="check"><input type="checkbox" id="setShadows"> Stín stromu</label>
+    <label class="check"><input type="checkbox" id="setKeys"> Nápověda ovládání vlevo dole</label>
+    <label class="check"><input type="checkbox" id="setProps"> Nůžky a drát na stole</label>
+  </section>
+  <section>
+    <h2>Pozadí</h2>
+    <div class="tiles" id="setBg" role="group" aria-label="Pozadí"></div>
+  </section>
+  <section>
+    <h2>Pracovní stůl</h2>
+    <div class="tiles" id="setTable" role="group" aria-label="Pracovní stůl"></div>
+  </section>
+  <p class="hint">Najetím myší se volba hned ukáže, kliknutím se uloží. Fotky pozadí a desek: Poly Haven (CC0).</p>
 </div>
 <div id="tip" hidden></div>
 <div id="cutLine" hidden></div>

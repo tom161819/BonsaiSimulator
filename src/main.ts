@@ -2,7 +2,11 @@
 
 import { Timeline } from './sim/timeline';
 import { TreeView, Pick, wireGauge } from './render/view';
-import { GLAZES, P, POT, POTS, MAX_YEARS, RULES_LATEST, WEEDS, potById } from './sim/params';
+import { GLAZES, P, POT, POTS, POT_FAMILIES, POT_VOLUMES, MAX_YEARS, RULES_LATEST, WEEDS, familyOf, potById, potOf } from './sim/params';
+import type { PotSpec } from './sim/params';
+import { createPicker } from './picker';
+import { BACKDROPS, TABLES, loadSettings, saveSettings } from './scenery';
+import type { Quality } from './scenery';
 import { MONTHS, dateOf } from './sim/climate';
 import { YEAR, bendLimit, bendStress, breakRisk, computeFrames, heldArc, mossCover, potStatus, shootPoint, weedLoad, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State, Vec3 } from './sim/types';
@@ -895,6 +899,63 @@ for (const b of $('toolSeg').querySelectorAll('button')) {
   b.onclick = () => setTool(b.dataset.tool as Tool);
 }
 // nápověda ovládání: čísla 1–4 přepínají nástroje (kromě otevřeného přesazení a překryvných obrazovek)
+// ---- nastavení: zobrazení, pozadí a pracovní stůl (pamatuje se v prohlížeči)
+const settings = loadSettings();
+function applySettings() {
+  view.setQuality(settings.quality);
+  view.setShadows(settings.shadows);
+  view.setProps(settings.props);
+  view.setBackdrop(settings.backdrop);
+  view.setTable(settings.table);
+  $('keys').classList.toggle('off', !settings.keys);
+}
+{
+  const panel = $('settings'), btn = $<HTMLButtonElement>('settingsBtn');
+  const place = () => {
+    const r = btn.getBoundingClientRect();
+    panel.style.top = `${Math.round(r.bottom + 6)}px`;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(r.left, window.innerWidth - panel.offsetWidth - 8)))}px`;
+    panel.style.maxHeight = `${Math.round(window.innerHeight - r.bottom - 18)}px`;
+  };
+  const open = (o: boolean) => { panel.hidden = !o; btn.setAttribute('aria-expanded', String(o)); if (o) place(); };
+  btn.onclick = () => open(!!panel.hidden);
+  document.addEventListener('pointerdown', (e) => { if (!panel.hidden && !panel.contains(e.target as Node) && !btn.contains(e.target as Node)) open(false); }, true);
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) { open(false); btn.focus(); } });
+  window.addEventListener('resize', () => { if (!panel.hidden) place(); });
+  const save = () => { saveSettings(settings); sync(); };
+  const sync = () => {
+    for (const b of $('setQuality').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed', String(b.dataset.q === settings.quality));
+    $<HTMLInputElement>('setShadows').checked = settings.shadows;
+    $<HTMLInputElement>('setKeys').checked = settings.keys;
+    $<HTMLInputElement>('setProps').checked = settings.props;
+    for (const b of $('setBg').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed', String(b.dataset.id === settings.backdrop));
+    for (const b of $('setTable').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed', String(b.dataset.id === settings.table));
+  };
+  for (const b of $('setQuality').querySelectorAll<HTMLButtonElement>('button')) b.onclick = () => { settings.quality = b.dataset.q as Quality; view.setQuality(settings.quality); save(); };
+  $<HTMLInputElement>('setShadows').onchange = (e) => { settings.shadows = (e.target as HTMLInputElement).checked; view.setShadows(settings.shadows); save(); };
+  $<HTMLInputElement>('setKeys').onchange = (e) => { settings.keys = (e.target as HTMLInputElement).checked; $('keys').classList.toggle('off', !settings.keys); save(); };
+  $<HTMLInputElement>('setProps').onchange = (e) => { settings.props = (e.target as HTMLInputElement).checked; view.setProps(settings.props); save(); };
+  // dlaždice: najetí myší (nebo fokus) volbu ukáže, kliknutí ji uloží
+  const tiles = (host: HTMLElement, list: { id: string; name: string; thumb: string }[], key: 'backdrop' | 'table', show: (id: string) => void) => {
+    for (const it of list) {
+      const b = document.createElement('button');
+      b.className = 'tile'; b.dataset.id = it.id; b.type = 'button';
+      const th = document.createElement('span'); th.className = 'th';
+      th.style.backgroundImage = it.thumb.startsWith('tex/') ? `url("${it.thumb}")` : it.thumb;
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = it.name;
+      b.append(th, nm);
+      b.onpointerenter = b.onfocus = () => show(it.id);
+      b.onpointerleave = b.onblur = () => show(settings[key]);
+      b.onclick = () => { settings[key] = it.id; show(it.id); save(); };
+      host.appendChild(b);
+    }
+  };
+  tiles($('setBg'), BACKDROPS, 'backdrop', (id) => view.setBackdrop(id));
+  tiles($('setTable'), TABLES, 'table', (id) => view.setTable(id));
+  sync();
+  applySettings();
+}
+
 keyHints = createKeyHints($('keys'), (t) => {
   if (repotOpen || !$('chooser').hidden || !$('shelf').hidden) return false;
   if (t === 'leaf' && $<HTMLButtonElement>('tool-leaf').disabled) { flash('Odstraňování listů je až v pravidlech v10.'); return false; }
@@ -1002,19 +1063,48 @@ interface Sample { id: string; name: string; style: string; about: string; seed:
 const SAMPLES = samplesJson as unknown as Sample[];
 const THUMBS = sampleThumbs as Record<string, string>;
 
+// ---- sbírka: stromy stojí na dřevěné lavici před plotem; lavice má nohy na koncích, pod ní karty se jmény a tlačítky
+interface BenchItem { tree: HTMLElement; card: HTMLElement }
+let benchItems: BenchItem[] = [];
+let benchPer = 0;
+/** Bílá cedulka se jménem druhu, opřená na lavici vedle misky. */
+function placard(text: string) {
+  const p = document.createElement('span');
+  p.className = 'placard'; p.textContent = text;
+  return p;
+}
+/** Rozdělí stromy do řad podle šířky okna; každá řada má svou lavici. */
+function layoutBench(items = benchItems, force = true) {
+  benchItems = items;
+  const host = $('bench');
+  const W = Math.min(1100, host.clientWidth || $('shelf').clientWidth - 32);
+  const narrow = W < 560, itemW = narrow ? 150 : 220, pad = narrow ? 30 : 58;
+  const per = Math.max(1, Math.floor((W - 2 * pad) / itemW));
+  if (!force && per === benchPer) return;
+  benchPer = per;
+  host.innerHTML = '';
+  host.classList.toggle('narrow', narrow);
+  const div = (c: string) => { const d = document.createElement('div'); d.className = c; return d; };
+  for (let i = 0; i < items.length; i += per) {
+    const row = div('bRow'), trees = div('bTrees'), cards = div('bCards');
+    for (const it of items.slice(i, i + per)) { trees.appendChild(it.tree); cards.appendChild(it.card); }
+    const top = div('bTop'), front = div('bFront'), legL = div('bLeg l'), legR = div('bLeg r');
+    row.append(trees, top, front, cards, legL, legR);
+    host.appendChild(row);
+  }
+}
+if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { if (!$('shelf').hidden && benchItems.length) layoutBench(benchItems, false); }).observe($('shelf'));
+
 function renderSamples() {
-  const bench = $('bench');
-  bench.innerHTML = '';
   $('shelfTitle').textContent = 'Vzorová sbírka';
   $('shelfEmpty').hidden = true;
   $('shelfCount').textContent = 'stromy vypěstované ve hře, od semínka';
+  const items: BenchItem[] = [];
   for (const k of SAMPLES) {
     const el = document.createElement('div');
     el.className = 'kept';
     const img = document.createElement('img');
     img.src = THUMBS[k.id] || ''; img.alt = `${k.name} – ${k.style}`;
-    const plank = document.createElement('div');
-    plank.className = 'plank';
     const card = document.createElement('div');
     card.className = 'card';
     const title = document.createElement('b');
@@ -1038,26 +1128,24 @@ function renderSamples() {
     };
     row.append(open);
     card.append(title, about, info, row);
-    el.append(img, plank, card);
-    bench.appendChild(el);
+    el.append(img, placard(SPECIES.pine.name));
+    items.push({ tree: el, card });
   }
+  layoutBench(items);
 }
 $('samplesBtn').onclick = () => { playing = false; renderSamples(); $('shelf').hidden = false; refresh(); };
 
 function renderShelf() {
   $('shelfTitle').textContent = 'Moje sbírka';
   const list = loadShelf();
-  const bench = $('bench');
-  bench.innerHTML = '';
   $('shelfEmpty').hidden = list.length > 0;
   $('shelfCount').textContent = list.length ? `${list.length} ${list.length === 1 ? 'strom' : list.length < 5 ? 'stromy' : 'stromů'}` : '';
+  const items: BenchItem[] = [];
   for (const k of list) {
     const el = document.createElement('div');
     el.className = 'kept';
     const img = document.createElement('img');
     img.src = k.thumb; img.alt = k.name;
-    const plank = document.createElement('div');
-    plank.className = 'plank';
     const card = document.createElement('div');
     card.className = 'card';
     const name = document.createElement('input');
@@ -1088,9 +1176,10 @@ function renderShelf() {
     };
     row.append(open, del);
     card.append(name, info, row);
-    el.append(img, plank, card);
-    bench.appendChild(el);
+    el.append(img, placard((SPECIES[k.species as keyof typeof SPECIES] ?? SPECIES.pine).name));
+    items.push({ tree: el, card });
   }
+  layoutBench(items);
 }
 $('shelfBtn').onclick = () => { playing = false; renderShelf(); $('shelf').hidden = false; refresh(); };
 // přepínač verze pravidel: strom se přepočítá od semínka podle zvolených pravidel (zásahy zůstávají)
@@ -1173,32 +1262,74 @@ function flash(text: string) {
 }
 
 let rPot = 't05';
-{
-  // nabídka nádob po skupinách
-  const sel = $<HTMLSelectElement>('rPotSel');
-  for (const type of ['ground', 'training', 'bonsai'] as PotType[]) {
-    const grp = document.createElement('optgroup');
-    grp.label = POT[type].name;
-    for (const p of POTS.filter((x) => x.type === type)) {
-      const o = document.createElement('option');
-      o.value = p.id; o.textContent = p.name;
-      grp.appendChild(o);
-    }
-    sel.appendChild(grp);
+// náhled v nabídce: nádoba / barva / mech pod myší (null = ukazuje se zvolená)
+let rHover: string | null = null, rGlazeHover: string | null = null, rMossHover: string | null = null;
+let rGlazeV = '', rMossV: 'none' | 'keep' | 'full' = 'none';
+const rLast: Record<PotType, string> = { ground: 'ground', training: 't5', bonsai: 'b15' };
+const fmtNum = (x: number) => String(Math.round(x * 10) / 10).replace('.', ',');
+const fmtL = (l: number) => `${fmtNum(l)} l`;
+const potDims = (p: PotSpec) => (p.shape === 'round' ? `⌀ ${fmtNum(p.a)} × ${fmtNum(p.h)} cm` : `${fmtNum(p.a)} × ${fmtNum(p.b)} × ${fmtNum(p.h)} cm`);
+const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
+const nShapes = (n: number) => `${n} ${n === 1 ? 'tvar' : n < 5 ? 'tvary' : 'tvarů'}`;
+/** Misky v nabídce s daným objemem (a zvolená starší miska, pokud do mřížky objemů nepatří). */
+function shapesAt(L: number): PotSpec[] {
+  const cur = potById(rPot);
+  const list = POT_FAMILIES.map((f) => potOf(f.id, L)).filter((p): p is PotSpec => !!p);
+  if (cur.type === 'bonsai' && !cur.menu && cur.liters === L) list.unshift(cur);
+  return list;
+}
+/** Miska zvoleného objemu: stejný tvar, když se v tom objemu vyrábí, jinak první dostupný. */
+function potForVolume(L: number): PotSpec {
+  const cur = potById(rPot);
+  return (cur.family ? potOf(cur.family, L) : undefined) ?? shapesAt(L)[0];
+}
+const pkTrain = createPicker($('rTrain'), 'Velikost nádoby', (v) => { if (!repotOpen) return; rHover = v; updateRepot(); }, (v) => { rPot = rLast.training = v; syncRepot(); });
+const pkVol = createPicker($('rVol'), 'Objem misky', (v) => { if (!repotOpen) return; rHover = v === null ? null : potForVolume(Number(v)).id; updateRepot(); }, (v) => { rPot = rLast.bonsai = potForVolume(Number(v)).id; syncRepot(); });
+const pkShape = createPicker($('rShape'), 'Tvar misky', (v) => { if (!repotOpen) return; rHover = v; updateRepot(); }, (v) => { rPot = rLast.bonsai = v; syncRepot(); });
+const pkGlaze = createPicker($('rGlaze'), 'Barva misky', (v) => { if (!repotOpen) return; rGlazeHover = v; updateRepot(); }, (v) => { rGlazeV = v; updateRepot(); });
+const pkMoss = createPicker($('rMoss'), 'Mech', (v) => { if (!repotOpen) return; rMossHover = v; updateRepot(); }, (v) => { rMossV = v as typeof rMossV; updateRepot(); });
+for (const b of $('rKind').querySelectorAll<HTMLButtonElement>('button')) {
+  const kind = b.dataset.kind as PotType;
+  b.onclick = () => { rHover = null; rPot = rLast[kind]; syncRepot(); };
+  // najetí na druh nádoby ukáže naposledy zvolenou nádobu toho druhu
+  b.onpointerenter = () => { if (!repotOpen || potById(rPot).type === kind) return; rHover = rLast[kind]; updateRepot(); };
+  b.onpointerleave = () => { if (!repotOpen || rHover === null) return; rHover = null; updateRepot(); };
+}
+/** Nabídky nádoby, barvy a mechu podle zvolené nádoby. */
+function syncRepot() {
+  const cur = potById(rPot);
+  rLast[cur.type] = cur.id;
+  for (const b of $('rKind').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed', String(b.dataset.kind === cur.type));
+  $('rTrainRow').hidden = cur.type !== 'training';
+  $('rBonsaiRow').hidden = cur.type !== 'bonsai';
+  if (cur.type === 'training') pkTrain.set(POTS.filter((p) => p.type === 'training' && p.menu).map((p) => ({ value: p.id, label: p.name, sub: potDims(p) })), cur.id);
+  if (cur.type === 'bonsai') {
+    const vols = [...new Set([...POT_VOLUMES, cur.liters])].sort((a, b) => a - b);
+    pkVol.set(vols.map((L) => {
+      const n = shapesAt(L).length, same = cur.family ? potOf(cur.family, L) : undefined;
+      return { value: String(L), label: fmtL(L), sub: same ? `${nShapes(n)} · tento tvar ${potDims(same)}` : `${nShapes(n)}, tento tvar ne` };
+    }), String(cur.liters));
+    pkShape.set(shapesAt(cur.liters).map((p) => ({ value: p.id, label: familyOf(p.family)?.name ?? p.name, sub: potDims(p), swatch: hex(p.color) })), cur.id);
   }
-  sel.onchange = () => { rPot = sel.value; updateRepot(); };
+  pkGlaze.set(GLAZES.map((g) => ({ value: g.id, label: g.name, swatch: hex(g.id ? g.color : cur.color) })), rGlazeV);
+  pkGlaze.disabled = cur.type !== 'bonsai';
+  pkMoss.set([
+    { value: 'none', label: 'Bez mechu', sub: 'naroste sám za 1–2 roky' },
+    { value: 'keep', label: 'Vrátit původní mech' },
+    { value: 'full', label: 'Položit mech po celé misce' },
+  ], rMossV);
+  pkMoss.disabled = cur.type === 'ground';
+  updateRepot();
 }
 const rIn = (id: string) => $<HTMLInputElement>(id);
-const rVals = () => ({ prune: Number(rIn('rPrune').value) / 100, yaw: Number(rIn('rYaw').value), side: Number(rIn('rSide').value), fwd: Number(rIn('rFwd').value), spread: Number(rIn('rSpread').value) / 100, offX: Number(rIn('rOffX').value) / 100, offZ: Number(rIn('rOffZ').value) / 100, mound: Number(rIn('rMound').value) / 100, glaze: $<HTMLSelectElement>('rGlaze').value, moss: $<HTMLSelectElement>('rMoss').value as 'none' | 'keep' | 'full' });
-$<HTMLSelectElement>('rMoss').onchange = () => updateRepot();
-for (const g of GLAZES) { const o = document.createElement('option'); o.value = g.id; o.textContent = g.name; $('rGlaze').appendChild(o); }
-$<HTMLSelectElement>('rGlaze').onchange = () => updateRepot();
+const rVals = () => ({ prune: Number(rIn('rPrune').value) / 100, yaw: Number(rIn('rYaw').value), side: Number(rIn('rSide').value), fwd: Number(rIn('rFwd').value), spread: Number(rIn('rSpread').value) / 100, offX: Number(rIn('rOffX').value) / 100, offZ: Number(rIn('rOffZ').value) / 100, mound: Number(rIn('rMound').value) / 100, glaze: rGlazeV, moss: rMossV });
 
 function updateRepot() {
-  const s = tl.state, v = rVals();
-  const spec = potById(rPot);
-  $<HTMLSelectElement>('rPotSel').value = rPot;
-  view.previewPot(rPot);
+  const s = tl.state, v = { ...rVals(), glaze: rGlazeHover ?? rGlazeV, moss: (rMossHover ?? rMossV) as typeof rMossV };
+  // náhled i odhad zaplnění platí pro nádobu pod myší, dokud se nevybere
+  const potId = rHover ?? rPot, spec = potById(potId);
+  view.previewPot(potId);
+  $('rDims').textContent = spec.type === 'bonsai' ? potDims(spec) : '';
   $('rPruneV').textContent = `${Math.round(v.prune * 100)} %`;
   $('rYawV').textContent = `${v.yaw}°`;
   $('rSideV').textContent = v.side ? `${Math.abs(v.side)}° ${v.side < 0 ? 'vlevo' : 'vpravo'}` : '0°';
@@ -1207,17 +1338,8 @@ function updateRepot() {
   view.previewRotation(v.yaw, v.fwd, -v.side);
   view.previewRoots(v.spread, [v.offX, v.offZ]);
   view.previewSoil({ mound: spec.type === 'ground' ? 0 : v.mound, glaze: v.glaze, moss: spec.type === 'ground' || v.moss === 'none' ? 0 : v.moss === 'full' ? 1 : mossCover(s) });
-  $<HTMLSelectElement>('rMoss').disabled = spec.type === 'ground';
   $('rMoundV').textContent = v.mound ? `${Math.round(v.mound * 100)} %` : 'rovný';
   rIn('rMound').disabled = spec.type === 'ground';
-  $<HTMLSelectElement>('rGlaze').disabled = spec.type !== 'bonsai';
-  {
-    // čtvereček s barvou: zvolená glazura, jinak barva nádoby z katalogu
-    const g = spec.type === 'bonsai' ? GLAZES.find((x) => x.id === v.glaze && x.id) : undefined;
-    const sw = $('rGlazeSw');
-    sw.hidden = spec.type === 'ground';
-    sw.style.background = `#${(g ? g.color : spec.color).toString(16).padStart(6, '0')}`;
-  }
   const offTxt = (x: number, neg: string, pos: string) => (x ? `${Math.round(Math.abs(x) * 100)} % ${x < 0 ? neg : pos}` : 'střed');
   $('rOffXV').textContent = offTxt(v.offX, 'vlevo', 'vpravo');
   $('rOffZV').textContent = offTxt(v.offZ, 'dozadu', 'dopředu');
@@ -1227,7 +1349,7 @@ function updateRepot() {
   if (s.stage === 'seed') { line('Semínko zatím nevyklíčilo – nádobu lze zvolit bez rizika.'); $<HTMLButtonElement>('rOk').disabled = false; return; }
   const season = repotSeason(s);
   const total = s.stress + repotStress(s, v.prune);
-  const after = spec.type === 'ground' ? 0 : (s.roots * (1 - v.prune)) / potCapFor(rPot);
+  const after = spec.type === 'ground' ? 0 : (s.roots * (1 - v.prune)) / potCapFor(potId);
   if (spec.type === 'ground') line('Ve volné půdě kořeny nic neomezuje – strom sílí nejrychleji, ale roste do výšky a jehlice má dlouhé.');
   else {
     const wp = Math.round((weedLoad(s) / Math.max(1, s.potCap)) * 100);
@@ -1250,7 +1372,9 @@ function updateRepot() {
 }
 
 function closeRepot() {
+  for (const pk of [pkTrain, pkVol, pkShape, pkGlaze, pkMoss]) pk.close();
   repotOpen = false;
+  rHover = rGlazeHover = rMossHover = null;
   $('repot').hidden = true;
   view.previewRotation(0, 0, 0);
   view.previewRoots(0, null);
@@ -1263,13 +1387,15 @@ $('repotBtn').onclick = () => {
   if (repotOpen) { closeRepot(); return; }
   repotOpen = true; playing = false;
   rPot = tl.state.potId;
+  rHover = rGlazeHover = rMossHover = null;
   rIn('rPrune').value = tl.state.pot === 'ground' || tl.state.stage === 'seed' ? '0' : '30';
   rIn('rYaw').value = '0'; rIn('rSide').value = '0'; rIn('rFwd').value = '0'; rIn('rSpread').value = '0';
   rIn('rOffX').value = String(Math.round((tl.state.potOffset?.[0] ?? 0) * 100)); rIn('rOffZ').value = String(Math.round((tl.state.potOffset?.[1] ?? 0) * 100));
   rIn('rMound').value = String(Math.round((tl.state.mound ?? 0) * 100));
-  $<HTMLSelectElement>('rGlaze').value = tl.state.glaze ?? '';
-  $<HTMLSelectElement>('rMoss').value = 'none';
+  rGlazeV = tl.state.glaze ?? '';
+  rMossV = 'none';
   $('repot').hidden = false;
+  syncRepot();
   view.front();
   setHover(null);
   refresh();
