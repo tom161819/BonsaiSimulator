@@ -7,6 +7,8 @@ Hra běží na **GitHub Pages**, data jsou v **Supabase**. Bez Supabase hra fung
 - **Účet** (e-mail + heslo, přezdívka). Ve sbírce i na výstavě je vlevo nahoře panel hráče: jméno, hvězdičky celkem, průměr, počet vystavených stromů. Nepřihlášený hráč tam vidí výzvu k přihlášení / registraci.
 - **Sbírka v účtu:** „Přidat do sbírky“ ukládá přihlášenému hráči strom do databáze (záznam zásahů + náhled). Stromy z prohlížeče jde jedním tlačítkem nahrát do účtu.
 - **Výstava:** strom ze sbírky jde *Vystavit* (a zase *Stáhnout*). Na obrazovce **Výstava** se stromy prochází šipkami (← →), přihlášení hráči je hodnotí 1–10 hvězdičkami (klik nebo klávesy 1–9, 0 = 10). Vlastní strom hodnotit nejde. Vedle jsou žebříčky **nejlépe hodnocených stromů** a **hráčů s nejvíc hvězdičkami**.
+- **Výstavu si prohlédne každý** (i nepřihlášený – tlačítko *Výstava* v horní liště i v panelu hráče); hodnotit mohou jen přihlášení.
+- Hra po startu ověří, že je server dosažitelný (stránka vložená jinam, např. na claude.ai, ho může mít zakázaný); když není, běží bez online části a stromy ukládá v prohlížeči.
 - Vyzkoušet bez serveru: otevřete hru s `?online=demo` – účty i výstava běží jen v paměti stránky, s ukázkovými stromy.
 
 ## Společná databáze s aplikací Bonsai deník

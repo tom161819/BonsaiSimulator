@@ -16,6 +16,8 @@ export interface OnlineDeps {
   /** po přihlášení / odhlášení: sbírka se překreslí z účtu nebo z prohlížeče */
   userChanged(u: OnlineUser | null): void;
   pause(): void;
+  /** stojan pod stromem podle velikosti misky v náhledu (sdílené se sbírkou) */
+  fitStand(box: HTMLElement): void;
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -23,7 +25,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') 
 const fmt = (x: number | null | undefined, d = 1) => (x === null || x === undefined ? '–' : x.toFixed(d).replace('.', ','));
 const STAR = '★';
 
-export function initOnline(backend: Backend | null, deps: OnlineDeps) {
+export function initOnline(initial: Backend | null, deps: OnlineDeps) {
+  let backend = initial;
   // ------------------------------------------------------------ panel hráče
   let statsCache: { uid: string; at: number; v: Awaited<ReturnType<Backend['stats']>> } | null = null;
   async function renderUserCards() {
@@ -53,7 +56,7 @@ export function initOnline(backend: Backend | null, deps: OnlineDeps) {
             const v = inp.value.trim();
             if (v.length < 3) { note.textContent = 'Přezdívka musí mít aspoň 3 znaky.'; return; }
             ok.disabled = true;
-            try { await backend.setUsername(v); deps.flash('Přezdívka je změněná.'); }
+            try { await backend!.setUsername(v); deps.flash('Přezdívka je změněná.'); }
             catch (err) { note.textContent = czError(err); note.classList.add('bad'); ok.disabled = false; }
           };
           form.append(inp, ok, no, note);
@@ -73,6 +76,8 @@ export function initOnline(backend: Backend | null, deps: OnlineDeps) {
         const a = el('button', 'primary', 'Přihlásit'), b = el('button', '', 'Registrovat');
         a.onclick = () => openAuth('in'); b.onclick = () => openAuth('up');
         row.append(a, b);
+        // výstavu si může prohlédnout každý; hodnotit jen přihlášený
+        if ($('expo').hidden) { const ex = el('button', '', 'Výstava'); ex.title = 'Prohlédnout vystavené stromy a žebříčky'; ex.onclick = () => openExpo(); row.append(ex); }
         c.appendChild(row);
         continue;
       }
@@ -98,7 +103,7 @@ export function initOnline(backend: Backend | null, deps: OnlineDeps) {
       const row = el('div', 'row');
       const ex = el('button', '', 'Výstava'), out = el('button', '', 'Odhlásit');
       ex.onclick = () => openExpo();
-      out.onclick = async () => { try { await backend.signOut(); } catch (e) { deps.flash(czError(e)); } };
+      out.onclick = async () => { try { await backend!.signOut(); } catch (e) { deps.flash(czError(e)); } };
       if ($('expo').hidden) row.append(ex);
       row.append(out);
       c.appendChild(row);
@@ -250,6 +255,7 @@ export function initOnline(backend: Backend | null, deps: OnlineDeps) {
     const src = thumbs.get(x.id);
     img.classList.remove('loading');
     if (src) img.src = src; else img.removeAttribute('src');
+    if (src) deps.fitStand(img.parentElement!);
     // předem načíst sousední náhled
     const nx = list[(idx + 1) % list.length];
     if (nx && !thumbs.has(nx.id)) backend!.treeData(nx.id).then((d) => thumbs.set(nx.id, d?.thumb ?? null)).catch(() => undefined);
@@ -324,5 +330,7 @@ export function initOnline(backend: Backend | null, deps: OnlineDeps) {
   }, true);
 
   renderUserCards();
-  return { renderUserCards, refreshStats, openAuth, openExpo, closeExpo };
+  /** server není dosažitelný: hra pokračuje bez online části */
+  function disable() { backend = null; closeExpo(); dlg.hidden = true; renderUserCards(); }
+  return { renderUserCards, refreshStats, openAuth, openExpo, closeExpo, disable };
 }

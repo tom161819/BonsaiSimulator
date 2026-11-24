@@ -212,10 +212,13 @@
   .expoTree { margin: 0; display: flex; flex-direction: column; align-items: center; min-width: 0; }
   .expoTree img { width: min(100%, 420px); height: min(52vh, 480px); object-fit: contain; object-position: bottom; display: block; position: relative; z-index: 1; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.25)); }
   .expoTree img.loading { opacity: 0.35; }
-  .expoTree .stand { width: min(100%, 460px); height: 46px; border-radius: 4px 4px 2px 2px; margin-top: -8px;
-    background: linear-gradient(rgba(255, 225, 190, 0.25), rgba(255, 210, 170, 0.06) 22%, rgba(0, 0, 0, 0.02) 24%, rgba(0, 0, 0, 0.32)), url("tex/bench.jpg") 0 0 / 420px auto;
-    box-shadow: 0 16px 20px -10px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 230, 200, 0.45); }
-  .expoNav { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; padding: 0; margin-bottom: 120px; background: var(--panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  /* výstava: stejný stojan a stůl s látkou jako ve sbírce, jen větší */
+  .expoTree { --clothTop: 44px; --drape: 64px; width: 100%; }
+  .expoTree img { margin-bottom: var(--sink, -7px); z-index: 3; }
+  .expoTree .stand { margin-bottom: calc(var(--clothTop) * -0.62); z-index: 2; }
+  .expoTree .stand .sTop { height: 15px; } .expoTree .stand .sFront { height: 19px; } .expoTree .stand .sFeet { height: 10px; }
+  .expoTree .bTable { width: min(100%, 560px); }
+  .expoNav { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; padding: 0; margin-bottom: 170px; background: var(--panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
   .expoNav svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .expoInfo { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
   .expoHead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
@@ -252,41 +255,55 @@
   #authMsg { margin: 0; min-height: 1.2em; } #authMsg.bad, .hint.bad { color: var(--danger); }
   #authForm .row { justify-content: flex-start; } #authForgot { margin-left: auto; }
   .kept .badge { position: absolute; z-index: 2; right: 6px; top: 6px; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: #e8b923; color: #3b2a00; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
-  #bench { --item: 220px; --pad: 58px; --treeH: 250px; --legW: 42px; display: flex; flex-direction: column; align-items: center; gap: 30px; max-width: 1100px; margin: 4px auto 0; }
-  #bench.narrow { --item: 150px; --pad: 30px; --treeH: 175px; --legW: 22px; }
+  /* sbírka: dlouhý stůl pokrytý látkou (japonské výstavy), na něm pro každý strom dřevěný stojan ve 3D;
+     šířku stojanu a usazení misky počítá src/main.ts (fitStand) z náhledu stromu */
+  #bench { --item: 220px; --pad: 40px; --treeH: 250px; --clothTop: 34px; --drape: 78px; display: flex; flex-direction: column; align-items: center; gap: 26px; max-width: 1100px; margin: 4px auto 0; }
+  #bench.narrow { --item: 150px; --pad: 18px; --treeH: 175px; --clothTop: 24px; --drape: 54px; }
   .bRow { position: relative; display: flex; flex-direction: column; max-width: 100%; }
   .bTrees, .bCards { display: flex; padding: 0 var(--pad); }
-  .kept { position: relative; width: var(--item); flex: none; display: flex; flex-direction: column; justify-content: flex-end; }
-  .kept img { position: relative; z-index: 1; width: 100%; height: var(--treeH); object-fit: contain; object-position: bottom; display: block; }
-  /* stín misky na desce lavice */
-  .kept::after { content: ''; position: absolute; left: 18%; right: 18%; bottom: -5px; height: 12px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.45), transparent); }
+  /* stojany stojí v hloubce horní plochy stolu */
+  .bTrees { position: relative; z-index: 2; margin-bottom: calc(var(--clothTop) * -0.62); }
+  .kept { position: relative; width: var(--item); flex: none; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+  .kept img { position: relative; z-index: 2; width: 100%; height: var(--treeH); object-fit: contain; object-position: bottom; display: block; margin-bottom: var(--sink, -5px); }
+  /* stojan: horní deska (vidět shora pod malým úhlem, jako na náhledu), přední hrana a nožky */
+  .stand { position: relative; z-index: 1; width: var(--sw, 62%); transform: translateX(var(--sx, 0px)); display: flex; flex-direction: column; filter: drop-shadow(0 5px 4px rgba(0, 0, 0, 0.35)); }
+  .stand .sTop { height: 10px; clip-path: polygon(4% 0, 96% 0, 100% 100%, 0 100%);
+    background: linear-gradient(rgba(60, 25, 10, 0.25), rgba(255, 220, 185, 0.22)), url("tex/bench.jpg") 0 0 / 300px auto; }
+  .stand .sFront { height: 13px; border-radius: 0 0 2px 2px;
+    background: linear-gradient(rgba(255, 225, 190, 0.35) 0 1px, rgba(0, 0, 0, 0.05) 1px, rgba(0, 0, 0, 0.32)), url("tex/bench.jpg") 0 -40px / 300px auto; }
+  .stand .sFeet { height: 7px; display: flex; justify-content: space-between; padding: 0 5%; }
+  .stand .sFeet i { width: 13%; min-width: 7px; background: linear-gradient(90deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.1) 40%, rgba(0, 0, 0, 0.45)), url("tex/bench.jpg") 0 -80px / 300px auto; border-radius: 0 0 2px 2px; }
+  #bench.narrow .stand .sTop { height: 7px; } #bench.narrow .stand .sFront { height: 9px; } #bench.narrow .stand .sFeet { height: 5px; }
+  /* stín stojanu na látce */
+  .kept::after { content: ''; position: absolute; z-index: 0; left: calc(50% + var(--sx, 0px) - var(--sw, 62%) * 0.5 - 4%); width: calc(var(--sw, 62%) + 8%); bottom: -6px; height: 12px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.5), transparent); }
   .placard {
-    position: absolute; z-index: 2; left: 6px; bottom: -8px; max-width: 44%; padding: 3px 6px 4px; font: 600 9.5px/1.15 var(--body); color: #2b2620;
-    background: linear-gradient(#ffffff, #ece9e2); border-radius: 2px; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 2px 3px 4px rgba(0, 0, 0, 0.25); transform: perspective(160px) rotateX(14deg);
+    position: absolute; z-index: 3; left: 2px; bottom: -11px; max-width: 46%; padding: 3px 6px 4px; font: 600 9.5px/1.15 var(--body); color: #2b2620;
+    background: linear-gradient(#ffffff, #ece9e2); border-radius: 2px; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 2px 3px 4px rgba(0, 0, 0, 0.3); transform: perspective(160px) rotateX(14deg);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   #bench.narrow .placard { display: none; }
-  .bTop {
-    height: 11px; border-radius: 3px 3px 0 0; position: relative; z-index: 0;
-    background: linear-gradient(rgba(255, 225, 190, 0.28), rgba(255, 210, 170, 0.08)), url("tex/bench.jpg") 0 0 / 420px auto;
-    box-shadow: inset 0 1px 0 rgba(255, 230, 200, 0.45);
-  }
-  .bFront {
-    height: 32px; position: relative; z-index: 1;
-    background: linear-gradient(rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.3)), url("tex/bench.jpg") 0 -60px / 420px auto;
-    box-shadow: 0 12px 16px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(0, 0, 0, 0.35), inset 0 -2px 0 rgba(0, 0, 0, 0.25);
-  }
-  #bench.narrow .bFront { height: 20px; }
-  .bLeg {
-    position: absolute; bottom: 0; top: calc(var(--treeH) + 11px + 32px); width: var(--legW); z-index: 0;
-    background: linear-gradient(90deg, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0.05) 30%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.4)), url("tex/bench.jpg") 0 -200px / 420px auto;
-    box-shadow: 0 6px 6px -2px rgba(0, 0, 0, 0.35);
-  }
-  #bench.narrow .bLeg { top: calc(var(--treeH) + 11px + 20px); }
-  .bLeg.l { left: 12px; } .bLeg.r { right: 12px; }
-  #bench.narrow .bLeg.l { left: 5px; } #bench.narrow .bLeg.r { right: 5px; }
-  .bRow::after { content: ''; position: absolute; left: 0; right: 0; bottom: -10px; height: 16px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.35), transparent); z-index: -1; }
-  .bCards { gap: 0; padding-top: 10px; padding-bottom: 10px; position: relative; z-index: 1; }
+  /* stůl s látkou: horní plocha (světlejší, zužuje se dozadu) a přední převis se záhyby a pruhem vlnek seigaiha */
+  .bTable { position: relative; z-index: 1; }
+  .tTop { height: var(--clothTop); clip-path: polygon(1.6% 0, 98.4% 0, 100% 100%, 0 100%);
+    background:
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 3px),
+      linear-gradient(#26324a, #364766 70%, #3e5172); }
+  .tDrape { height: var(--drape); position: relative; box-shadow: 0 14px 18px -10px rgba(0, 0, 0, 0.5);
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 5px),
+      repeating-linear-gradient(90deg, rgba(0, 0, 0, 0) 0 23px, rgba(0, 0, 0, 0.16) 31px, rgba(255, 255, 255, 0.05) 36px, rgba(0, 0, 0, 0) 44px),
+      repeating-linear-gradient(90deg, rgba(0, 0, 0, 0) 0 57px, rgba(0, 0, 0, 0.12) 66px, rgba(0, 0, 0, 0) 79px),
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.06) 0 1px, transparent 1px 3px),
+      linear-gradient(#33425f, #232e45); }
+  .tDrape::after { content: ''; position: absolute; left: 0; right: 0; bottom: 6px; height: 22px; opacity: 0.55;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='16' viewBox='0 0 32 16'%3E%3Cg fill='none' stroke='%23e9dcc0' stroke-width='1.2'%3E%3Ccircle cx='16' cy='16' r='14'/%3E%3Ccircle cx='16' cy='16' r='10'/%3E%3Ccircle cx='16' cy='16' r='6'/%3E%3Ccircle cx='0' cy='8' r='14'/%3E%3Ccircle cx='0' cy='8' r='10'/%3E%3Ccircle cx='0' cy='8' r='6'/%3E%3Ccircle cx='32' cy='8' r='14'/%3E%3Ccircle cx='32' cy='8' r='10'/%3E%3Ccircle cx='32' cy='8' r='6'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 32px 16px repeat-x;
+    -webkit-mask: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); mask: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+  .tDrape::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: linear-gradient(#c9b48a, #8f7b55); opacity: 0.8; }
+  #bench.narrow .tDrape::after { height: 14px; background-size: 20px 10px; }
+  .bRow::after { content: ''; position: absolute; left: 1%; right: 1%; bottom: -12px; height: 18px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.35), transparent); z-index: -1; }
+  .bCards { gap: 0; padding-top: 12px; padding-bottom: 10px; position: relative; z-index: 1; }
   .bCards .card { width: var(--item); flex: none; box-sizing: border-box; margin: 0 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 7px 8px !important; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   .bCards .card:first-child { margin-left: 0; } .bCards .card:last-child { margin-right: 0; }
   .kept .card, .bCards .card { padding: 8px 8px 0; display: flex; flex-direction: column; gap: 4px; }
@@ -392,7 +409,7 @@
   @media (prefers-reduced-motion: reduce) { #keys, #keys * { animation: none !important; transition: none !important; } }
   /* přepínač vzhledu: ikony se kreslí čarou, ve zvoleném stavu mají barvu textu tlačítka */
   #themeSeg svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  #themeSeg button { padding-inline: 9px; display: grid; place-items: center; }
+  #themeSeg button { padding-inline: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; }
   #themeSeg button[aria-pressed="true"] svg { animation: themePop .35s cubic-bezier(.2, .8, .2, 1); }
   @keyframes themePop { from { transform: scale(.6) rotate(-40deg); } }
   /* při přepnutí se barvy panelů plynule přelijí (třída je jen na chvíli) */
@@ -492,11 +509,6 @@
       <option value="2">Pravidla v2</option>
       <option value="1">Pravidla v1</option>
     </select>
-    <div class="seg" id="themeSeg" role="group" aria-label="Vzhled">
-      <button data-theme-mode="auto" aria-pressed="true" title="Vzhled podle systému" aria-label="Vzhled podle systému"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 13.5v-11a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg></button>
-      <button data-theme-mode="light" aria-pressed="false" title="Světlý vzhled" aria-label="Světlý vzhled"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3"/></svg></button>
-      <button data-theme-mode="dark" aria-pressed="false" title="Tmavý vzhled" aria-label="Tmavý vzhled"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.4 9.7A5.7 5.7 0 0 1 6.3 2.6a5.7 5.7 0 1 0 7.1 7.1z"/></svg></button>
-    </div>
     <button id="settingsBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" title="Zobrazení, pozadí a pracovní stůl"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M8.6 1.8h2.8l.4 2.3 1.5.8 2.2-.9 1.4 2.4-1.8 1.5v1.8l1.8 1.5-1.4 2.4-2.2-.9-1.5.8-.4 2.3H8.6l-.4-2.3-1.5-.8-2.2.9-1.4-2.4 1.8-1.5V8.4L3.1 6.9l1.4-2.4 2.2.9 1.5-.8z"/><circle cx="10" cy="10" r="2.6"/></svg><span>Nastavení</span></button>
   </div>
   <div class="panel" id="phases">
@@ -645,7 +657,7 @@
       <div id="expoStage">
         <div class="stage">
           <button class="expoNav prev" aria-label="Předchozí strom" title="Předchozí (←)"><svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg></button>
-          <figure class="expoTree"><img id="expoImg" alt=""><div class="stand" aria-hidden="true"></div></figure>
+          <figure class="expoTree"><img id="expoImg" alt=""><div class="stand" aria-hidden="true"><div class="sTop"></div><div class="sFront"></div><div class="sFeet"><i></i><i></i></div></div><div class="bTable" aria-hidden="true"><div class="tTop"></div><div class="tDrape"></div></div></figure>
           <button class="expoNav next" aria-label="Další strom" title="Další (→)"><svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
         </div>
         <div class="expoInfo panel">
@@ -685,6 +697,12 @@
 <div class="panel" id="settings" role="dialog" aria-label="Nastavení" hidden>
   <section>
     <h2>Zobrazení</h2>
+    <label class="setLabel">Vzhled</label>
+    <div class="seg" id="themeSeg" role="group" aria-label="Vzhled">
+      <button data-theme-mode="dark" aria-pressed="true"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M13.4 9.7A5.7 5.7 0 0 1 6.3 2.6a5.7 5.7 0 1 0 7.1 7.1z"/></svg>Tmavý</button>
+      <button data-theme-mode="light" aria-pressed="false"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3"/></svg>Světlý</button>
+      <button data-theme-mode="auto" aria-pressed="false" title="Podle nastavení systému (nebo stránky, do které je hra vložená)"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 13.5v-11a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg>Podle systému</button>
+    </div>
     <label class="setLabel">Kvalita vykreslení</label>
     <div class="seg" id="setQuality" role="group" aria-label="Kvalita vykreslení">
       <button data-q="low" title="Méně pixelů a hrubší stín – rychlejší na slabších počítačích">Úsporná</button>

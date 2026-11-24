@@ -45,16 +45,16 @@ let tool: Tool = 'cut';
 let repotOpen = false;
 let keyHints: ReturnType<typeof createKeyHints> | null = null; // nápověda ovládání vlevo dole
 
-// ---- vzhled: podle systému (nebo hostitelské stránky), vždy světlý, vždy tmavý; volba se pamatuje
+// ---- vzhled (Nastavení): tmavý (výchozí), světlý, nebo podle systému / hostitelské stránky; volba se pamatuje
 type ThemeMode = 'auto' | 'light' | 'dark';
 const THEME_KEY = 'bonsai-theme';
 let hostTheme = document.documentElement.dataset.theme; // poslední hodnota od hostitelské stránky (volba „podle systému“ ji vrací)
-let themeMode: ThemeMode = 'auto';
-try { const t = localStorage.getItem(THEME_KEY); if (t === 'light' || t === 'dark') themeMode = t; } catch { /* bez uložení */ }
+let themeMode: ThemeMode = 'dark';
+try { const t = localStorage.getItem(THEME_KEY); if (t === 'light' || t === 'dark' || t === 'auto') themeMode = t; } catch { /* bez uložení */ }
 // hostitelská stránka změnila vzhled sama: její volba má přednost před naší (vlastní změny se zahazují)
 const hostWatch = new MutationObserver(() => {
   hostTheme = document.documentElement.dataset.theme;
-  if (themeMode !== 'auto') { themeMode = 'auto'; try { localStorage.removeItem(THEME_KEY); } catch { /* bez uložení */ } syncThemeButtons(); }
+  if (themeMode !== 'auto') { themeMode = 'auto'; try { localStorage.setItem(THEME_KEY, 'auto'); } catch { /* bez uložení */ } syncThemeButtons(); }
   view.applyTheme();
 });
 function setThemeAttr(mode: ThemeMode) {
@@ -66,7 +66,7 @@ function setThemeAttr(mode: ThemeMode) {
 setThemeAttr(themeMode);
 hostWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 const view = new TreeView($<HTMLCanvasElement>('scene'));
-const online = createBackend(); // null = hra bez serveru (stromy jen v prohlížeči)
+let online = createBackend(); // null = hra bez serveru (stromy jen v prohlížeči)
 
 function start(save: Save | null) {
   tl = new Timeline(save?.seed ?? Math.floor(Math.random() * 1e9), save?.actions ?? [], save ? save.rules ?? 1 : RULES_LATEST, save?.species ?? 'pine');
@@ -1106,7 +1106,7 @@ function layoutBench(items = benchItems, force = true) {
   benchItems = items;
   const host = $('bench');
   const W = Math.min(1100, host.clientWidth || $('shelf').clientWidth - 32);
-  const narrow = W < 560, itemW = narrow ? 150 : 220, pad = narrow ? 30 : 58;
+  const narrow = W < 560, itemW = narrow ? 150 : 220, pad = narrow ? 18 : 40;
   const per = Math.max(1, Math.floor((W - 2 * pad) / itemW));
   if (!force && per === benchPer) return;
   benchPer = per;
@@ -1114,12 +1114,74 @@ function layoutBench(items = benchItems, force = true) {
   host.classList.toggle('narrow', narrow);
   const div = (c: string) => { const d = document.createElement('div'); d.className = c; return d; };
   for (let i = 0; i < items.length; i += per) {
-    const row = div('bRow'), trees = div('bTrees'), cards = div('bCards');
+    const row = div('bRow'), trees = div('bTrees'), cards = div('bCards'), table = div('bTable');
     for (const it of items.slice(i, i + per)) { trees.appendChild(it.tree); cards.appendChild(it.card); }
-    const top = div('bTop'), front = div('bFront'), legL = div('bLeg l'), legR = div('bLeg r');
-    row.append(trees, top, front, cards, legL, legR);
+    table.append(div('tTop'), div('tDrape'));
+    row.append(trees, table, cards);
     host.appendChild(row);
   }
+  for (const it of items) fitStand(it.tree);
+}
+
+/** Náhled stromu: kde je spodek misky a jak je miska široká (v pixelech obrázku). Náhledy mají průhledné pozadí,
+ *  takže stačí najít nejnižší neprůhledný řádek a šířku neprůhledných pixelů těsně nad ním. */
+const thumbCache = new Map<string, { w: number; h: number; x0: number; x1: number; yb: number } | null>();
+function analyseThumb(img: HTMLImageElement) {
+  const key = `${img.src.length}:${img.src.slice(-96)}`;
+  if (thumbCache.has(key)) return thumbCache.get(key)!;
+  const w = img.naturalWidth, h = img.naturalHeight;
+  let out: { w: number; h: number; x0: number; x1: number; yb: number } | null = null;
+  try {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true })!;
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    const opaque = (x: number, y: number) => d[(y * w + x) * 4 + 3] > 60;
+    let yb = -1;
+    for (let y = h - 1; y >= 0 && yb < 0; y--) { let n = 0; for (let x = 0; x < w; x++) if (opaque(x, y) && ++n >= 3) { yb = y; break; } }
+    if (yb >= 0) {
+      const band = Math.max(3, Math.round(h * 0.035));
+      let x0 = w, x1 = -1;
+      for (let y = Math.max(0, yb - band); y <= yb; y++) for (let x = 0; x < w; x++) if (opaque(x, y)) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
+      out = { w, h, x0, x1, yb };
+    }
+  } catch { /* náhled nejde přečíst – stojan zůstane výchozí */ }
+  thumbCache.set(key, out);
+  return out;
+}
+/** Dřevěný stojan pod stromem: šířka podle misky a miska usazená přesně na jeho horní desku. */
+function fitStand(kept: HTMLElement) {
+  const img = kept.querySelector('img');
+  if (!img) return;
+  let stand = kept.querySelector<HTMLElement>('.stand');
+  if (!stand) {
+    stand = document.createElement('div');
+    stand.className = 'stand';
+    stand.setAttribute('aria-hidden', 'true');
+    const feet = document.createElement('div');
+    feet.className = 'sFeet';
+    feet.append(document.createElement('i'), document.createElement('i'));
+    const top = document.createElement('div'), front = document.createElement('div');
+    top.className = 'sTop'; front.className = 'sFront';
+    stand.append(top, front, feet);
+    img.after(stand);
+  }
+  const st = stand;
+  const apply = () => {
+    const a = analyseThumb(img), bw = img.clientWidth, bh = img.clientHeight;
+    if (!a || !bw || !bh) return;
+    const sc = Math.min(bw / a.w, bh / a.h), offX = (bw - a.w * sc) / 2; // object-fit: contain, zarovnáno dolů a na střed
+    const potW = (a.x1 - a.x0 + 1) * sc, potC = offX + ((a.x0 + a.x1 + 1) / 2) * sc;
+    const sw = Math.min(bw * 0.96, Math.max(bw * 0.3, potW * 1.22 + 14));
+    const dx = Math.max(-(bw - sw) / 2, Math.min((bw - sw) / 2, potC - bw / 2));
+    const topH = (st.querySelector('.sTop') as HTMLElement).offsetHeight;
+    kept.style.setProperty('--sw', `${Math.round(sw)}px`);
+    kept.style.setProperty('--sx', `${Math.round(dx)}px`);
+    // průhledný okraj pod miskou se schová a spodek misky dosedne doprostřed horní desky
+    kept.style.setProperty('--sink', `${-Math.round((a.h - 1 - a.yb) * sc + topH * 0.55)}px`);
+  };
+  if (img.complete && img.naturalWidth) apply(); else img.addEventListener('load', apply, { once: true });
 }
 if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { if (!$('shelf').hidden && benchItems.length) layoutBench(benchItems, false); }).observe($('shelf'));
 
@@ -1292,8 +1354,17 @@ const onlineUi = initOnline(online, {
     if (!$('shelf').hidden && $('shelfTitle').textContent === 'Moje sbírka') renderShelf();
   },
   pause: () => { playing = false; },
+  fitStand,
 });
 $('expoBtn').hidden = !online;
+// server musí být dosažitelný (stránka vložená např. na claude.ai ho může mít zakázaný); jinak hra běží bez online části
+online?.probe().then((ok) => {
+  if (ok || !online) return;
+  online = null;
+  onlineUi.disable();
+  $('expoBtn').hidden = true;
+  if (!$('shelf').hidden && $('shelfTitle').textContent === 'Moje sbírka') renderShelf();
+});
 $('expoBtn').onclick = () => { playing = false; onlineUi.openExpo(); refresh(); };
 if (online?.kind === 'demo' && online._seed) {
   // ukázka bez serveru: vzorové stromy jako vystavené stromy ukázkových hráčů, s několika hodnoceními
@@ -1565,7 +1636,7 @@ function setTheme(mode: ThemeMode) {
   const root = document.documentElement;
   root.classList.add('themefx'); window.setTimeout(() => root.classList.remove('themefx'), 500);
   setThemeAttr(mode);
-  try { if (mode === 'auto') localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, mode); } catch { /* bez uložení */ }
+  try { localStorage.setItem(THEME_KEY, mode); } catch { /* bez uložení */ }
   syncThemeButtons();
   view.applyTheme();
 }

@@ -23,6 +23,8 @@ export interface UserStats { username: string; stars: number; votes: number; avg
 
 export interface Backend {
   readonly kind: 'supabase' | 'demo';
+  /** je server dosažitelný? (stránka vložená jinam ho může mít zakázaný) */
+  probe(): Promise<boolean>;
   user(): OnlineUser | null;
   /** změna přihlášení; recovery = hráč přišel z odkazu na obnovu hesla */
   onAuth(fn: (u: OnlineUser | null, recovery: boolean) => void): void;
@@ -105,6 +107,12 @@ function supabaseBackend(url: string, key: string): Backend {
   const here = () => location.origin + location.pathname;
   return {
     kind: 'supabase',
+    async probe() {
+      const ac = new AbortController(), t = setTimeout(() => ac.abort(), 7000);
+      try { const r = await fetch(`${url}/auth/v1/health`, { headers: { apikey: key }, signal: ac.signal }); return r.status < 500; }
+      catch { return false; }
+      finally { clearTimeout(t); }
+    },
     user: () => me,
     onAuth: (fn) => { subs.push(fn); },
     async signUp(email, password, username) {
@@ -200,6 +208,7 @@ function demoBackend(): Backend {
   const id = () => `demo-${++n}`;
   const api: Backend & { _seed(list: (NewTree & { username: string })[], votes: number[][]): void } = {
     kind: 'demo',
+    probe: async () => true,
     user: () => me,
     onAuth: (fn) => { subs.push(fn); },
     async signUp(email, password, username) {
