@@ -1906,6 +1906,127 @@ export class TreeView {
         const c = wb.v(ox + dir[0] * bl, oy + dir[1] * bl, oz + dir[2] * bl, dir[0], dir[1], dir[2], tint ? tint[0] : 0.82, tint ? tint[1] : 0.7, tint ? tint[2] : 0.55);
         for (let k = 0; k < RAD; k++) wb.tri(prev + k, prev + (k + 1) % RAD, c);
       };
+      const drawCone = (side: Vec3, age: number, season: number, doyC: number, rbC: number, seed: number) => {
+        // stav šišky: délka, rozevření, sklon a barvy (sRGB)
+        let L: number, open = 0, stalk: number, droop: number;
+        let body: number[], umbo: number[], core: number[], stalkC: number[], under: number[];
+        const mix = (x: number[], y: number[], k: number) => [x[0] + (y[0] - x[0]) * k, x[1] + (y[1] - x[1]) * k, x[2] + (y[2] - x[2]) * k];
+        const BROWN = [0.47, 0.36, 0.24], BROWN_UMBO = [0.32, 0.26, 0.19];
+        if (age === 0) {
+          L = 0.5 + 0.3 * season; stalk = 0.22; droop = -0.35;
+          body = [0.58, 0.25, 0.31]; umbo = [0.44, 0.17, 0.24]; core = [0.33, 0.14, 0.17]; stalkC = [0.42, 0.36, 0.22]; under = core;
+        } else if (age === 1) {
+          // druhý rok: zelená, v létě dorůstá a těžkne; od konce září hnědne
+          L = 1.4 + 3.1 * season; stalk = 0.45 + 0.3 * season; droop = 0.3 + 0.5 * season;
+          const br = smooth((doyC - 255) / 75);
+          body = mix([0.34, 0.44, 0.25], BROWN, br); umbo = mix([0.44, 0.43, 0.32], BROWN_UMBO, br); core = mix([0.21, 0.27, 0.15], [0.24, 0.17, 0.1], br);
+          stalkC = mix([0.36, 0.38, 0.22], [0.4, 0.31, 0.2], br); under = core;
+        } else {
+          // třetí rok: zralá šedohnědá, na jaře se otevře
+          L = 4.5; stalk = 0.75; droop = 0.82; open = smooth((s.gdd - 40) / 220);
+          body = mix(BROWN, [0.53, 0.45, 0.35], open); umbo = BROWN_UMBO; core = [0.2, 0.13, 0.08]; stalkC = [0.38, 0.3, 0.2]; under = [0.3, 0.2, 0.12];
+        }
+        const R = L * (age === 0 ? 0.4 : 0.31);
+        // směr: stopka vychází z boku větve, šiška se pak sklání k zemi (vodorovná složka boku + tíha)
+        let hx = side[0], hz = side[2];
+        if (Math.hypot(hx, hz) < 0.3) { hx = -d[2]; hz = d[0]; }
+        const hl = Math.hypot(hx, hz) || 1;
+        const phi = droop * 1.05; // úhel pod vodorovnou (rad)
+        let axis = nrm((hx / hl) * Math.cos(phi), -Math.sin(phi), (hz / hl) * Math.cos(phi));
+        if (age === 0) axis = nrm(axis[0] + d[0] * 0.6, axis[1] + d[1] * 0.6, axis[2] + d[2] * 0.6); // šištice míří s letorostem
+        // jedna plocha s plochým stínováním; pořadí vrcholů se otočí tak, aby normála mířila ven (nOut)
+        const face = (p0: number[], p1: number[], p2: number[], c0: number[], c1: number[], c2: number[], nOut: number[]) => {
+          const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2], bx = p2[0] - p0[0], by = p2[1] - p0[1], bz = p2[2] - p0[2];
+          let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+          const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+          let q1 = p1, q2 = p2, k1 = c1, k2 = c2;
+          if (nx * nOut[0] + ny * nOut[1] + nz * nOut[2] < 0) { nx = -nx; ny = -ny; nz = -nz; q1 = p2; q2 = p1; k1 = c2; k2 = c1; }
+          wb.reserve(3, 3);
+          const v0 = wb.v(p0[0], p0[1], p0[2], nx, ny, nz, c0[0], c0[1], c0[2]);
+          wb.v(q1[0], q1[1], q1[2], nx, ny, nz, k1[0], k1[1], k1[2]);
+          wb.v(q2[0], q2[1], q2[2], nx, ny, nz, k2[0], k2[1], k2[2]);
+          wb.tri(v0, v0 + 1, v0 + 2);
+        };
+        const add = (p: number[], v: number[], k: number) => [p[0] + v[0] * k, p[1] + v[1] * k, p[2] + v[2] * k];
+        // stopka: krátká zahnutá trubička z povrchu větve k patě šišky (kvadratická Bézierova křivka)
+        const P0 = [cx + side[0] * rbC * 0.8, cy + side[1] * rbC * 0.8, cz + side[2] * rbC * 0.8];
+        const C1 = add(P0, side, stalk * 0.65), P1 = add(C1, axis, stalk * 0.55);
+        const rs = 0.07 + 0.018 * L, SEG = 6, SID = 6;
+        const ring: number[][][] = [];
+        for (let k = 0; k <= SEG; k++) {
+          const t = k / SEG, m0 = (1 - t) * (1 - t), m1 = 2 * (1 - t) * t, m2 = t * t;
+          const pt = [m0 * P0[0] + m1 * C1[0] + m2 * P1[0], m0 * P0[1] + m1 * C1[1] + m2 * P1[1], m0 * P0[2] + m1 * C1[2] + m2 * P1[2]];
+          const tg = nrm(2 * (1 - t) * (C1[0] - P0[0]) + 2 * t * (P1[0] - C1[0]), 2 * (1 - t) * (C1[1] - P0[1]) + 2 * t * (P1[1] - C1[1]), 2 * (1 - t) * (C1[2] - P0[2]) + 2 * t * (P1[2] - C1[2]));
+          const [e1, e2] = basis(tg);
+          const r = rs * (1.25 - 0.3 * t);
+          ring.push(Array.from({ length: SID }, (_, j) => { const an = (j / SID) * 6.2832; return add(add(pt, e1, Math.cos(an) * r), e2, Math.sin(an) * r); }));
+          if (k) for (let j = 0; j < SID; j++) {
+            const j2 = (j + 1) % SID, A = ring[k - 1][j], B = ring[k - 1][j2], Cq = ring[k][j], D = ring[k][j2];
+            const mid = [(A[0] + D[0]) / 2 - pt[0], (A[1] + D[1]) / 2 - pt[1], (A[2] + D[2]) / 2 - pt[2]];
+            face(A, B, D, stalkC, stalkC, stalkC, mid); face(A, D, Cq, stalkC, stalkC, stalkC, mid);
+          }
+        }
+        // tělo šišky: vejčitě kuželovitý obrys, nejširší asi ve třetině
+        const [cu, cw] = basis(axis);
+        const prof = (t: number) => R * Math.pow(Math.sin(Math.PI * Math.min(1, Math.pow(0.06 + t, 0.75))), 0.85);
+        const onAxis = (t: number) => add(P1, axis, L * t);
+        const radial = (an: number) => [cu[0] * Math.cos(an) + cw[0] * Math.sin(an), cu[1] * Math.cos(an) + cw[1] * Math.sin(an), cu[2] * Math.cos(an) + cw[2] * Math.sin(an)];
+        // tmavé jádro mezi šupinami
+        {
+          const RG = 10, SD = 10, rings: number[][][] = [];
+          for (let k = 0; k <= RG; k++) {
+            const t = k / RG, rr = prof(t) * (0.72 - 0.25 * open);
+            rings.push(Array.from({ length: SD }, (_, j) => add(onAxis(t), radial((j / SD) * 6.2832), rr)));
+            if (k) for (let j = 0; j < SD; j++) {
+              const j2 = (j + 1) % SD, A = rings[k - 1][j], B = rings[k - 1][j2], Cq = rings[k][j], D = rings[k][j2];
+              const nO = radial(((j + 0.5) / SD) * 6.2832);
+              face(A, B, D, core, core, core, nO); face(A, D, Cq, core, core, core, nO);
+            }
+          }
+        }
+        // šupiny: štítky (apofýzy) ve spirálách podle zlatého úhlu – na šišce jsou vidět řady 8 a 13;
+        // každý štítek je kosočtverec s vyvýšeným pupkem uprostřed. Otevřená šiška má šupiny odkloněné od osy.
+        const N = age === 0 ? 40 : 92;
+        for (let i = 0; i < N; i++) {
+          const tt = 0.05 + 0.9 * ((i + 0.5) / N), an = i * 2.39996 + seed;
+          const nn = radial(an), pr = prof(tt);
+          const slope = (prof(Math.min(1, tt + 0.02)) - prof(Math.max(0, tt - 0.02))) / 0.04;
+          const ta = nrm(axis[0] * L + nn[0] * slope, axis[1] * L + nn[1] * slope, axis[2] * L + nn[2] * slope);
+          const tb = [axis[1] * nn[2] - axis[2] * nn[1], axis[2] * nn[0] - axis[0] * nn[2], axis[0] * nn[1] - axis[1] * nn[0]];
+          const ha = ((L * 7.2) / N) * (1 + 0.3 * open), hb = ((6.2832 * Math.max(pr, R * 0.25)) / 13) * (0.82 - 0.12 * open);
+          const Cc = add(onAxis(tt), nn, pr);
+          // kosočtverec: spodní roh zastrčený pod předchozí šupinou, pupek vystouplý
+          let Bq = add(add(Cc, ta, -ha * 0.85), nn, -ha * 0.07), Tq = add(add(Cc, ta, ha * 0.7), nn, -ha * 0.04);
+          let Lq = add(add(Cc, tb, hb), nn, -ha * 0.03), Rq = add(add(Cc, tb, -hb), nn, -ha * 0.03);
+          // pupek leží pod středem štítku (u borovice lesní je štítek dole vypouklejší)
+          let Uq = add(add(Cc, nn, ha * (age === 0 ? 0.2 : 0.17 + 0.08 * open)), ta, -ha * 0.18);
+          if (open > 0) {
+            // rozevření: štítek se otočí kolem spodní hrany od osy ven
+            const al = open * (0.85 - 0.3 * tt), ca = Math.cos(al), sa = Math.sin(al), piv = Bq;
+            const rot = (X: number[]) => {
+              const v = [X[0] - piv[0], X[1] - piv[1], X[2] - piv[2]];
+              const kx = tb, dot = v[0] * kx[0] + v[1] * kx[1] + v[2] * kx[2];
+              const cr = [kx[1] * v[2] - kx[2] * v[1], kx[2] * v[0] - kx[0] * v[2], kx[0] * v[1] - kx[1] * v[0]];
+              return [piv[0] + v[0] * ca + cr[0] * sa + kx[0] * dot * (1 - ca), piv[1] + v[1] * ca + cr[1] * sa + kx[1] * dot * (1 - ca), piv[2] + v[2] * ca + cr[2] * sa + kx[2] * dot * (1 - ca)];
+            };
+            // otáčí se směrem ven (od osy); když by šel dovnitř, otočí se opačně
+            const test = rot(Tq), out0 = (Tq[0] - Cc[0]) * nn[0] + (Tq[1] - Cc[1]) * nn[1] + (Tq[2] - Cc[2]) * nn[2];
+            const out1 = (test[0] - Cc[0]) * nn[0] + (test[1] - Cc[1]) * nn[1] + (test[2] - Cc[2]) * nn[2];
+            if (out1 < out0) { for (let q = 0; q < 3; q++) tb[q] = -tb[q]; }
+            Tq = rot(Tq); Lq = rot(Lq); Rq = rot(Rq); Uq = rot(Uq);
+            Bq = add(onAxis(Math.max(0, tt - 0.03)), nn, pr * (0.7 - 0.2 * open)); // pata šupiny zůstává u jádra
+          }
+          const vk = 0.88 + 0.22 * rnd(seed, i, 41);
+          const cB = [body[0] * vk, body[1] * vk, body[2] * vk], cT = [body[0] * vk * 1.08, body[1] * vk * 1.08, body[2] * vk * 1.06];
+          const cU = [umbo[0] * vk, umbo[1] * vk, umbo[2] * vk];
+          face(Uq, Bq, Rq, cU, cB, cB, nn); face(Uq, Rq, Tq, cU, cB, cT, nn); face(Uq, Tq, Lq, cU, cT, cB, nn); face(Uq, Lq, Bq, cU, cB, cB, nn);
+          if (open > 0.05) {
+            // spodní strana rozevřené šupiny: tmavší dřevo
+            const inn = [-nn[0], -nn[1], -nn[2]];
+            face(Bq, Rq, Tq, under, under, under, inn); face(Bq, Tq, Lq, under, under, under, inn);
+          }
+        }
+      };
       // samčí šištice: žluté shluky na holé bázi letorostu, v květnu–červnu práší, pak zhnědnou a opadají
       if (sh.male && age === 0 && s.gdd > 150 && doy < P.shedStartDoy && len > 0.3) {
         const fresh = s.gdd < 750;
@@ -1917,15 +2038,14 @@ export class TreeView {
           drawBud(dir, size, rb * 0.7, 0.42, fresh ? [0.86, 0.74, 0.3] : [0.5, 0.36, 0.22]);
         }
       }
-      // samičí šiška: 1. rok drobná načervenalá u vrcholu, 2. rok zelená a roste, 3. rok hnědá a otevřená, pak opadne
+      // samičí šiška borovice lesní: 1. rok drobná načervenalá šištice na konci letorostu, 2. rok zelená, dorůstá
+      // na 4–5 cm a k podzimu hnědne, 3. jaro se šupiny rozevřou a vypadnou semena. Visí na krátké zahnuté stopce,
+      // váhou skloněná dolů, ale ne svisle (asi 35–40° od svislice).
       if (sh.cone && age <= 2 && !sh.elong && (age > 0 || s.gdd > 500)) {
         at(0.93);
         const a = sh.id * 1.7;
         const side: Vec3 = [u[0] * Math.cos(a) + w[0] * Math.sin(a), u[1] * Math.cos(a) + w[1] * Math.sin(a), u[2] * Math.cos(a) + w[2] * Math.sin(a)];
-        const season = smooth(s.gdd / 1400);
-        if (age === 0) drawBud(nrm(side[0] + d[0], side[1] + d[1], side[2] + d[2]), 0.7, rb * 0.6, 0.4, [0.62, 0.3, 0.34]);
-        else if (age === 1) drawBud(nrm(side[0], side[1] - 0.5 * season, side[2]), 1 + 3 * season, rb * 0.6, 0.36, [0.36, 0.5, 0.28]);
-        else drawBud(nrm(side[0], side[1] - 0.8, side[2]), 4.3, rb * 0.6, 0.46, [0.47, 0.34, 0.22]);
+        drawCone(side, age, smooth(s.gdd / 1400), doy, rb, sh.id);
       }
       for (const b of sh.buds) {
         at(b.t);
@@ -2450,6 +2570,16 @@ export class TreeView {
     this.auto = false;
     this.target.set(fr.tip[i * 3], fr.tip[i * 3 + 1], fr.tip[i * 3 + 2]);
     this.dist = Math.max(6, radiusOf(s.shoots[i]) * distR);
+    this.needsRender = true;
+  }
+
+  /** Pohled na špičku výhonu ze vzdálenosti distCm (pro kontrolu detailů, např. šišek); dy posune cíl svisle. */
+  focusAt(id: number, distCm: number, dy = 0) {
+    const fr = this.frames, i = fr?.index.get(id);
+    if (!fr || i === undefined) return;
+    this.auto = false;
+    this.target.set(fr.tip[i * 3], fr.tip[i * 3 + 1] + dy, fr.tip[i * 3 + 2]);
+    this.dist = distCm;
     this.needsRender = true;
   }
 

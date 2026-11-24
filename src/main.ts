@@ -4,7 +4,7 @@ import { Timeline } from './sim/timeline';
 import { TreeView, Pick, wireGauge } from './render/view';
 import { GLAZES, P, POT, POTS, POT_FAMILIES, POT_VOLUMES, MAX_YEARS, RULES_LATEST, WEEDS, familyOf, potById, potOf } from './sim/params';
 import type { PotSpec } from './sim/params';
-import { createPicker } from './picker';
+import { createPicker, uiZoom } from './picker';
 import { BACKDROPS, TABLES, loadSettings, saveSettings } from './scenery';
 import type { Quality } from './scenery';
 import { MONTHS, dateOf } from './sim/climate';
@@ -908,14 +908,22 @@ function applySettings() {
   view.setBackdrop(settings.backdrop);
   view.setTable(settings.table);
   $('keys').classList.toggle('off', !settings.keys);
+  applyUiScale();
+}
+/** Velikost rozhraní: celé panely i texty se zvětší (CSS zoom), plocha se scénou zůstane. */
+function applyUiScale() {
+  document.documentElement.style.setProperty('--uis', String(settings.uiScale / 100));
+  $('setScaleV').textContent = `${settings.uiScale} %`;
+  fitRight();
+  if (!$('shelf').hidden && benchItems.length) layoutBench();
 }
 {
   const panel = $('settings'), btn = $<HTMLButtonElement>('settingsBtn');
   const place = () => {
-    const r = btn.getBoundingClientRect();
-    panel.style.top = `${Math.round(r.bottom + 6)}px`;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(r.left, window.innerWidth - panel.offsetWidth - 8)))}px`;
-    panel.style.maxHeight = `${Math.round(window.innerHeight - r.bottom - 18)}px`;
+    const z = uiZoom(), r = btn.getBoundingClientRect();
+    panel.style.top = `${Math.round((r.bottom + 6) / z)}px`;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(r.left, window.innerWidth - panel.offsetWidth * z - 8)) / z)}px`;
+    panel.style.maxHeight = `${Math.round((window.innerHeight - r.bottom - 18) / z)}px`;
   };
   const open = (o: boolean) => { panel.hidden = !o; btn.setAttribute('aria-expanded', String(o)); if (o) place(); };
   btn.onclick = () => open(!!panel.hidden);
@@ -925,6 +933,7 @@ function applySettings() {
   const save = () => { saveSettings(settings); sync(); };
   const sync = () => {
     for (const b of $('setQuality').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed', String(b.dataset.q === settings.quality));
+    $<HTMLInputElement>('setScale').value = String(settings.uiScale);
     $<HTMLInputElement>('setShadows').checked = settings.shadows;
     $<HTMLInputElement>('setKeys').checked = settings.keys;
     $<HTMLInputElement>('setProps').checked = settings.props;
@@ -932,6 +941,9 @@ function applySettings() {
     for (const b of $('setTable').querySelectorAll<HTMLButtonElement>('button')) b.setAttribute('aria-pressed', String(b.dataset.id === settings.table));
   };
   for (const b of $('setQuality').querySelectorAll<HTMLButtonElement>('button')) b.onclick = () => { settings.quality = b.dataset.q as Quality; view.setQuality(settings.quality); save(); };
+  // posuvník velikosti: náhled během tažení, uloží se po puštění
+  $<HTMLInputElement>('setScale').oninput = (e) => { settings.uiScale = Number((e.target as HTMLInputElement).value); applyUiScale(); place(); };
+  $<HTMLInputElement>('setScale').onchange = () => { save(); place(); };
   $<HTMLInputElement>('setShadows').onchange = (e) => { settings.shadows = (e.target as HTMLInputElement).checked; view.setShadows(settings.shadows); save(); };
   $<HTMLInputElement>('setKeys').onchange = (e) => { settings.keys = (e.target as HTMLInputElement).checked; $('keys').classList.toggle('off', !settings.keys); save(); };
   $<HTMLInputElement>('setProps').onchange = (e) => { settings.props = (e.target as HTMLInputElement).checked; view.setProps(settings.props); save(); };
@@ -1239,6 +1251,7 @@ function wireCheck(frac = 1) {
 (window as any).bonsai = {
   wireCheck,
   weedScreen: () => view.weedScreen(),
+  cones: () => tl.state.shoots.filter((q) => q.cone && !q.dead).map((q) => ({ id: q.id, age: yearOf(tl.state.day) - q.bornYear })),
   // letošní svíčky a starší výhony na obrazovce (pro zkoušky nástroje Svíčky)
   shootScreen: (t = 0.6) => tl.state.shoots.filter((q) => !q.dead && q.parent >= 0).map((q) => ({ id: q.id, candle: isCandle(q), len: q.len, target: q.targetLen, p: view.shootScreen(q.id, t) })),
   // body na obrazovce, za které jde větve chytit (pro zkoušky ovládání drátu)
@@ -1248,6 +1261,7 @@ function wireCheck(frac = 1) {
   jointGap: () => ({ ...view.jointGap, attach: view.attachGap }),
   jointInfo: () => [...view.jointInfo.entries()].map(([id, v]) => ({ id, ...v })),
   focus: (id: number, distR = 9) => view.focusShoot(id, distR),
+  focusAt: (id: number, distCm: number, dy = 0, theta?: number) => { if (theta !== undefined) view.theta = theta; view.focusAt(id, distCm, dy); },
   focusJoint: (id: number, distCm = 30) => view.focusJoint(id, distCm),
   showState: (st: State) => view.setState(st),
   capture: (theta?: number, w?: number, h?: number) => { if (theta !== undefined) view.theta = theta; return view.capture(w, h); },

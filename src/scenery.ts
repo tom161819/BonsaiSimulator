@@ -26,8 +26,8 @@ export const TABLES: TableSkin[] = [
 ];
 
 export type Quality = 'low' | 'mid' | 'high';
-export interface Settings { quality: Quality; shadows: boolean; keys: boolean; props: boolean; backdrop: string; table: string }
-export const DEFAULT_SETTINGS: Settings = { quality: 'mid', shadows: true, keys: true, props: true, backdrop: 'default', table: 'default' };
+export interface Settings { quality: Quality; shadows: boolean; keys: boolean; props: boolean; backdrop: string; table: string; uiScale: number }
+export const DEFAULT_SETTINGS: Settings = { quality: 'mid', shadows: true, keys: true, props: true, backdrop: 'default', table: 'default', uiScale: 100 };
 
 const KEY = 'bonsai-settings';
 export function loadSettings(): Settings {
@@ -38,6 +38,7 @@ export function loadSettings(): Settings {
       if (!BACKDROPS.some((b) => b.id === s.backdrop)) s.backdrop = 'default';
       if (!TABLES.some((t) => t.id === s.table)) s.table = 'default';
       if (!['low', 'mid', 'high'].includes(s.quality)) s.quality = 'mid';
+      s.uiScale = Math.min(150, Math.max(80, Math.round(Number(s.uiScale) / 5) * 5 || 100));
       return s;
     }
   } catch { /* úložiště nemusí být dostupné */ }

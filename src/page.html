@@ -37,6 +37,9 @@
   }
   #season { position: absolute; inset: 0; background: var(--season, transparent); opacity: 0.1; pointer-events: none; transition: background 1.2s; }
   #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+  /* velikost rozhraní (Nastavení): panely se zvětší celé i s textem; plocha se o stejný poměr zmenší, aby zůstaly na obrazovce */
+  #ui, #shelf, #chooser { zoom: var(--uis, 1); }
+  #settings, .pickList { zoom: var(--uis, 1); }
   #ui {
     position: absolute; inset: 0; pointer-events: none; display: grid; gap: 10px;
     grid-template: "left phases right" 1fr "bottom bottom bottom" auto / minmax(0, 300px) 1fr minmax(0, 270px);
@@ -333,7 +336,9 @@
   #settings[hidden] { display: none; }
   #settings section { display: flex; flex-direction: column; gap: 6px; }
   #settings h2 { margin: 0 0 2px; }
-  #settings .setLabel { font-size: 12.5px; color: var(--muted); }
+  #settings .setLabel { font-size: 12.5px; color: var(--muted); display: flex; justify-content: space-between; }
+  #settings .setLabel output { color: var(--fg); font-variant-numeric: tabular-nums; }
+  #settings input[type="range"] { width: 100%; margin: 0 0 4px; accent-color: var(--accent); }
   #settings .check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; padding: 2px 0; }
   #settings .check input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
   #settings .hint { margin: 0; }
@@ -346,8 +351,8 @@
   #keys.off { display: none !important; }
   #cutLine { position: fixed; height: 0; border-top: 2px dashed #ff3b1f; transform-origin: 0 0; pointer-events: none; z-index: 5; }
   #tip {
-    position: absolute; pointer-events: none; max-width: 260px; background: var(--panel-solid); border: 1px solid var(--line);
-    border-left: 3px solid var(--accent); border-radius: 6px; padding: 7px 10px; font-size: 12.5px; z-index: 5;
+    position: absolute; pointer-events: none; max-width: calc(260px * var(--uis, 1)); background: var(--panel-solid); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 6px; padding: 7px 10px; font-size: calc(12.5px * var(--uis, 1)); z-index: 5;
   }
   #tip.danger { border-left-color: var(--danger); }
   #tip b { display: block; font-size: 13px; }
@@ -557,6 +562,8 @@
       <button data-q="mid">Vyvážená</button>
       <button data-q="high" title="Jemnější hrany a ostřejší stín – náročnější na grafiku">Vysoká</button>
     </div>
+    <label class="setLabel" for="setScale">Velikost rozhraní a textů <output id="setScaleV">100 %</output></label>
+    <input type="range" id="setScale" min="80" max="150" step="5" value="100">
     <label class="check"><input type="checkbox" id="setShadows"> Stín stromu</label>
     <label class="check"><input type="checkbox" id="setKeys"> Nápověda ovládání vlevo dole</label>
     <label class="check"><input type="checkbox" id="setProps"> Nůžky a drát na stole</label>

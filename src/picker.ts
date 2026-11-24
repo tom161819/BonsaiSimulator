@@ -19,6 +19,9 @@ export interface Picker {
 
 let openOne: { close(): void } | null = null;
 
+/** Zvětšení rozhraní (Nastavení → Velikost rozhraní). Zvětšený prvek s pevnou polohou má souřadnice v nezvětšených px. */
+export const uiZoom = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--uis')) || 1;
+
 export function createPicker(host: HTMLElement, label: string, onPreview: (v: string | null) => void, onPick: (v: string) => void): Picker {
   let items: PickItem[] = [];
   let value = '';
@@ -110,14 +113,14 @@ export function createPicker(host: HTMLElement, label: string, onPreview: (v: st
     list.addEventListener('keydown', key);
     document.body.appendChild(list);
     // seznam se otevře pod tlačítkem, a když se tam nevejde, nad ním; dlouhý se roluje kolečkem
-    const r = btn.getBoundingClientRect(), vh = window.innerHeight, gap = 4;
+    const z = uiZoom(), r = btn.getBoundingClientRect(), vh = window.innerHeight, gap = 4;
     const below = vh - r.bottom - 12, above = r.top - 12;
-    const up = below < 220 && above > below;
-    const maxH = Math.max(120, Math.min(420, up ? above : below));
-    list.style.minWidth = `${Math.round(r.width)}px`;
-    list.style.maxHeight = `${Math.round(maxH)}px`;
-    list.style.left = `${Math.round(Math.min(r.left, window.innerWidth - Math.max(r.width, list.offsetWidth) - 8))}px`;
-    if (up) list.style.bottom = `${Math.round(vh - r.top + gap)}px`; else list.style.top = `${Math.round(r.bottom + gap)}px`;
+    const up = below < 220 * z && above > below;
+    const maxH = Math.max(120 * z, Math.min(420 * z, up ? above : below));
+    list.style.minWidth = `${Math.round(r.width / z)}px`;
+    list.style.maxHeight = `${Math.round(maxH / z)}px`;
+    list.style.left = `${Math.round(Math.min(r.left, window.innerWidth - Math.max(r.width, list.offsetWidth * z) - 8) / z)}px`;
+    if (up) list.style.bottom = `${Math.round((vh - r.top + gap) / z)}px`; else list.style.top = `${Math.round((r.bottom + gap) / z)}px`;
     btn.setAttribute('aria-expanded', 'true');
     const cur = items.findIndex((x) => x.value === value);
     if (cur >= 0) { const os = opts(); os[cur].scrollIntoView({ block: 'center' }); }
