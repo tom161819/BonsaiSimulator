@@ -1479,6 +1479,8 @@ function wireCheck(frac = 1) {
   load: (save: Save) => { lastLogKey = ''; start(save); buildTrack(); },
   pickCheck: (d?: number, f?: number, sh?: boolean) => view.pickCheck(d, f, sh),
   jointGap: () => ({ ...view.jointGap, attach: view.attachGap }),
+  floating: () => view.floating,
+  state: () => tl.state,
   jointInfo: () => [...view.jointInfo.entries()].map(([id, v]) => ({ id, ...v })),
   focus: (id: number, distR = 9) => view.focusShoot(id, distR),
   focusAt: (id: number, distCm: number, dy = 0, theta?: number) => { if (theta !== undefined) view.theta = theta; view.focusAt(id, distCm, dy); },

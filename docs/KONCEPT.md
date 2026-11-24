@@ -227,6 +227,13 @@ plevel v misce ustálí kolem 15–20 % kapacity. Pinzeta vytrhne jednu rostlinu
 přesazení do čerstvého substrátu je odstraní také. Plevel má vlastní číslování, takže bez něj (volná půda) roste
 strom ve v12 přesně stejně jako ve v11. Míry jsou herní odhad.
 
+**Pravidla v13 – druhé rašení u řezu.** Listnáč zkrácený v době růstu (javor, habr…) zakládá u řezu pupeny
+druhého rašení, na konci a v 80 % zbylé délky. Do v12 se jejich poloha zakládala ještě v délce před zkrácením
+a pak se přepočítala na novou délku podruhé – při řezu na třetinu tak pupeny skončily na 3násobku délky
+výhonu a výhonky z nich visely ve vzduchu za koncem větve. Ve v13 sedí u řezu a u ohnuté (nadrátované) větve
+míří po jejím konci, ne po patě. Starší pravidla se přehrávají beze změny; při kreslení se takové výhonky
+a pupeny z dřívějška posadí na špičku výhonu, aby ani starý strom neměl větvičky ve vzduchu.
+
 ### Ovládání drátu (není verze pravidel – platí pro všechny)
 
 Původní ovládání mířilo směr větve do roviny obrazovky procházející jejím nasazením. Měření (`window.bonsai`,
