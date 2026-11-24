@@ -65,6 +65,8 @@ export interface Shoot {
   cutId?: number; // nextId v okamžiku řezu – výhony s vyšším id vyrostly až po něm
   stimulus: number; // podnět k tvorbě zpětných pupenů po řezu
   light: number; // 0..1 oslunění
+  leafLight?: number; // v10: světlo u listů výhonu (jemná mřížka, započítává i listy ve stejném shluku)
+  shadedYear?: number; // v10: rok, kdy výhon kvůli stínu shodil listy (nebo je vůbec nevyrašil)
   fol: number; // olistění celého podstromu (cache pro tloušťkový růst)
   wire: Wire | null;
   /** oblouk: výhon se od paty plynule stáčí kolem osy o úhel angle na prvních z své délky */
@@ -130,6 +132,7 @@ export type Action =
   | { day: number; type: 'unwireAll'; only?: 'biting'; label?: string }
   | { day: number; type: 'cleanDead'; label?: string }
   | { day: number; type: 'moss'; label?: string }
+  | { day: number; type: 'leaf'; shoots: number[]; keep: number; label?: string }
   | { day: number; type: 'cutMany'; cuts: { shoot: number; t: number }[]; label?: string };
 
 export type ActionInput =
@@ -141,4 +144,5 @@ export type ActionInput =
   | { type: 'unwireAll'; only?: 'biting'; label?: string }
   | { type: 'cleanDead'; label?: string }
   | { type: 'moss'; label?: string }
+  | { type: 'leaf'; shoots: number[]; keep: number; label?: string }
   | { type: 'cutMany'; cuts: { shoot: number; t: number }[]; label?: string };

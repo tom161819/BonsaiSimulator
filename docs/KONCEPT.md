@@ -174,6 +174,37 @@ Podklady: Poorter et al. 2012 (metaanalýza 65 studií: dvojnásobná nádoba = 
 pokusy s omezením kořenů u broskvoně a jabloně (kořeny i nadzemní část se brzdí stejným dílem, méně a menší listy).
 Dlouhodobá měřená data pro strom ponechaný desítky let v jedné nádobě jsme nenašli – doba stagnace a chřadnutí
 i cílové velikosti jsou odhad podle školkařské a bonsajové praxe.
+**Pravidla v10 – stín v koruně a velikost listů.** Měření ve v9 (javor v 5l nádobě, zkrácený kmen, pět let
+zastřihávání všech výhonů dvakrát ročně): v nejhustším místě (koule o průměru 12 cm) vycházelo 50–86 m² listové
+plochy na m³ a 4–7 m² listů na m² půdorysu. Husté koruny skutečných stromů mají řádově jednotky m²/m³ (laserová
+měření berou za husté už 3 m²/m³) a celé porosty nejvýš 4–8 m² listů na m² půdy. Příčiny: každý nový výhon nesl
+nejméně čtyři listy, staré pahýly každý rok znovu olistily, list měl i na nejkratším výhonu 72 % plné délky
+a stín se počítal jednou ročně v hrubé mřížce jen od listů ležících výš. Ve v10:
+
+1. *Velikost listu podle síly výhonu.* Délka listu = 45–100 % plné délky podle délky výhonu
+   (`0,45 + 0,55·(1 − e^(−délka/8 cm))`, dřív 72–100 %); listy druhého rašení jsou ještě o čtvrtinu kratší.
+   Odpovídá to kompromisu mezi velikostí a počtem listů (čím víc listů na výhonu, tím jsou úměrně menší)
+   i bonsajové praxi (defoliace zmenšuje listy o 50–60 %). Aby neřezané stromy neztratily sílu, má olistění
+   ve v10 o 15 % větší účinnost; výška i kmen neřezaných stromů v 10 letech vycházejí do ±7 % jako ve v9.
+2. *Krátký výhon nese jediný uzel* (jeden list, u vstřícných druhů jeden pár), ne nejméně dva.
+3. *Světlo u listů a letní opad.* Každých 14 dní se listová plocha rozloží do jemné mřížky (2,5 × 1 × 2,5 cm,
+   u velkých stromů hrubší) a pro každý výhon se spočítá světlo jako průměr exp(−0,7 × listová plocha podél
+   paprsku) přes pět směrů oblohy (Beerův–Lambertův zákon; pro bukové porosty je změřený koeficient 0,68–0,83).
+   Listy výhonu, na který dopadá méně než druhový práh (javor 5 %, habr 3 %, buk 2,5 %), během 16 dní
+   zežloutnou a opadají. Pod souvislým olistěním to dává strop asi 3,3 m² listů na m² u javoru a 4,1 u buku –
+   blízko naměřeným porostům (javor 4,0, buk 4,5–5,1). Zastíněný výhon ten rok nezakládá pupeny, spící pupeny
+   mu ale zůstávají: na jaře vyraší, jakmile na něj podle odhadu s plně vyvinutými listy světlo dosáhne
+   (po zimním řezu nebo prosvětlení se vnitřek koruny znovu zazelená).
+4. *Nástroj Listy* (akce `leaf`): odstranění listů z výhonu, z celé větve, ob list na celém stromě nebo
+   z nejvíc zastíněných výhonů (světlo pod 20 %). V době růstu vyraší úžlabní pupeny znovu – krátké výhonky
+   s menšími listy; odlistění přidá stres úměrný odstraněnému podílu olistění.
+
+Výsledek ve stejném měření: průměrná délka listu 3,6 → 2,7 cm, v nejhustším místě 6,6 → 3,2 m² listů na m²
+půdorysu. Letní opad se u pravidelně zastřihávaného stromu skoro neprojeví (listy jsou menší a pod strop se
+vejdou), zasahuje hlavně uvnitř velkých neřezaných korun (u desetiletého javoru v zemi asi čtvrtina výhonů).
+Konkrétní práh světla pro opad listu jsme v literatuře nenašli; druhové hodnoty jsou odhad, který dává strop
+listové plochy blízký naměřeným porostům. Ani po úpravě není hustota shluků úplně reálná (kolem 40 m²/m³) –
+zbytek je daný počtem výhonů.
 
 Ve v3 se také větev, která převzala vrchol, postupně zvedá ke svislici i ve stávajícím dřevě (tenká rychle,
 silná pomalu), a osu může převzít i větev nasazená níž na pahýlu bez jehlic.

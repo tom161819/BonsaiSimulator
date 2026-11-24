@@ -1612,6 +1612,7 @@ export class TreeView {
           }
         };
         const cnt = sh.needleCount;
+        const shadeDrop = !winter && sh.shadedYear === year && sh.needleLive < 1;
         let L0 = sh.needleLen;
         const shade = 0.62 + 0.38 * sh.light;
         const cur = sh.bornYear === year || sh.kind !== 'shoot';
@@ -1685,6 +1686,11 @@ export class TreeView {
           const aLeaf = winter ? 9 : aBase - tposN * lag;
           if (aLeaf < 0.04) continue; // list u špičky se ještě nerozvinul
           setTone(aLeaf);
+          if (shadeDrop && h > sh.needleLive - 0.5) {
+            // list ve stínu před opadem žloutne
+            const w2 = clamp((h - (sh.needleLive - 0.5)) / 0.35, 0, 1);
+            tone[0] += (0.8 - tone[0]) * w2; tone[1] += (0.68 - tone[1]) * w2; tone[2] += (0.2 - tone[2]) * w2;
+          }
           const openK = smooth(aLeaf);
           L0 = sh.needleLen * (sp.leafShape === 'tuft' ? 0.1 + 0.9 * openK : 0.3 + 0.7 * openK);
           at(cot ? 1 : 0.08 + 0.9 * tposN);
@@ -1911,7 +1917,7 @@ export class TreeView {
   // ------------------------------------------------------------ výběr
 
   /** Najde pupen nebo výhon nejblíž kurzoru (v obrazovkových pixelech – tenké větvičky se dají trefit). */
-  pick(x: number, y: number, budsOnly = false): Pick | null {
+  pick(x: number, y: number, budsOnly = false, leafMode = false): Pick | null {
     const s = this.state, fr = this.frames;
     if (!s || !fr) return null;
     const W = this.canvas.clientWidth, Hh = this.canvas.clientHeight;
@@ -1932,7 +1938,7 @@ export class TreeView {
       const [ax, ay, az] = proj(b[i * 3], b[i * 3 + 1], b[i * 3 + 2]);
       const [cx, cy, cz] = proj(tp[i * 3], tp[i * 3 + 1], tp[i * 3 + 2]);
       if (az > 1 || cz > 1) continue;
-      for (const bud of sh.buds) {
+      if (!leafMode) for (const bud of sh.buds) {
         const wx = b[i * 3] + (tp[i * 3] - b[i * 3]) * bud.t + bud.dir[0] * 0.3, wy = b[i * 3 + 1] + (tp[i * 3 + 1] - b[i * 3 + 1]) * bud.t + bud.dir[1] * 0.3, wz = b[i * 3 + 2] + (tp[i * 3 + 2] - b[i * 3 + 2]) * bud.t + bud.dir[2] * 0.3;
         const [qx, qy] = proj(wx, wy, wz);
         const e = Math.hypot(qx - x, qy - y) - 6;
@@ -1944,7 +1950,9 @@ export class TreeView {
       const t = clamp(((x - ax) * ex + (y - ay) * ey) / l2, 0, 1);
       const wx = b[i * 3] + (tp[i * 3] - b[i * 3]) * t, wy = b[i * 3 + 1] + (tp[i * 3 + 1] - b[i * 3 + 1]) * t, wz = b[i * 3 + 2] + (tp[i * 3 + 2] - b[i * 3 + 2]) * t;
       const d = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z), R = radiusOf(sh), rpx = R * pxPerCm(d);
-      const e = Math.hypot(ax + ex * t - x, ay + ey * t - y) - rpx;
+      // nástroj Listy: trefit stačí list – počítá se okolí výhonu na dosah jeho listů; výhony bez listů se přeskočí
+      if (leafMode && !(sh.needleCount > 0 && sh.needleLive > 0.02 && !sh.dead)) continue;
+      const e = Math.hypot(ax + ex * t - x, ay + ey * t - y) - rpx - (leafMode ? sh.needleLen * pxPerCm(d) * 0.8 : 0);
       if (e < 7) hits.push({ p: { type: 'shoot', shoot: sh.id, t }, e: Math.max(0, e), rpx, d, R });
     }
     if (!hits.length) return null;
@@ -2109,7 +2117,7 @@ export class TreeView {
   }
 
   /** Zvýrazní, co by zásah odstranil (nůžky) nebo čeho se týká (drát). */
-  highlight(p: Pick | null, color = 0xff3b1f) {
+  highlight(p: Pick | null, color = 0xff3b1f, own = false) {
     const s = this.state, fr = this.frames;
     if (!p || !s || !fr) {
       if (this.hi.visible || this.marker.visible) this.needsRender = true;
@@ -2130,7 +2138,7 @@ export class TreeView {
       m = at(i, p.t);
       pts.push(...m, ...at(i, 1));
       const gone = new Set<number>([-2]);
-      for (let j = i + 1; j < s.shoots.length; j++) {
+      for (let j = i + 1; j < s.shoots.length && !own; j++) {
         const c = s.shoots[j];
         if ((c.parent === p.shoot && c.attachT > p.t) || gone.has(c.parent)) {
           gone.add(c.id);

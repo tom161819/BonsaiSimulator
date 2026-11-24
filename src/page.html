@@ -202,7 +202,8 @@
     <button id="keep">Přidat do sbírky</button>
     <button id="shelfBtn">Moje sbírka</button>
     <button id="samplesBtn">Vzorová sbírka</button>
-    <select id="rules" aria-label="Verze pravidel růstu" title="Verze pravidel růstu. v1 = původní; v2 = miska strom uživí, slabé výhony se větví, seříznutý vrchol nahradí větev; v3 = navíc soběstačné větve (spodní větve neodumírají kvůli silnému vrcholu); v6 = tolerantnější drátování; v7 = vrcholová dominance listnáčů a modřínu (strom roste hlavně nahoře, spodní patra méně obrůstají, zkrácený kmen vyžene nový vrchol); v8 = opakované drátování počítá jen ohyb navíc proti tvaru, který větev už drží; v9 = nádoba růst opravdu omezuje (přerostlý strom stagnuje a po letech chřadne, dokud ho nepřesadíte).">
+    <select id="rules" aria-label="Verze pravidel růstu" title="Verze pravidel růstu. v1 = původní; v2 = miska strom uživí, slabé výhony se větví, seříznutý vrchol nahradí větev; v3 = navíc soběstačné větve (spodní větve neodumírají kvůli silnému vrcholu); v6 = tolerantnější drátování; v7 = vrcholová dominance listnáčů a modřínu (strom roste hlavně nahoře, spodní patra méně obrůstají, zkrácený kmen vyžene nový vrchol); v8 = opakované drátování počítá jen ohyb navíc proti tvaru, který větev už drží; v9 = nádoba růst opravdu omezuje (přerostlý strom stagnuje a po letech chřadne, dokud ho nepřesadíte); v10 = na drobných výhonech jsou listy menší, zastíněné listy žloutnou a opadávají, nástroj Listy na prosvětlení.">
+      <option value="10">Pravidla v10</option>
       <option value="9">Pravidla v9</option>
       <option value="8">Pravidla v8</option>
       <option value="7">Pravidla v7</option>
@@ -224,11 +225,17 @@
       <div class="seg" id="toolSeg">
         <button id="tool-cut" data-tool="cut">Nůžky</button>
         <button id="tool-bud" data-tool="bud" title="Pinzeta na vyštipování pupenů: kliknutí zasáhne jen pupeny, větve zůstanou nedotčené">Pinzeta</button>
+        <button id="tool-leaf" data-tool="leaf" title="Prosvětlování: odstraňuje listy, dřevo ani pupeny se nedotkne">Listy</button>
         <button id="tool-wire" data-tool="wire">Drát</button>
       </div>
       <div id="cutOpts">
         <button id="cleanDead" style="margin-top:8px;width:100%">Odstranit suché větve</button>
         <p class="hint">Ctrl + klik: celá větev až k rozvětvení. Shift + tažení: řez podle linie.</p>
+      </div>
+      <div id="leafOpts" hidden>
+        <button id="leafInner" style="margin-top:8px;width:100%" title="Odstraní listy z výhonů, na které dopadá nejméně světla, aby se světlo dostalo dovnitř koruny">Prosvětlit vnitřek koruny</button>
+        <button id="leafHalf" style="margin-top:6px;width:100%" title="Částečná defoliace: na každém výhonu zůstane polovina listů">Ob list na celém stromě</button>
+        <p class="hint">Klik: listy z výhonu. Ctrl + klik: z celé větve. V květnu a červnu vyraší znovu, menší.</p>
       </div>
       <div id="wireOpts" hidden>
         <label for="wArc">Tvar ohybu <output id="wArcV"></output></label>

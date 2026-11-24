@@ -3,7 +3,7 @@
 import type { Action, Shoot, State, Vec3 } from './types';
 import { P, defaultPotId, potById } from './params';
 import { updateDeath } from './growth';
-import { MOSS_FULL_DAYS, breakRisk, heldArc, doyOf, norm, potCapFor, spreadNebari, repotStress, rnd, rotate, tilt as tiltDir, yearOf } from './util';
+import { MOSS_FULL_DAYS, breakRisk, clamp, heldArc, doyOf, ownFoliage, norm, potCapFor, spreadNebari, repotStress, rnd, rotate, tilt as tiltDir, yearOf } from './util';
 import { speciesOf } from './species';
 
 function removeSubtrees(s: State, roots: Set<number>) {
@@ -229,6 +229,38 @@ function repot(s: State, a: Extract<Action, { type: 'repot' }>) {
   }
 }
 
+/** v10, nástroj Listy: odstranění listů z výhonů (keep = podíl listů, který na každém zůstane).
+ *  V době růstu vyraší úžlabní pupeny znovu – krátké výhonky s menšími listy, tak vzniká jemné větvení.
+ *  Odlistění strom oslabí úměrně tomu, o kolik olistění přišel; druhy, které znovu raší neochotně, víc. */
+function defoliate(s: State, ids: number[], keep: number) {
+  const sp = speciesOf(s);
+  if (sp.kind !== 'leafy' || s.rules < 10) return;
+  const set = new Set(ids), year = yearOf(s.day), per = sp.phyllotaxis === 'opposite' ? 2 : 1;
+  const inLeaf = s.gdd >= sp.flushGdd && doyOf(s.day) < 230;
+  let before = 0, gone = 0;
+  for (const sh of s.shoots) before += ownFoliage(s, sh);
+  for (const sh of s.shoots) {
+    if (!set.has(sh.id) || sh.dead || sh.needleCount <= 0 || sh.needleLive <= 0.02 || sh.kind === 'hypocotyl') continue;
+    const n = sh.needleCount, left = Math.ceil(n * clamp(keep, 0, 1) - 1e-9), removed = n - left;
+    if (removed <= 0) continue;
+    gone += (ownFoliage(s, sh) * removed) / n;
+    sh.needleCount = left;
+    // letošní výhon má pupeny v úžlabí listů, i když je model zakládá až v létě – bez listů nesmí odumřít
+    if (sh.bornYear === year && sh.dormant === undefined) sh.dormant = Math.max(1, Math.round(sh.len / sp.internode)) * per;
+    const canFlush = sp.reflush > 0 && inLeaf && s.gdd < 1150 && !sh.elong && (sh.dormant ?? 0) > 0;
+    if (canFlush && rnd(s.seed, sh.id, s.day + 11) < (sp.reflush + 0.3) * (1 - keep * 0.6)) {
+      const nb = Math.min(sh.dormant ?? 0, keep === 0 && removed >= 2 * per ? 2 : 1);
+      for (let j = 0; j < nb; j++) {
+        sh.buds.push({ id: s.nextId++, kind: 'pinch', t: clamp(0.9 - j * 0.3, 0.2, 0.95), dir: tiltDir(sh.dir, sp.branchAngle * 0.8, j * Math.PI + sh.id),
+          len: clamp(0.25 * sh.len, 0.8, 3), order: sh.order + 1, isMain: false, flushDay: s.day + 18 + j * 3 });
+      }
+      sh.dormant = Math.max(0, (sh.dormant ?? 0) - nb);
+      s.pendingFlush = (s.pendingFlush ?? 0) + nb;
+    }
+  }
+  if (before > 0) s.stress += P.defolStress10 * (gone / before) * (1.3 - sp.reflush);
+}
+
 /** Suché větve, které jdou odstranit: odumřelé výhony, na nichž už nic živého neroste (kmen zůstává). */
 export function deadwood(s: State): Set<number> {
   const live = new Set<number>();
@@ -266,6 +298,7 @@ export function applyAction(s: State, a: Action) {
   else if (a.type === 'unwire') unwire(s, a.shoot);
   else if (a.type === 'cutMany') for (const c of a.cuts) cut(s, c.shoot, c.t);
   else if (a.type === 'moss') s.mossAge = 0;
+  else if (a.type === 'leaf') defoliate(s, a.shoots, a.keep);
   else if (a.type === 'cleanDead') removeSubtrees(s, deadwood(s));
   else if (a.type === 'unwireAll') for (const id of s.shoots.filter((x) => x.wire && (a.only !== 'biting' || x.scar)).map((x) => x.id)) unwire(s, id);
 }

@@ -80,6 +80,16 @@ export const P = {
   boundFrom9: 1.2, boundFull9: 1.5, // počítadlo let v přerostlé nádobě běží od 120 %, naplno od 150 %
   boundGrace9: 3, boundSpan9: 7, // 3 roky jen stagnace, dalších 7 let chřadnutí až k úhynu
   diebackPerYear9: 0.06, diebackMax9: 0.4, // podíl nejslabších koncových větviček, který za rok odumře
+  // --- pravidla v10: stín v koruně a velikost listů (viz docs/KONCEPT.md)
+  leafSizeMin10: 0.45, leafSizeLen10: 8, // délka listu = 45–100 % plné podle délky výhonu (čím víc drobných výhonů, tím menší listy)
+  reflushLeaf10: 0.75, // listy druhého rašení (po zaštípnutí nebo defoliaci) jsou menší
+  leafComp10: 1.15, // vyrovnání: menší listy by jinak neřezaným stromům ubraly sílu
+  leafK10: 0.7, // extinkční koeficient světla v olistění (bukové porosty 0,68–0,83)
+  leafCell10: 2.5, leafLayer10: 1, // jemná mřížka pro světlo u listů: vodorovně 2,5 cm, svisle 1 cm (u velkých stromů hrubší)
+  leafCellPerHeight10: 80, leafLayerPerHeight10: 200,
+  leafAreaPerUnit10: 9, // cm² listové plochy na jednotku olistění
+  shadeCheckDays10: 14, shadeDropDays10: 16, // jak často se stín vyhodnocuje a jak dlouho zastíněný list žloutne, než opadne
+  defolStress10: 0.25, // stres z odstranění všech listů (úměrně odstraněnému podílu)
   repotBaseStress: 0.1, // stres ze samotného přesazení
   repotPruneStress: 1.0, // stres na jednotku odstraněných kořenů
   stressGrowthLoss: 0.7, // o kolik stres 1,0 sníží růstový rozpočet
@@ -128,7 +138,7 @@ export const POT: Record<PotType, { name: string; growth: number; needle: number
 };
 /** Účinnost stanoviště v původních pravidlech (v1): miska strom živila výrazně hůř. */
 export const POT_GROWTH_V1: Record<PotType, number> = { ground: 1.0, training: 0.85, bonsai: 0.5 };
-export const RULES_LATEST = 9;
+export const RULES_LATEST = 10;
 
 /** Katalog nádob. Velikost se sama nemění – nádobu volí pěstitel při přesazení.
  *  Objem v litrech určuje, kolik kořenů se vejde (P.rootPerLiter); rozměry v cm slouží vykreslení:

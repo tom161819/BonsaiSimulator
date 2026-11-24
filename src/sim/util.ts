@@ -112,7 +112,7 @@ export function ownFoliage(s: State, sh: Shoot): number {
     if (doyOf(s.day) >= sp.colorDoy) return 0; // barvící se a suché listí už nepracuje
     const size = sh.needleLen / sp.leafLen;
     const juv = sh.kind === 'shoot' ? 1 : 1.6;
-    return sh.needleCount * sp.leafUnits * size * size * Math.max(0.15, needleGrowth(s, sh)) * sh.needleLive * juv;
+    return sh.needleCount * sp.leafUnits * size * size * Math.max(0.15, needleGrowth(s, sh)) * sh.needleLive * juv * (s.rules >= 10 ? P.leafComp10 : 1);
   }
   const age = clamp(yearOf(s.day) - sh.bornYear, 0, P.ageEff.length - 1);
   const juvenile = sh.kind === 'shoot' ? 1 : P.juvenileEfficiency;
@@ -173,6 +173,14 @@ export function rootBoundFactor(s: State): number {
   }
   if (f <= P.rootBoundStart) return 1;
   return Math.max(P.rootBoundMin, 1 - ((1 - P.rootBoundMin) * (f - P.rootBoundStart)) / (P.rootBoundFull - P.rootBoundStart));
+}
+
+/** v10: listová plocha výhonu v cm²; full = plně vyvinuté listy bez ohledu na roční dobu (odhad při rašení). */
+export function leafArea(s: State, sh: Shoot, full = false): number {
+  if (!full) return (ownFoliage(s, sh) / P.leafComp10) * P.leafAreaPerUnit10;
+  if (sh.dead || sh.needleCount === 0) return 0;
+  const sp = speciesOf(s), size = sh.needleLen / sp.leafLen;
+  return sh.needleCount * sp.leafUnits * size * size * P.leafAreaPerUnit10;
 }
 
 /** v9: vyčerpání substrátu. Po letech v přerostlé nádobě strom chřadne: 1 = v pořádku, 0 = konec. */

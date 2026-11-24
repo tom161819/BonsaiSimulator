@@ -4,9 +4,10 @@ import { Timeline } from './sim/timeline';
 import { TreeView, Pick, wireGauge } from './render/view';
 import { GLAZES, P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
-import { YEAR, bendLimit, bendStress, breakRisk, heldArc, mossCover, potStatus, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
+import { YEAR, bendLimit, bendStress, breakRisk, computeFrames, heldArc, mossCover, potStatus, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State } from './sim/types';
 import { bendShoot, deadwood, wholeBranch } from './sim/actions';
+import { computeLeafLight } from './sim/light';
 import { SPECIES, SPECIES_ORDER, speciesOf } from './sim/species';
 import samplesJson from './samples.json';
 import sampleThumbs from './sampleThumbs.json';
@@ -32,7 +33,7 @@ let speed = 7;
 let acc = 0;
 let hover: Pick | null = null;
 let pending: Described | null = null;
-type Tool = 'cut' | 'bud' | 'wire'; // bud = pinzeta: zasahuje jen pupeny
+type Tool = 'cut' | 'bud' | 'leaf' | 'wire'; // bud = pinzeta: zasahuje jen pupeny; leaf = odstraňování listů (prosvětlení)
 let tool: Tool = 'cut';
 let repotOpen = false;
 
@@ -134,7 +135,7 @@ function refreshPhases(s: State, active: string) {
   }
 }
 
-interface Described { title: string; detail: string; danger: string; action: ActionInput | null; pick: Pick }
+interface Described { title: string; detail: string; danger: string; action: ActionInput | null; pick: Pick; own?: boolean }
 
 const deg = (rad: number) => Math.round((rad * 180) / Math.PI);
 
@@ -165,8 +166,41 @@ function describeWire(p: Pick): Described | null {
 }
 
 /** Popíše, co zásah v daném místě udělá – ještě před kliknutím. */
+/** Kolik listů výhon právě nese (pro nástroj Listy). */
+const leavesOn = (x: State['shoots'][number]) => (!x.dead && x.needleLive > 0.02 && x.kind !== 'hypocotyl' ? Math.round(x.needleCount * Math.min(1, x.needleLive)) : 0);
+/** Vyraší po odstranění listů ještě letos znovu? */
+const leafReflush = (s: State) => { const sp = speciesOf(s); return sp.reflush > 0 && s.gdd >= sp.flushGdd && doyOf(s.day) < 230 && s.gdd < 1150; };
+
+/** Nástroj Listy: odstranění listů z výhonu, s Ctrl z celé větve. */
+function describeLeaf(p: Pick): Described | null {
+  const s = tl.state;
+  const sh = s.shoots.find((x) => x.id === p.shoot);
+  if (!sh) return null;
+  const root = ctrlHeld ? wholeBranch(s, sh.id) ?? sh : sh;
+  const ids: number[] = [];
+  let n = 0, all = 0;
+  const sub = new Set<number>([root.id]);
+  for (const x of s.shoots) {
+    if (ctrlHeld && sub.has(x.parent)) sub.add(x.id);
+    const l = leavesOn(x);
+    all += l;
+    if (l && sub.has(x.id)) { ids.push(x.id); n += l; }
+  }
+  if (!n) return null;
+  const again = leafReflush(s) ? ' Za pár týdnů vyraší z úžlabních pupenů znovu – menší listy a jemnější větvení.' : ' Letos už znovu nevyraší, nové listy přijdou až na jaře.';
+  const word = n === 1 ? 'list' : n < 5 ? 'listy' : 'listů';
+  return {
+    title: ctrlHeld ? 'Odstranit listy z celé větve' : 'Odstranit listy z výhonu', own: !ctrlHeld,
+    detail: `${n} ${word}${ctrlHeld ? ` na ${ids.length} výhonech` : ''}. Světlo se dostane hlouběji do koruny.${again}`,
+    danger: n > all * 0.6 ? 'Je to většina listů stromu – odlistění ho letos znatelně oslabí.' : '',
+    action: { type: 'leaf', shoots: ids, keep: 0, label: ctrlHeld ? `Odlistěna větev (${n} ${word})` : `Odstraněny listy z výhonu (${n})` },
+    pick: { type: 'shoot', shoot: root.id, t: 0 },
+  };
+}
+
 function describe(p: Pick): Described | null {
   if (tool === 'wire') return describeWire(p);
+  if (tool === 'leaf') return describeLeaf(p);
   const s = tl.state;
   let sh = s.shoots.find((x) => x.id === p.shoot);
   if (!sh) return null;
@@ -313,6 +347,7 @@ function refresh() {
     else if (s.rules < 9 && fill > 1.2) hint = 'Kořeny přerostly nádobu: voda neprotéká, strom slábne a bez přesazení se zakrácením kořenů bude chřadnout.';
     else if (biting) hint = `Drát na ${biting} ${biting === 1 ? 'větvi' : 'větvích'} zarůstá do kůry. Sundejte ho nástrojem Drát.`;
     else if (s.rules >= 9 ? pst === 1 : fill > P.rootBoundStart) hint = s.rules >= 9 ? 'Nádoba je plná kořenů a růst slábne. Naplánujte na předjaří přesazení se zkrácením kořenů, nebo větší nádobu.' : 'Nádoba je prokořeněná a růst začíná slábnout. Naplánujte přesazení na předjaří.';
+    else if (s.rules >= 10 && s.shoots.filter((x) => !x.dead && x.shadedYear === yearOf(s.day) && x.needleLive > 0 && x.needleLive < 1).length >= 4) hint = 'V koruně je místy tak husto, že vnitřní listy žloutnou a opadávají. Prosvětlete ji nástrojem Listy nebo řezem – zastíněné větvičky pak příští rok znovu olistí.';
     else if (ready) hint = `${ready} ${ready === 1 ? 'nadrátovaná větev už drží' : 'nadrátované větve už drží'} tvar – drát lze sundat.`;
   }
   $('hint').textContent = fut ? `Jste v minulosti: nový zásah přepíše ${fut} pozdějších zásahů v deníku.` : hint;
@@ -352,6 +387,17 @@ function refresh() {
   if (repotOpen) updateRepot();
   $('wireOpts').hidden = tool !== 'wire';
   $('cutOpts').hidden = tool !== 'cut';
+  {
+    // nástroj Listy je jen pro olistěné druhy a pravidla v10
+    const leafOk = speciesOf(s).kind === 'leafy' && s.rules >= 10;
+    const lb = $<HTMLButtonElement>('tool-leaf');
+    lb.disabled = !leafOk;
+    lb.title = leafOk ? 'Prosvětlování: odstraňuje listy, dřevo ani pupeny se nedotkne' : s.rules < 10 ? 'Odstraňování listů je až v pravidlech v10' : 'Jen pro listnáče a modřín';
+    if (!leafOk && tool === 'leaf') { tool = 'cut'; for (const b of $('toolSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.tool === tool)); $('cutOpts').hidden = false; }
+    $('leafOpts').hidden = tool !== 'leaf';
+    const any = leafOk && s.shoots.some((x) => leavesOn(x) > 0);
+    $<HTMLButtonElement>('leafInner').disabled = !any; $<HTMLButtonElement>('leafHalf').disabled = !any;
+  }
   $<HTMLButtonElement>('cleanDead').disabled = !deadwood(s).size;
   $<HTMLButtonElement>('unwireAll').disabled = !s.shoots.some((x) => x.wire);
   {
@@ -373,7 +419,7 @@ const tip = $('tip');
 function setHover(d: Described | null, x = 0, y = 0, touch = false) {
   hover = d ? d.pick : null;
   pending = touch ? d : null;
-  view.highlight(hover, tool === 'wire' ? 0xd98324 : 0xff3b1f);
+  view.highlight(hover, tool === 'wire' ? 0xd98324 : tool === 'leaf' ? 0x2fa860 : 0xff3b1f, !!d?.own);
   if (!d) { tip.hidden = true; return; }
   tip.hidden = false;
   tip.className = d.danger ? 'danger' : '';
@@ -416,7 +462,7 @@ let cutLine: { x0: number; y0: number; cx0: number; cy0: number; cuts: { shoot: 
 const lineEl = $('cutLine');
 function rehover() {
   if (!lastMouse || downAt || repotOpen || tool === 'wire') return;
-  const p = view.pick(lastMouse.ox, lastMouse.oy, tool === 'bud');
+  const p = view.pick(lastMouse.ox, lastMouse.oy, tool === 'bud', tool === 'leaf');
   setHover(p ? describe(p) : null, lastMouse.cx, lastMouse.cy);
 }
 for (const ev of ['keydown', 'keyup'] as const) window.addEventListener(ev, (e) => {
@@ -514,7 +560,7 @@ canvas.addEventListener('pointermove', (e) => {
   ctrlHeld = e.ctrlKey || e.metaKey;
   lastMouse = { ox: e.offsetX, oy: e.offsetY, cx: e.clientX, cy: e.clientY };
   if (e.pointerType === 'mouse' && !repotOpen) {
-    const pTree = view.pick(e.offsetX, e.offsetY, tool === 'bud');
+    const pTree = view.pick(e.offsetX, e.offsetY, tool === 'bud', tool === 'leaf');
     const onTool = pTree ? null : view.pickTool(e.offsetX, e.offsetY);
     if (onTool) {
       setHover(null);
@@ -569,7 +615,7 @@ const up = (e: PointerEvent) => {
   }
   bend = null;
   if (!wasTap || repotOpen) return;
-  const p = view.pick(e.offsetX, e.offsetY, tool === 'bud');
+  const p = view.pick(e.offsetX, e.offsetY, tool === 'bud', tool === 'leaf');
   if (!p && tool === 'bud' && view.pickMoss(e.offsetX, e.offsetY)) {
     tl.act({ type: 'moss', label: 'Odstraněn mech' });
     tip.hidden = true; lastLogKey = ''; persist(); refresh();
@@ -632,6 +678,24 @@ $('unwireBiting').onclick = () => {
   lastLogKey = '';
   persist();
   refresh();
+};
+// --- nástroj Listy: hromadné prosvětlení
+function leafAct(ids: number[], keep: number, label: string) {
+  tl.act({ type: 'leaf', shoots: ids, keep, label });
+  lastLogKey = ''; persist(); refresh();
+}
+$('leafHalf').onclick = () => {
+  const ids = tl.state.shoots.filter((x) => leavesOn(x) > 1).map((x) => x.id);
+  if (!ids.length) { flash('Strom teď nemá listy, které by šlo probrat.'); return; }
+  leafAct(ids, 0.5, `Částečná defoliace: ob list (${ids.length} výhonů)`);
+};
+$('leafInner').onclick = () => {
+  // světlo u listů se spočítá teď; odlistí se výhony, na které ho dopadá nejméně
+  const s = tl.state;
+  computeLeafLight(s, computeFrames(s));
+  const ids = s.shoots.filter((x) => leavesOn(x) > 0 && (x.leafLight ?? 1) < 0.2).map((x) => x.id);
+  if (!ids.length) { flash('Koruna je dost vzdušná – dovnitř se světlo dostane i tak.'); return; }
+  leafAct(ids, 0, `Prosvětlen vnitřek koruny (${ids.length} výhonů)`);
 };
 $('cleanDead').onclick = () => {
   const cnt = deadwood(tl.state).size;

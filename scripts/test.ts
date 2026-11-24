@@ -7,6 +7,7 @@ import type { Action, State, Vec3 } from '../src/sim/types';
 import samples from '../src/samples.json';
 import { SPECIES_ORDER } from '../src/sim/species';
 import { P } from '../src/sim/params';
+import { computeLeafLight } from '../src/sim/light';
 
 const sig = (s: State) => JSON.stringify(s.shoots.map((x) => [x.id, x.parent, +x.len.toFixed(4), x.buds.length, x.dead]));
 const at = (y: number, doy: number) => y * YEAR + doy;
@@ -487,6 +488,81 @@ test('v9: přesazení se zkrácením kořenů chřadnutí zastaví; bez zkrácen
   tl.seek(at(13, 250));
   assert.equal(tl.state.stage, 'growing');
   assert.ok(stats(tl.state).baseDiameter > d0 * 1.3, 'po přesazení strom zase sílí');
+});
+
+// ---- pravidla v10: velikost listů, stín v koruně, nástroj Listy
+const pinched = (rules: number) => {
+  // javor v 5 l, v 5. roce zkrácený kmen, pak dvakrát ročně zkrácení všech výhonů delších než 5 cm
+  const tl = new Timeline(4, [{ day: 300, type: 'repot', pot: 'training', potId: 't5', prune: 0 }], rules, 'maple');
+  const prune = () => {
+    const yr = Math.floor(tl.state.day / YEAR);
+    const cuts = tl.state.shoots.filter((q) => !q.dead && q.parent >= 0 && q.bornYear >= yr - 1 && q.len > 5 && !q.tipCut).map((q) => ({ shoot: q.id, t: Math.max(0.15, Math.min(0.9, 4 / q.len)) }));
+    if (cuts.length) tl.act({ type: 'cutMany', cuts });
+  };
+  for (let y = 4; y < 8; y++) {
+    tl.seek(at(y, 60));
+    if (y === 4) {
+      const fr = computeFrames(tl.state);
+      const i = tl.state.shoots.findIndex((q, k) => q.order === 0 && !q.dead && fr.base[k * 3 + 1] <= 20 && fr.tip[k * 3 + 1] > 20);
+      tl.act({ type: 'cut', shoot: tl.state.shoots[i].id, t: (20 - fr.base[i * 3 + 1]) / (fr.tip[i * 3 + 1] - fr.base[i * 3 + 1]) });
+    } else prune();
+    tl.seek(at(y, 170)); prune();
+  }
+  tl.seek(at(7, 205));
+  return tl;
+};
+const leafStats = (s: State) => {
+  let n = 0, len = 0;
+  for (const q of s.shoots) if (!q.dead && q.needleLive > 0.02 && q.needleCount > 0) { n += q.needleCount; len += q.needleCount * q.needleLen; }
+  return { n, mean: len / Math.max(1, n) };
+};
+
+test('v10: na pravidelně zastřihávaném javoru jsou listy výrazně menší než ve v9', () => {
+  const a = leafStats(pinched(9).state), b = leafStats(pinched(10).state);
+  assert.ok(a.mean > 3.2, `v9: ${a.mean.toFixed(2)} cm`);
+  assert.ok(b.mean < a.mean * 0.85 && b.mean > 1.8, `v10: ${b.mean.toFixed(2)} cm (v9 ${a.mean.toFixed(2)} cm)`);
+});
+
+test('v10: list hluboko pod hustým olistěním dostane málo světla, list nahoře plné', () => {
+  const tl = new Timeline(4, [{ day: 300, type: 'repot', pot: 'ground', potId: 'ground', prune: 0 }], 10, 'maple');
+  tl.seek(at(7, 200));
+  const s = tl.state, fr = computeFrames(s);
+  computeLeafLight(s, fr);
+  const leafy = s.shoots.map((q, i) => ({ q, y: fr.tip[i * 3 + 1] })).filter((x) => !x.q.dead && x.q.needleCount > 0);
+  const H = Math.max(...leafy.map((x) => x.y));
+  const mean = (xs: number[]) => xs.reduce((u, v) => u + v, 0) / Math.max(1, xs.length);
+  const top = mean(leafy.filter((x) => x.y > H * 0.9).map((x) => x.q.leafLight ?? 1));
+  const low = mean(leafy.filter((x) => x.y < H * 0.35).map((x) => x.q.leafLight ?? 1));
+  assert.ok(top > 0.45, `nahoře ${top.toFixed(2)}`);
+  assert.ok(low < top * 0.6, `dole ${low.toFixed(2)}, nahoře ${top.toFixed(2)}`);
+  // osamocený krátký výhon bez čehokoli nad sebou má plné světlo
+  const lone = new Timeline(4, [], 10, 'maple'); lone.seek(at(1, 200));
+  computeLeafLight(lone.state, computeFrames(lone.state));
+  assert.ok(Math.max(...lone.state.shoots.map((q) => q.leafLight ?? 0)) > 0.9);
+  assert.ok(s.shoots.every((q) => q.dead || (q.leafLight ?? 0) >= 0 && (q.leafLight ?? 0) <= 1.0001));
+});
+
+test('v10: odstranění listů – v červnu vyraší znovu menší, jde vrátit a strom nezabije', () => {
+  const tl = new Timeline(4, [{ day: 300, type: 'repot', pot: 'training', potId: 't10', prune: 0 }], 10, 'maple');
+  tl.seek(at(4, 160));
+  const before = leafStats(tl.state);
+  const ids = tl.state.shoots.filter((q) => !q.dead && q.needleCount > 0).map((q) => q.id);
+  tl.act({ type: 'leaf', shoots: ids, keep: 0.5 });
+  const half = leafStats(tl.state);
+  assert.ok(half.n < before.n * 0.65 && half.n > before.n * 0.4, `ob list: ${before.n} → ${half.n}`);
+  tl.undo();
+  assert.equal(leafStats(tl.state).n, before.n);
+  tl.act({ type: 'leaf', shoots: ids, keep: 0 });
+  assert.equal(leafStats(tl.state).n, 0);
+  assert.ok(tl.state.stress > 0 && tl.state.stress < 0.5, `stres ${tl.state.stress}`);
+  tl.seek(at(4, 215));
+  const again = leafStats(tl.state);
+  assert.equal(tl.state.stage, 'growing');
+  assert.ok(again.n > 0, 'druhé rašení');
+  assert.ok(again.mean < before.mean * 0.8, `nové listy jsou menší: ${again.mean.toFixed(1)} cm proti ${before.mean.toFixed(1)} cm`);
+  tl.seek(at(5, 200));
+  assert.equal(tl.state.stage, 'growing');
+  assert.ok(leafStats(tl.state).n > before.n * 0.5, 'příští rok strom znovu olistí');
 });
 
 console.log(`\n${n} testů prošlo`);

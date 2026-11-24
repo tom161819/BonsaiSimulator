@@ -4,7 +4,7 @@ import type { Bud, BudKind, Shoot, State, Vec3 } from './types';
 import { P, POT, POT_GROWTH_V1, RULES_LATEST, START_DOY, START_POT } from './params';
 import { temperature } from './climate';
 import { Species, speciesOf } from './species';
-import { computeLight } from './light';
+import { computeLeafLight, computeLight } from './light';
 import {
   UP, YEAR, add, clamp, computeFrames, potCapFor, potExhaust, rootBoundFactor, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
 } from './util';
@@ -301,6 +301,7 @@ function leafySinks(s: State, sp: Species, sh: Shoot, i: number, kids: number[][
   const cur = sh.bornYear === year;
   if (cur) sh.dormant = nodesOf(sp, sh);
   if (sh.light < sp.lightDeath) { sh.dormant = 0; return; } // zastíněný úsek zakrní
+  if (s.rules >= 10 && sh.shadedYear === year) return; // v10: letos kvůli stínu shodil listy – pupeny nezaloží, spící mu zůstanou
   const canBud = (sh.dormant ?? 0) > 0;
   const tipFree = !kids[i].some((c) => s.shoots[c].attachT > 0.98) && !sh.buds.some((b) => b.t > 0.98);
   // v4: pahýl, který už obrazil, další pupeny u řezu nezakládá – pokračují jeho nové výhony
@@ -405,7 +406,11 @@ function expandLeafy(s: State, sp: Species, sh: Shoot, k: Sink, year: number) {
 }
 
 // listy na slabých a krátkých výhonech jsou menší jen mírně; hlavní zmenšení přináší malá nádoba
-const leafSize = (sp: Species, s: State, len: number) => sp.leafLen * (0.72 + 0.28 * (1 - Math.exp(-len / 6))) * POT[s.pot].needle * leafShrink9(s);
+// v10: list je tím menší, čím kratší je výhon (víc drobných výhonů = menší listy), a ještě menší při druhém rašení
+// (pořadí násobení je u starších pravidel stejné jako dřív, aby vycházely bit po bitu stejné stromy)
+const leafSize = (sp: Species, s: State, len: number, late = false) => sp.leafLen
+  * (s.rules >= 10 ? (P.leafSizeMin10 + (1 - P.leafSizeMin10) * (1 - Math.exp(-len / P.leafSizeLen10))) * (late ? P.reflushLeaf10 : 1) : 0.72 + 0.28 * (1 - Math.exp(-len / 6)))
+  * POT[s.pot].needle * leafShrink9(s);
 
 /** Z pupenu olistěného druhu vyroste výhon s listy v každém úžlabí. */
 function leafyShoot(s: State, sp: Species, sh: Shoot, b: Bud, late: boolean) {
@@ -413,7 +418,8 @@ function leafyShoot(s: State, sp: Species, sh: Shoot, b: Bud, late: boolean) {
   const r = sp.twig0 + sp.twigPerLen * b.len;
   newShoot(s, {
     parent: sh.id, attachT: b.t, dir: b.order === 0 && b.isMain ? norm(add(b.dir, [0, 1.5, 0])) : b.dir, order: b.order, isMain: b.isMain,
-    targetLen: b.len, needleCount: Math.max(2, Math.round(b.len / sp.internode) + 1) * per, needleLen: leafSize(sp, s, b.len), area: Math.PI * r * r,
+    // v10: výhon kratší než jedno internodium nese jediný uzel (jeden list, u vstřícných druhů jeden pár)
+    targetLen: b.len, needleCount: (s.rules >= 10 && b.len < sp.internode ? 1 : Math.max(2, Math.round(b.len / sp.internode) + 1)) * per, needleLen: leafSize(sp, s, b.len, late), area: Math.PI * r * r,
     // druhý růst po zaštípnutí začíná až teď, ne na jaře
     delay: late ? Math.max(0, s.gdd - sp.flushGdd) : (b.isMain ? 0 : 10) + rnd(s.seed, b.id, 3) * 30,
   });
@@ -434,6 +440,15 @@ function flushLeafy(s: State, sp: Species) {
     }
     for (const b of sh.buds) leafyShoot(s, sp, sh, b, false);
     sh.buds = [];
+  }
+  if (s.rules >= 10 && s.shoots.some((sh) => sh.shadedYear === year - 1 && sh.needleCount > 0)) {
+    // v10: větvička, která loni kvůli stínu shodila listy, vyraší jen tehdy, když na ni letos světlo dosáhne
+    // (odhad s plně vyvinutými listy – po zimním řezu nebo prosvětlení koruny se vnitřek znovu zazelená)
+    computeLeafLight(s, computeFrames(s), true);
+    for (const sh of s.shoots) {
+      if (sh.dead || sh.shadedYear !== year - 1 || sh.bornYear === year) continue;
+      if ((sh.leafLight ?? 1) < sp.lightDeath) { sh.needleCount = 0; sh.needleLive = 0; sh.shadedYear = year; }
+    }
   }
 }
 
@@ -616,6 +631,14 @@ export function step(s: State) {
     s.pendingFlush = left;
   }
 
+  if (s.rules >= 10 && leafy && s.day % P.shadeCheckDays10 === 0 && s.gdd > sp.flushGdd + sp.leafSpanGdd && doy < sp.colorDoy - 25) {
+    // v10: listy, na které už nezbývá světlo, strom neudrží – zežloutnou a opadají
+    computeLeafLight(s, computeFrames(s));
+    for (const sh of s.shoots) {
+      if (sh.dead || sh.elong || sh.kind !== 'shoot' || sh.needleCount <= 0 || sh.needleLive <= 0) continue;
+      if ((sh.leafLight ?? 1) < sp.lightDeath) sh.shadedYear = year;
+    }
+  }
   const cambium = s.gdd > P.cambiumStartGdd && s.gdd < P.cambiumEndGdd;
   if (cambium && (s.day % 7 === 0 || s.shoots[0].fol === 0)) updateFoliage(s);
   const shedding = doy >= P.shedStartDoy && doy < P.shedEndDoy;
@@ -659,6 +682,7 @@ export function step(s: State) {
       if (e >= 1 || sh.bornYear < year) { sh.len = sh.targetLen; sh.elong = false; }
     }
     if (cambium) sh.area += kArea * sh.fol;
+    if (leafy && sh.shadedYear === year && s.rules >= 10 && sh.needleLive > 0 && doy < sp.colorDoy) sh.needleLive = Math.max(0, sh.needleLive - 1 / P.shadeDropDays10);
     if (leafy) {
       // opad listí: celé olistění, u buku, habru a dubu část suchých listů zůstává do jara
       if (doy >= sp.colorDoy + 12 && doy < sp.fallDoy && sh.needleLive > sp.marcescent && sh.kind !== 'hypocotyl') sh.needleLive = Math.max(sp.marcescent, sh.needleLive - 1 / (sp.fallDoy - sp.colorDoy - 12));
