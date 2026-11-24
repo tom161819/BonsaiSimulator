@@ -27,6 +27,9 @@ export interface Bud {
 }
 
 /** Drát na výhonu: ohyb = otočení výhonu i s podstromem kolem jeho paty. */
+/** Plevel v nádobě. u, v = poloha v půdorysu nádoby (−1..1 vůči polovině šířky a hloubky). */
+export interface Weed { id: number; kind: 'dandelion' | 'grass' | 'celandine' | 'nettle'; u: number; v: number; born: number; size: number; variant: number; rot: number }
+
 export interface Wire {
   day: number;
   axis: Vec3;
@@ -115,6 +118,8 @@ export interface State {
   nebari: SurfaceRoot[];
   /** posun stromu od středu nádoby, v podílu poloviny jejího rozměru (−1…1); jen vzhled */
   potOffset?: [number, number];
+  weeds?: Weed[]; // v12: plevel v nádobě
+  weedNext?: number; // vlastní číslování plevele (nesmí měnit čísla výhonů, na nichž závisí růst)
   bound?: number; // v9: roky strávené v přerostlé nádobě od posledního přesazení (vyčerpaný substrát)
   mossAge?: number; // dny, po které mech na substrátu nerušeně roste (jen vzhled)
   mound?: number; // 0..1 navršení substrátu ke kmeni (jen vzhled)
@@ -133,6 +138,7 @@ export type Action =
   | { day: number; type: 'unwireAll'; only?: 'biting'; label?: string }
   | { day: number; type: 'cleanDead'; label?: string }
   | { day: number; type: 'moss'; label?: string }
+  | { day: number; type: 'weed'; id?: number; label?: string }
   | { day: number; type: 'leaf'; shoots: number[]; keep: number; label?: string }
   | { day: number; type: 'cutMany'; cuts: { shoot: number; t: number }[]; label?: string };
 
@@ -145,5 +151,6 @@ export type ActionInput =
   | { type: 'unwireAll'; only?: 'biting'; label?: string }
   | { type: 'cleanDead'; label?: string }
   | { type: 'moss'; label?: string }
+  | { type: 'weed'; id?: number; label?: string }
   | { type: 'leaf'; shoots: number[]; keep: number; label?: string }
   | { type: 'cutMany'; cuts: { shoot: number; t: number }[]; label?: string };

@@ -1,12 +1,12 @@
 // Růstové jádro: jeden krok = jeden den. Čistá funkce nad stavem, bez vazby na vykreslování.
 
 import type { Bud, BudKind, Shoot, State, Vec3 } from './types';
-import { P, POT, POT_GROWTH_V1, RULES_LATEST, START_DOY, START_POT } from './params';
+import { P, POT, POT_GROWTH_V1, RULES_LATEST, START_DOY, START_POT, WEEDS, WEED_MAX, WEED_RATE, WeedKind, potById } from './params';
 import { temperature } from './climate';
 import { Species, speciesOf } from './species';
 import { computeLeafLight, computeLight } from './light';
 import {
-  UP, YEAR, add, clamp, computeFrames, potCapFor, potExhaust, rootBoundFactor, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
+  UP, YEAR, add, clamp, computeFrames, potCapFor, potExhaust, rootBoundFactor, weedLoad, mossCover, radiusOf, doyOf, indexMap, norm, ownFoliage, rnd, scale, smooth, tilt, yearOf,
 } from './util';
 
 const potGrowth = (s: State) => (s.rules >= 2 ? POT[s.pot].growth : POT_GROWTH_V1[s.pot]);
@@ -466,6 +466,40 @@ function lateBudSet(s: State, sp: Species, year: number) {
   }
 }
 
+/** v12: plevel. Od jara do konce léta občas nalétne semínko (víc, čím větší je plocha substrátu a čím víc
+ *  dorostlého plevele už v nádobě je; mech klíčení brzdí), rostlina pak roste s teplem až do plné velikosti. */
+function weeds(s: State, dG: number, year: number, doy: number) {
+  const list = (s.weeds ??= []);
+  for (const w of list) if (w.size < 1) w.size = Math.min(1, w.size + dG / WEEDS[w.kind].gdd);
+  if (doy < 95 || doy > 250 || list.length >= WEED_MAX) return;
+  const spec = potById(s.potId);
+  const ha = spec.a / 2, hb = spec.b / 2;
+  const area = (spec.shape === 'rect' ? spec.a * spec.b : Math.PI * ha * hb) / 100; // dm²
+  const cap = Math.min(WEED_MAX, Math.max(2, Math.round(1.6 * Math.sqrt(area))));
+  if (list.length >= cap) return;
+  const mature = list.filter((w) => w.size > 0.6).length;
+  const perYear = WEED_RATE * Math.sqrt(area) * (1 + 0.3 * mature) * (1 - 0.6 * mossCover(s));
+  if (rnd(s.seed, s.day, 7771) >= perYear / 156) return;
+  // místo: uvnitř nádoby, ne těsně u kmene ani na jiném plevelu
+  const off = s.potOffset ?? [0, 0];
+  // od kmene aspoň o polovinu šířky dorostlé rostliny (listy nesmí růst skrz kmen ani přes kořenové náběhy)
+  const tx = off[0] * ha * 0.8, tz = off[1] * hb * 0.8, keep = radiusOf(s.shoots[0]) * 2.6 + 6;
+  for (let k = 0; k < 10; k++) {
+    const u = rnd(s.seed, s.day * 13 + k, 7772) * 2 - 1, v = rnd(s.seed, s.day * 13 + k, 7773) * 2 - 1;
+    const inside = spec.shape === 'rect' ? Math.max(Math.abs(u), Math.abs(v)) < 0.84 : u * u + v * v < 0.84 * 0.84;
+    if (!inside) continue;
+    const x = u * ha, z = v * hb;
+    if (Math.hypot(x - tx, z - tz) < keep) continue;
+    if (list.some((o) => Math.hypot(o.u * ha - x, o.v * hb - z) < 3.5)) continue;
+    let r = rnd(s.seed, s.day, 7774), kind: WeedKind = 'dandelion';
+    for (const kk of Object.keys(WEEDS) as WeedKind[]) { if (r < WEEDS[kk].w) { kind = kk; break; } r -= WEEDS[kk].w; }
+    s.weedNext = (s.weedNext ?? 0) + 1;
+    list.push({ id: s.weedNext, kind, u, v, born: s.day, size: 0.04, variant: Math.floor(rnd(s.seed, s.day, 7775) * 8), rot: rnd(s.seed, s.day, 7776) * 6.2832 });
+    return;
+  }
+  void year;
+}
+
 /** Stárnutí krátkých výhonů: po několika letech na dřevě zbude jen pár spících pupenů (nebo žádný). */
 function ageSpurs(s: State, sp: Species) {
   const year = yearOf(s.day);
@@ -669,8 +703,10 @@ export function step(s: State) {
       // Jakmile strom začne chřadnout, je substrát vyčerpaný a plný odumřelých kořenů: místo se samo neuvolní
       // a počítadlo běží dál, dokud strom někdo nepřesadí.
       const spent = (s.bound ?? 0) > P.boundGrace9;
-      s.roots = Math.max(0, s.roots + P.rootGrowth * s.shoots[0].fol * season * Math.max(0, 1 - s.roots / (s.potCap * P.rootMaxFill9)) - (spent ? 0 : P.rootTurnover9 * season * s.roots));
-      s.bound = (s.bound ?? 0) + season * (spent ? 1 : clamp((s.roots / s.potCap - P.boundFrom9) / (P.boundFull9 - P.boundFrom9), 0, 1));
+      // v12: plevel zabírá kořenům místo – počítá se do zaplnění i do přerůstání nádoby
+      const wl = s.rules >= 12 ? weedLoad(s) : 0;
+      s.roots = Math.max(0, s.roots + P.rootGrowth * s.shoots[0].fol * season * Math.max(0, 1 - (s.roots + wl) / (s.potCap * P.rootMaxFill9)) - (spent ? 0 : P.rootTurnover9 * season * s.roots));
+      s.bound = (s.bound ?? 0) + season * (spent ? 1 : clamp(((s.roots + wl) / s.potCap - P.boundFrom9) / (P.boundFull9 - P.boundFrom9), 0, 1));
     } else if (s.pot !== 'ground') s.roots += P.rootGrowth * s.shoots[0].fol * season * Math.max(0, 1 - s.roots / (s.potCap * P.rootMaxFill));
     s.stress *= 1 - P.stressDecay * season;
   }
@@ -711,6 +747,7 @@ export function step(s: State) {
 
   const setNow = year === 0 ? doy >= P.seedlingBudSetDoy : s.gdd >= (leafy ? sp.budSetGdd : P.budSetGdd);
   if (s.budSetYear < year && setNow) { runBudSet(s); updateDeath(s); }
+  if (s.rules >= 12 && s.pot !== 'ground') weeds(s, dG, year, doy);
   if (s.rules >= 11 && leafy) {
     // v11: výhonky z druhého rašení si pupeny založí na podzim; co po opadu listí nemá list ani pupen, odumře
     // hned – ne až při nejbližším zásahu hráče, kdy to vypadalo, že větvičku zabil řez o kus vedle

@@ -33,3 +33,7 @@ Každý list je oříznutý na čepel, roztažený na políčko a barevně znorm
 # Mech
 
 `moss_d.jpg` (barva), `moss_n.jpg` (normálová mapa, OpenGL) a `moss_h.jpg` (výšková mapa) jsou z ambientCG, sada `Moss002`, licence CC0, zmenšeno na 512 px.
+
+# Plevel
+
+3D modely z Poly Haven (https://polyhaven.com), licence CC0, rozlišení 1k: `dandelion_01` (pampeliška), `grass_medium_02` (trs trávy), `celandine_01` (orsej) a `nettle_plant` (mladá kopřiva). Skript `scripts/assets/weeds.py` z nich vybere lehké varianty (0,4–5,7 tisíce trojúhelníků; velké varianty s desítkami tisíc vynechá), převede je do centimetrů a uloží do `weeds.bin` (popis v `src/weeds.json`). Barva listů je zmenšená na 512 px a průhlednost je odvozená z jasu, protože sken je na černém pozadí (`weed_<model>.webp`).

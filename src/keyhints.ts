@@ -20,7 +20,7 @@ const TOOLS: Record<HintTool, { name: string; key: string; rows: Row[] }> = {
   bud: {
     name: 'Pinzeta', key: '2',
     rows: [
-      { parts: ['L'], mods: '', label: 'Vyštípnout pupen', sub: 'nebo sloupnout mech' },
+      { parts: ['L'], mods: '', label: 'Vyštípnout pupen', sub: 'vytrhnout plevel, sloupnout mech' },
     ],
   },
   leaf: {

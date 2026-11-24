@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Timeline } from '../src/sim/timeline';
 import { splitShoot, wholeBranch } from '../src/sim/actions';
-import { YEAR, bendLimit, breakRisk, computeFrames, mossCover, potExhaust, potStatus, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
+import { YEAR, bendLimit, breakRisk, computeFrames, mossCover, potExhaust, potStatus, weedLoad, cross, norm, rootFill, rotate, shootPoint, stats } from '../src/sim/util';
 import type { Action, State, Vec3 } from '../src/sim/types';
 import samples from '../src/samples.json';
 import { SPECIES_ORDER } from '../src/sim/species';
@@ -704,6 +704,39 @@ test('druhý ohyb uprostřed ohnuté větve: část před ním stojí, zakřiven
   assert.ok(m.wire && e.wire && a.wire, 'drát na všech částech');
   tl.undo();
   assert.equal(tl.state.shoots.length, n0);
+});
+
+// ---- pravidla v12: plevel
+test('v12: plevel nalétne v nádobě, zabírá kořenům místo a po odplevelení se místo uvolní', () => {
+  const tl = new Timeline(4, [{ day: 300, type: 'repot', pot: 'bonsai', potId: 'b25', prune: 0 }], 12, 'maple');
+  tl.seek(at(1, 300));
+  const n1 = (tl.state.weeds ?? []).length;
+  tl.seek(at(5, 250));
+  const ws = tl.state.weeds ?? [];
+  assert.ok(n1 <= 2 && ws.length >= 2 && ws.length <= 8, `za rok ${n1}, za pět let ${ws.length}`);
+  const load = weedLoad(tl.state) / tl.state.potCap;
+  assert.ok(load > 0.03 && load < 0.3, `plevel zabírá ${(load * 100).toFixed(0)} %`);
+  const f0 = rootFill(tl.state);
+  const one = ws[0];
+  tl.act({ type: 'weed', id: one.id });
+  assert.equal((tl.state.weeds ?? []).length, ws.length - 1);
+  assert.ok(rootFill(tl.state) < f0, 'vytržení jedné rostliny ubere');
+  tl.act({ type: 'weed' });
+  assert.equal((tl.state.weeds ?? []).length, 0);
+  assert.ok(Math.abs(rootFill(tl.state) - (f0 - load)) < 1e-9, 'po odplevelení zbudou jen kořeny stromu');
+  tl.undo(); tl.undo();
+  assert.equal((tl.state.weeds ?? []).length, ws.length);
+  // přesazení do čerstvého substrátu plevel odstraní, volná půda ho nemá
+  tl.act({ type: 'repot', pot: 'bonsai', potId: 'b25', prune: 0.3 });
+  assert.equal((tl.state.weeds ?? []).length, 0);
+  const g = new Timeline(4, [{ day: 300, type: 'repot', pot: 'ground', potId: 'ground', prune: 0 }], 12, 'maple'); g.seek(at(5, 250));
+  assert.equal((g.state.weeds ?? []).length, 0);
+});
+
+test('v12: plevel nemění čísla výhonů – bez plevele roste strom stejně jako ve v11', () => {
+  const a = new Timeline(4, [{ day: 300, type: 'repot', pot: 'ground', potId: 'ground', prune: 0 }], 11, 'maple'); a.seek(at(4, 200));
+  const b = new Timeline(4, [{ day: 300, type: 'repot', pot: 'ground', potId: 'ground', prune: 0 }], 12, 'maple'); b.seek(at(4, 200));
+  assert.equal(JSON.stringify(a.state.shoots), JSON.stringify(b.state.shoots));
 });
 
 console.log(`\n${n} testů prošlo`);

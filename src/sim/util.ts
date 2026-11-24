@@ -1,5 +1,5 @@
 import type { Shoot, State, SurfaceRoot, Vec3 } from './types';
-import { P, potById } from './params';
+import { P, WEEDS, potById } from './params';
 import { speciesOf } from './species';
 
 export const YEAR = 365;
@@ -159,7 +159,10 @@ export function spreadNebari(list: SurfaceRoot[], spread: number): SurfaceRoot[]
 }
 
 /** Zaplnění nádoby kořeny (1 = plná). */
-export const rootFill = (s: State) => (s.pot === 'ground' ? 0 : s.roots / Math.max(1, s.potCap));
+/** v12: kolik místa pro kořeny zabírá plevel (ve stejných jednotkách jako s.roots). */
+export const weedLoad = (s: State) => (s.rules >= 12 && s.pot !== 'ground' && s.weeds ? s.weeds.reduce((a, w) => a + WEEDS[w.kind].load * w.size, 0) * s.potCap : 0);
+/** Zaplnění nádoby: kořeny stromu a (od v12) i plevel, který jim bere místo. */
+export const rootFill = (s: State) => (s.pot === 'ground' ? 0 : (s.roots + weedLoad(s)) / Math.max(1, s.potCap));
 
 /** Násobitel růstu podle prokořenění: přerostlé kořeny strom dusí. */
 export function rootBoundFactor(s: State): number {

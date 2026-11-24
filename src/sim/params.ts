@@ -138,7 +138,7 @@ export const POT: Record<PotType, { name: string; growth: number; needle: number
 };
 /** Účinnost stanoviště v původních pravidlech (v1): miska strom živila výrazně hůř. */
 export const POT_GROWTH_V1: Record<PotType, number> = { ground: 1.0, training: 0.85, bonsai: 0.5 };
-export const RULES_LATEST = 11;
+export const RULES_LATEST = 12;
 
 /** Katalog nádob. Velikost se sama nemění – nádobu volí pěstitel při přesazení.
  *  Objem v litrech určuje, kolik kořenů se vejde (P.rootPerLiter); rozměry v cm slouží vykreslení:
@@ -194,6 +194,18 @@ export const GLAZES: Glaze[] = [
   { id: 'black', name: 'Černá glazura', color: 0x1c1c1f, glossy: true },
   { id: 'white', name: 'Bílá glazura', color: 0xc9c6bd, glossy: true },
 ];
+/** Plevel v nádobě (pravidla v12). load = jakou část kapacity nádoby pro kořeny zabere dorostlá rostlina,
+ *  gdd = teplotní suma do plné velikosti, w = podíl mezi náletem, variants = počet tvarů v src/weeds.json. */
+export type WeedKind = 'dandelion' | 'grass' | 'celandine' | 'nettle';
+export const WEEDS: Record<WeedKind, { name: string; load: number; gdd: number; w: number; size: number; winter: number }> = {
+  dandelion: { name: 'Pampeliška', load: 0.045, gdd: 2200, w: 0.34, size: 9, winter: 0.85 },
+  grass: { name: 'Trs trávy', load: 0.05, gdd: 1600, w: 0.3, size: 11, winter: 0.7 },
+  celandine: { name: 'Orsej', load: 0.03, gdd: 900, w: 0.2, size: 8, winter: 0.35 },
+  nettle: { name: 'Kopřiva', load: 0.035, gdd: 1400, w: 0.16, size: 7, winter: 0.5 },
+};
+export const WEED_RATE = 0.9; // náletů za rok na odmocninu z plochy substrátu v dm² (miska 27×19 cm ≈ 2 za rok)
+export const WEED_MAX = 8;
+
 export const potById = (id: string | undefined): PotSpec => POTS.find((p) => p.id === id) ?? POTS[1];
 /** Výchozí nádoba pro daný typ (starší uložené hry znají jen typ). */
 export const defaultPotId = (type: PotType) => (type === 'ground' ? 'ground' : type === 'training' ? 't5' : 'b15');

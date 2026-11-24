@@ -2,9 +2,9 @@
 
 import { Timeline } from './sim/timeline';
 import { TreeView, Pick, wireGauge } from './render/view';
-import { GLAZES, P, POT, POTS, MAX_YEARS, RULES_LATEST, potById } from './sim/params';
+import { GLAZES, P, POT, POTS, MAX_YEARS, RULES_LATEST, WEEDS, potById } from './sim/params';
 import { MONTHS, dateOf } from './sim/climate';
-import { YEAR, bendLimit, bendStress, breakRisk, computeFrames, heldArc, mossCover, potStatus, shootPoint, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
+import { YEAR, bendLimit, bendStress, breakRisk, computeFrames, heldArc, mossCover, potStatus, shootPoint, weedLoad, doyOf, potCapFor, radiusOf, repotSeason, repotStress, rootFill, stats, yearOf } from './sim/util';
 import type { Action, ActionInput, PotType, State, Vec3 } from './sim/types';
 import { bendShoot, deadwood, splitShoot, wholeBranch } from './sim/actions';
 import { computeLeafLight } from './sim/light';
@@ -381,12 +381,14 @@ function refresh() {
     else if (biting) hint = `Drát na ${biting} ${biting === 1 ? 'větvi' : 'větvích'} zarůstá do kůry. Sundejte ho nástrojem Drát.`;
     else if (s.rules >= 9 ? pst === 1 : fill > P.rootBoundStart) hint = s.rules >= 9 ? 'Nádoba je plná kořenů a růst slábne. Naplánujte na předjaří přesazení se zkrácením kořenů, nebo větší nádobu.' : 'Nádoba je prokořeněná a růst začíná slábnout. Naplánujte přesazení na předjaří.';
     else if (s.rules >= 10 && s.shoots.filter((x) => !x.dead && x.shadedYear === yearOf(s.day) && x.needleLive > 0 && x.needleLive < 1).length >= 4) hint = 'V koruně je místy tak husto, že vnitřní listy žloutnou a opadávají. Prosvětlete ji nástrojem Listy nebo řezem – zastíněné větvičky pak příští rok znovu olistí.';
+    else if (s.rules >= 12 && s.pot !== 'ground' && weedLoad(s) / Math.max(1, s.potCap) > 0.08) hint = `V nádobě roste plevel a bere kořenům ${Math.round((weedLoad(s) / s.potCap) * 100)} % místa. Vytrhejte ho pinzetou.`;
     else if (ready) hint = `${ready} ${ready === 1 ? 'nadrátovaná větev už drží' : 'nadrátované větve už drží'} tvar – drát lze sundat.`;
   }
   $('hint').textContent = fut ? `Jste v minulosti: nový zásah přepíše ${fut} pozdějších zásahů v deníku.` : hint;
   const sr = $('sRoots');
-  sr.textContent = s.pot === 'ground' ? 'volná půda' : `${String(potById(s.potId).liters).replace('.', ',')} l · ${Math.round(fill * 100)} %`;
-  sr.title = potById(s.potId).name;
+  const wPct = s.pot === 'ground' ? 0 : Math.round((weedLoad(s) / Math.max(1, s.potCap)) * 100);
+  sr.textContent = s.pot === 'ground' ? 'volná půda' : `${String(potById(s.potId).liters).replace('.', ',')} l · ${Math.round(fill * 100)} %${wPct ? ` (plevel ${wPct} %)` : ''}`;
+  sr.title = potById(s.potId).name + (wPct ? ` – z toho ${wPct} % zabírá plevel` : '');
   sr.className = s.rules >= 9 ? (pst >= 2 ? 'bad' : pst === 1 ? 'warn' : '') : fill > 1.2 ? 'bad' : '';
   {
     // výrazné upozornění, že je čas přesadit (pravidla v9); kliknutím se otevře přesazení
@@ -420,6 +422,13 @@ function refresh() {
   if (repotOpen) updateRepot();
   $('wireOpts').hidden = tool !== 'wire';
   $('cutOpts').hidden = tool !== 'cut';
+  {
+    const nW = s.pot === 'ground' ? 0 : (s.weeds ?? []).length;
+    $('budOpts').hidden = tool !== 'bud' || s.rules < 12;
+    const wb = $<HTMLButtonElement>('weedAll');
+    wb.disabled = !nW;
+    wb.textContent = nW ? `Odplevelit (${nW} ${nW === 1 ? 'rostlina' : nW < 5 ? 'rostliny' : 'rostlin'})` : 'Odplevelit';
+  }
   {
     // nástroj Listy je jen pro olistěné druhy a pravidla v10
     const leafOk = speciesOf(s).kind === 'leafy' && s.rules >= 10;
@@ -692,6 +701,23 @@ canvas.addEventListener('pointermove', (e) => {
     }
     canvas.style.cursor = tool === 'wire' ? 'grab' : 'crosshair';
     const p = pTree;
+    // pinzeta: plevel má přednost před mechem (roste z něj)
+    const wid = !p && tool === 'bud' ? view.pickWeed(e.offsetX, e.offsetY) : null;
+    view.highlightWeed(wid);
+    if (wid !== null) {
+      const w = (tl.state.weeds ?? []).find((x) => x.id === wid);
+      if (w) {
+        setHover(null);
+        const pct = Math.max(1, Math.round(WEEDS[w.kind].load * w.size * 100));
+        tip.hidden = false; tip.className = '';
+        tip.innerHTML = '';
+        const b = document.createElement('b'); b.textContent = `Vytrhnout plevel – ${WEEDS[w.kind].name.toLowerCase()}`;
+        const sp = document.createElement('span'); sp.textContent = `Zabírá kořenům asi ${pct} % nádoby; po vytržení se místo uvolní.`;
+        tip.append(b, sp);
+        tip.style.left = `${Math.min(window.innerWidth - 270, e.clientX + 16)}px`; tip.style.top = `${Math.max(8, e.clientY - 44)}px`;
+        return;
+      }
+    }
     if (!p && tool === 'bud' && view.pickMoss(e.offsetX, e.offsetY)) {
       setHover(null);
       tip.hidden = false; tip.className = '';
@@ -749,6 +775,16 @@ const up = (e: PointerEvent) => {
       setHover(null);
     }
     return;
+  }
+  const wid = !p && tool === 'bud' ? view.pickWeed(e.offsetX, e.offsetY) : null;
+  if (wid !== null) {
+    const w = (tl.state.weeds ?? []).find((x) => x.id === wid);
+    if (w) {
+      tl.act({ type: 'weed', id: w.id, label: `Vytržen plevel (${WEEDS[w.kind].name.toLowerCase()})` });
+      view.highlightWeed(null);
+      tip.hidden = true; lastLogKey = ''; persist(); refresh();
+      return;
+    }
   }
   if (!p && tool === 'bud' && view.pickMoss(e.offsetX, e.offsetY)) {
     tl.act({ type: 'moss', label: 'Odstraněn mech' });
@@ -840,6 +876,14 @@ $('leafInner').onclick = () => {
   const ids = s.shoots.filter((x) => leavesOn(x) > 0 && (x.leafLight ?? 1) < 0.2).map((x) => x.id);
   if (!ids.length) { flash('Koruna je dost vzdušná – dovnitř se světlo dostane i tak.'); return; }
   leafAct(ids, 0, `Prosvětlen vnitřek koruny (${ids.length} výhonů)`);
+};
+$('weedAll').onclick = () => {
+  const n = (tl.state.weeds ?? []).length;
+  if (!n) return;
+  const before = Math.round(rootFill(tl.state) * 100);
+  tl.act({ type: 'weed', label: `Odplevelení (${n} ${n === 1 ? 'rostlina' : n < 5 ? 'rostliny' : 'rostlin'})` });
+  flash(`Odplevelení: kořeny teď zabírají ${Math.round(rootFill(tl.state) * 100)} % nádoby místo ${before} %.`);
+  lastLogKey = ''; persist(); refresh();
 };
 $('cleanDead').onclick = () => {
   const cnt = deadwood(tl.state).size;
@@ -1034,6 +1078,7 @@ function wireCheck(frac = 1) {
 }
 (window as any).bonsai = {
   wireCheck,
+  weedScreen: () => view.weedScreen(),
   // body na obrazovce, za které jde větve chytit (pro zkoušky ovládání drátu)
   wirePoints: (t = 0.7) => tl.state.shoots.filter((q) => !q.dead && !q.elong && q.parent >= 0 && q.len > 5).map((q) => { const pl = planBend(tl.state, q.id, t); return pl ? { id: q.id, order: q.order, len: q.len, g: view.toScreen(pl.G), p: view.toScreen(pl.P) } : null; }).filter(Boolean),
   load: (save: Save) => { lastLogKey = ''; start(save); buildTrack(); },
@@ -1112,7 +1157,8 @@ function updateRepot() {
   const after = spec.type === 'ground' ? 0 : (s.roots * (1 - v.prune)) / potCapFor(rPot);
   if (spec.type === 'ground') line('Ve volné půdě kořeny nic neomezuje – strom sílí nejrychleji, ale roste do výšky a jehlice má dlouhé.');
   else {
-    line(`Kořeny teď zaplňují nádobu z ${Math.round(rootFill(s) * 100)} %, v nové (${String(spec.liters).replace('.', ',')} l) zaplní ${Math.round(after * 100)} %.`);
+    const wp = Math.round((weedLoad(s) / Math.max(1, s.potCap)) * 100);
+    line(`Kořeny teď zaplňují nádobu z ${Math.round(rootFill(s) * 100)} %${wp ? ` (z toho plevel ${wp} % – v čerstvém substrátu nebude)` : ''}, v nové (${String(spec.liters).replace('.', ',')} l) zaplní ${Math.round(after * 100)} %.`);
     if (s.rules >= 9) {
       const ailing = potStatus(s) >= 2;
       if (after >= 1.2) line(ailing ? 'To nestačí: kořeny se do nádoby nevejdou a strom bude strádat dál. Zakraťte je víc nebo zvolte větší nádobu.' : 'Kořeny se do této nádoby nevejdou – zakraťte je víc nebo zvolte větší.', true);

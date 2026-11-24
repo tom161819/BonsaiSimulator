@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { PotType, Shoot, State } from '../sim/types';
-import { GLAZES, P, potById } from '../sim/params';
+import { GLAZES, P, WEEDS, potById } from '../sim/params';
+import weedsJson from '../weeds.json';
 import { mossCover } from '../sim/util';
 import { LeafShape, speciesOf } from '../sim/species';
 import leafAtlasJson from '../leafAtlas.json';
@@ -440,6 +441,101 @@ export class TreeView {
   private mossThr = 0;
   private static MOSS_N = 256;
   private soilFn: (x: number, z: number) => number = () => 0; // výška substrátu vůči patě kmene (v souřadnicích stromu)
+  private soilHill: (x: number, z: number) => number = () => 0; // výška substrátu v souřadnicích nádoby
+  // ---- plevel (modely Poly Haven, CC0): geometrie se načte až při prvním plevelu v nádobě
+  private weedGroup = new THREE.Group();
+  private weedGeo: Record<string, THREE.BufferGeometry[]> | null = null;
+  private weedMat: Record<string, THREE.MeshStandardMaterial> = {};
+  private weedLoading = false;
+  private weedKey = '';
+  private loadWeeds() {
+    if (this.weedLoading) return;
+    this.weedLoading = true;
+    const meta = weedsJson as { kinds: Record<string, { model: string; variants: { offset: number; verts: number; indices: number }[] }>; textures: Record<string, string> };
+    fetch('tex/weeds.bin').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status))).then((buf) => {
+      const geo: Record<string, THREE.BufferGeometry[]> = {};
+      const L = new THREE.TextureLoader();
+      for (const [kind, k] of Object.entries(meta.kinds)) {
+        geo[kind] = k.variants.map((v) => {
+          const g = new THREE.BufferGeometry();
+          let o = v.offset;
+          g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(buf, o, v.verts * 3), 3)); o += v.verts * 12;
+          g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(buf, o, v.verts * 3), 3)); o += v.verts * 12;
+          g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(buf, o, v.verts * 2), 2)); o += v.verts * 8;
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(buf, o, v.indices), 1));
+          g.computeBoundingSphere();
+          return g;
+        });
+        const tex = L.load(meta.textures[k.model], () => { this.needsRender = true; });
+        tex.colorSpace = THREE.SRGBColorSpace; tex.flipY = false; tex.anisotropy = 4;
+        this.weedMat[kind] = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, envMapIntensity: 0.9 });
+      }
+      this.weedGeo = geo;
+      this.weedKey = '';
+      if (this.state) this.build();
+    }).catch(() => { /* bez modelů se plevel nekreslí, ve hře dál působí */ });
+  }
+  /** Plevel v nádobě: modely na povrchu substrátu, velikost podle toho, jak dorostl; v zimě zhnědne. */
+  private placeWeeds(s: State) {
+    const list = s.pot === 'ground' || this.potOverride ? [] : s.weeds ?? [];
+    if (list.length && !this.weedGeo) this.loadWeeds();
+    const doy = doyOf(s.day), winter = doy >= 305 || doy < 85;
+    const spec = potById(s.potId), ha = spec.a / 2, hb = spec.b / 2;
+    const key = [this.weedGeo ? 1 : 0, winter ? 1 : 0, spec.id, ...list.map((w) => `${w.id}:${Math.round(w.size * 40)}`)].join('|');
+    this.weedGroup.position.copy(this.potGroup.position);
+    if (key === this.weedKey) return;
+    this.weedKey = key;
+    this.weedGroup.clear();
+    if (!this.weedGeo) return;
+    for (const [kind, m] of Object.entries(this.weedMat)) {
+      // v zimě listy zhnědnou (pampeliška zůstává skoro zelená, orsej zatáhne)
+      const k = winter ? WEEDS[kind as keyof typeof WEEDS].winter : 1;
+      // skeny listů jsou tmavé: v létě se zesvětlí, v zimě zhnědnou
+      m.color.setRGB(1.15 * (0.58 + 0.42 * k), 1.22 * (0.48 + 0.52 * k), 1.1 * (0.3 + 0.7 * k));
+    }
+    const meta = weedsJson as { kinds: Record<string, { variants: { width: number }[] }> };
+    for (const w of list) {
+      const geos = this.weedGeo[w.kind], vars = meta.kinds[w.kind].variants;
+      if (!geos) continue;
+      const vi = w.variant % geos.length;
+      const kSize = WEEDS[w.kind];
+      // dorostlá rostlina má zhruba typickou šířku druhu; mladá je menší (orsej v zimě skoro zmizí)
+      const grow = (0.22 + 0.78 * Math.pow(w.size, 0.8)) * (winter ? 0.55 + 0.45 * kSize.winter : 1);
+      const sc = (kSize.size * grow) / Math.max(1, vars[vi].width);
+      const mesh = new THREE.Mesh(geos[vi], this.weedMat[w.kind]);
+      const x = w.u * ha, z = w.v * hb;
+      mesh.position.set(x, this.soilHill(x, z) - 0.1, z);
+      mesh.rotation.y = w.rot;
+      mesh.scale.setScalar(sc);
+      mesh.receiveShadow = true;
+      mesh.userData.weed = w.id; mesh.userData.kind = w.kind;
+      this.weedGroup.add(mesh);
+    }
+    this.needsRender = true;
+  }
+  /** Polohy plevele na obrazovce (pro zkoušky). */
+  weedScreen(): { id: number; x: number; y: number }[] {
+    return this.weedGroup.children.map((c) => { const p = c.getWorldPosition(new THREE.Vector3()); p.y += 1; const [x, y] = this.toScreen([p.x, p.y, p.z]); return { id: c.userData.weed as number, x, y }; });
+  }
+  /** Plevel pod kurzorem (pro pinzetu): id, nebo null. */
+  pickWeed(x: number, y: number): number | null {
+    if (!this.weedGroup.children.length) return null;
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2((x / this.canvas.clientWidth) * 2 - 1, -(y / this.canvas.clientHeight) * 2 + 1), this.camera);
+    const hit = ray.intersectObjects(this.weedGroup.children, false)[0];
+    return hit ? (hit.object.userData.weed as number) : null;
+  }
+  /** Zvýraznění plevele, který pinzeta vytrhne (červený nádech). */
+  highlightWeed(id: number | null) {
+    for (const c of this.weedGroup.children) {
+      const m = c as THREE.Mesh, base = this.weedMat[m.userData.kind as string];
+      if (id !== null && m.userData.weed === id) {
+        if (!m.userData.hiMat) { const h = base.clone(); h.emissive.setRGB(0.5, 0.1, 0.04); m.userData.hiMat = h; }
+        m.material = m.userData.hiMat;
+      } else m.material = base;
+    }
+    this.needsRender = true;
+  }
 
   /** Náhled navršení substrátu a barvy misky při přesazování. */
   previewSoil(p: { mound: number; glaze: string; moss?: number } | null) {
@@ -577,7 +673,7 @@ export class TreeView {
     this.seedMesh.position.set(0, 0.1, 0);
     this.tree.add(this.wood, this.bark, this.needles, this.wireMesh);
     this.tree.rotation.order = 'ZXY';
-    this.scene.add(this.tree, this.hi, this.marker, this.potGroup, this.seedMesh);
+    this.scene.add(this.tree, this.hi, this.marker, this.potGroup, this.seedMesh, this.weedGroup);
     {
       const ringM = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.95 });
       const dotM = new THREE.MeshBasicMaterial({ color: 0x2f7dd6, depthTest: false, transparent: true });
@@ -861,6 +957,7 @@ export class TreeView {
     };
     const h0 = hill(tx, tz);
     this.soilFn = (x, z) => hill(x + tx, z + tz) - h0;
+    this.soilHill = hill;
     this.potGroup.position.y = -h0;
     const moss = spec.shape === 'ground' ? 0 : this.soilPreview?.moss ?? (st ? mossCover(st) : 0);
     const key = [spec.id, spec.shape === 'ground' ? groundR : '', mound, glazeId, off[0], off[1], this.soilPhoto ? 1 : 0, this.mossPhoto ? 1 : 0, Math.round(moss * 60)].join('|');
@@ -2028,6 +2125,7 @@ export class TreeView {
     const psO = potById(this.potOverride ?? s.potId);
     const ox = psO.shape === 'ground' ? 0 : -off[0] * (psO.a / 2) * 0.8, oz = psO.shape === 'ground' ? 0 : -off[1] * (psO.b / 2) * 0.8;
     this.potGroup.position.x = ox; this.potGroup.position.z = oz;
+    this.placeWeeds(s);
     this.table.position.x = ox; this.table.position.z = oz;
     // podložka musí pojmout nádobu i stín stromu
     const ps = potById(this.potOverride ?? s.potId);

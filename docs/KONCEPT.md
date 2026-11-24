@@ -216,6 +216,16 @@ jara drželo suché listí. Ve v11 si pozdní výhony zakládají pupeny na podz
 pupeny v úžlabích a vrcholový pupen na 80 % vlastní délky), odumření se vyhodnotí hned po opadu listí a suché
 listí výhon naživu nedrží. Ve stejném měření neuschl při řezu žádný cizí výhon u žádného druhu a v žádné roční
 době; zaštipování koncem července už nepřipraví strom o větvení (javor: 590 živých výhonů místo 214).
+**Pravidla v12 – plevel.** V nádobě (ne ve volné půdě) od dubna do konce srpna občas nalétne plevel:
+pampeliška, trs trávy, orsej nebo mladá kopřiva. Náletů je za rok zhruba 0,9 × odmocnina z plochy substrátu v dm²
+(miska 27×19 cm asi 2 za rok, kelímek 0,5 l méně než 1), víc, když už v nádobě dorostlý plevel je (+30 % na každou
+dorostlou rostlinu), a o 60 % méně pod souvislým mechem; strop je 1,6 × odmocnina z plochy (2–8 rostlin).
+Rostlina roste s teplem (orsej 900, kopřiva 1400, tráva 1600, pampeliška 2200 d.d. do plné velikosti) a zabírá
+kořenům místo: dorostlá pampeliška 4,5 %, tráva 5 %, kopřiva 3,5 %, orsej 3 % kapacity nádoby. Toto místo se
+přičítá k zaplnění kořeny – brzdí tedy růst, přirůstání kořenů i počítadlo přerostlé nádoby. Bez plení se
+plevel v misce ustálí kolem 15–20 % kapacity. Pinzeta vytrhne jednu rostlinu, tlačítko Odplevelit všechny,
+přesazení do čerstvého substrátu je odstraní také. Plevel má vlastní číslování, takže bez něj (volná půda) roste
+strom ve v12 přesně stejně jako ve v11. Míry jsou herní odhad.
 
 ### Ovládání drátu (není verze pravidel – platí pro všechny)
 

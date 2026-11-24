@@ -279,6 +279,7 @@ function repot(s: State, a: Extract<Action, { type: 'repot' }>) {
   for (const r of s.nebari) r.az -= (a.yaw ?? 0) * rad; // otočení kolem svislé osy (stejný smysl jako u výhonů)
   // mech: po přesazení je substrát holý, pokud ho pěstitel nevrátí nebo nepoloží nový
   s.mossAge = a.moss === 'keep' ? s.mossAge ?? 0 : a.moss === 'full' ? MOSS_FULL_DAYS : 0;
+  if (s.weeds) s.weeds = []; // čerstvý substrát je bez plevele
   if (a.mound !== undefined) s.mound = Math.max(0, Math.min(1, a.mound));
   if (a.glaze !== undefined) s.glaze = a.glaze;
   if (a.offX !== undefined || a.offZ !== undefined) s.potOffset = [Math.max(-0.85, Math.min(0.85, a.offX ?? 0)), Math.max(-0.85, Math.min(0.85, a.offZ ?? 0))];
@@ -366,6 +367,7 @@ export function applyAction(s: State, a: Action) {
   else if (a.type === 'unwire') unwire(s, a.shoot);
   else if (a.type === 'cutMany') for (const c of a.cuts) cut(s, c.shoot, c.t);
   else if (a.type === 'moss') s.mossAge = 0;
+  else if (a.type === 'weed') s.weeds = a.id === undefined ? [] : (s.weeds ?? []).filter((w) => w.id !== a.id);
   else if (a.type === 'leaf') defoliate(s, a.shoots, a.keep);
   else if (a.type === 'cleanDead') removeSubtrees(s, deadwood(s));
   else if (a.type === 'unwireAll') for (const id of s.shoots.filter((x) => x.wire && (a.only !== 'biting' || x.scar)).map((x) => x.id)) unwire(s, id);
