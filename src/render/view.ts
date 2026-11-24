@@ -451,6 +451,9 @@ export class TreeView {
   private bb = new Buf();
   private hi = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff3b1f, depthTest: false, transparent: true }));
   private marker = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ color: 0xff3b1f, depthTest: false, transparent: true }));
+  // bod ohybu (nástroj Drát, Ctrl + klik): bílý kroužek kolem větve s tečkou uprostřed
+  private pivotMark = new THREE.Group();
+  private pivotRef: { shoot: number; t: number } | null = null;
   private wireLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }));
   private wireDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ vertexColors: true, size: 7, sizeAttenuation: false, depthTest: false, transparent: true }));
   private wiresOn = false;
@@ -575,6 +578,14 @@ export class TreeView {
     this.tree.add(this.wood, this.bark, this.needles, this.wireMesh);
     this.tree.rotation.order = 'ZXY';
     this.scene.add(this.tree, this.hi, this.marker, this.potGroup, this.seedMesh);
+    {
+      const ringM = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.95 });
+      const dotM = new THREE.MeshBasicMaterial({ color: 0x2f7dd6, depthTest: false, transparent: true });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.16, 8, 32), ringM), dot = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 8), dotM);
+      ring.renderOrder = 12; dot.renderOrder = 13;
+      this.pivotMark.add(ring, dot); this.pivotMark.visible = false;
+      this.scene.add(this.pivotMark);
+    }
     this.resize();
   }
 
@@ -611,7 +622,7 @@ export class TreeView {
     const s = this.state;
     if (!s) return '';
     const keep = { target: this.target.clone(), dist: this.dist, phi: this.phi, auto: this.auto, pr: this.renderer.getPixelRatio() };
-    const hidden = [this.hi, this.marker, this.wireLines, this.wireDots, this.table, this.backdrop, this.toolScissors, this.toolWire].filter((o) => o.visible);
+    const hidden = [this.hi, this.marker, this.pivotMark, this.wireLines, this.wireDots, this.table, this.backdrop, this.toolScissors, this.toolWire].filter((o) => o.visible);
     for (const o of hidden) o.visible = false;
     const pot = potById(s.potId);
     const H = Math.max(6, this.height), below = pot.shape === 'ground' ? 1 : pot.h + 2;
@@ -681,6 +692,8 @@ export class TreeView {
   /** Při tažení větve se pohled nesmí sám přerámovat – kurzor by přestal sedět na drženém místě. */
   holdCamera = false;
   private updateCamera() {
+    // tečka bodu ohybu má na obrazovce stálou velikost
+    if (this.pivotMark.visible) (this.pivotMark.children[1] as THREE.Mesh).scale.setScalar(this.dist * 0.0085);
     if (this.auto && !this.holdCamera) {
       const H = Math.max(4, this.height);
       const narrow = this.camera.aspect < 0.8 ? 1.5 : 1;
@@ -1052,6 +1065,25 @@ export class TreeView {
     this.state = s;
     this.build();
     if (this.wiresOn) this.showWires(true);
+    this.placePivot();
+  }
+
+  /** Bod ohybu: kroužek kolmo na větev v místě t (null = schovat). */
+  setPivot(p: { shoot: number; t: number } | null) {
+    this.pivotRef = p;
+    this.placePivot();
+  }
+  private placePivot() {
+    const p = this.pivotRef, s = this.state, fr = this.frames, i = p ? fr?.index.get(p.shoot) : undefined;
+    if (!p || !s || !fr || i === undefined) { if (this.pivotMark.visible) { this.pivotMark.visible = false; this.needsRender = true; } return; }
+    const sh = s.shoots[i], q = shootPoint(sh, p.t);
+    const d = sh.arc ? rotate(sh.dir, sh.arc.axis, sh.arc.angle * Math.min(1, p.t / Math.max(sh.arc.z, 1e-3))) : sh.dir;
+    this.pivotMark.position.set(fr.base[i * 3] + q[0], fr.base[i * 3 + 1] + q[1], fr.base[i * 3 + 2] + q[2]);
+    this.pivotMark.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(d[0], d[1], d[2]));
+    const r = radiusOf(sh) * 1.9 + 0.1;
+    (this.pivotMark.children[0] as THREE.Mesh).scale.setScalar(r);
+    this.pivotMark.visible = true;
+    this.needsRender = true;
   }
 
   /** Zvýrazní všechny nadrátované výhony (svítivá čára s body podél drátu, viditelná i skrz jehlice). */

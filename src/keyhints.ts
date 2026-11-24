@@ -34,6 +34,7 @@ const TOOLS: Record<HintTool, { name: string; key: string; rows: Row[] }> = {
     name: 'Drát', key: '4',
     rows: [
       { parts: ['L', 'drag'], mods: '', label: 'Ohnout větev', sub: 'držené místo jde za myší' },
+      { parts: ['ctrl', '+', 'L'], mods: 'ctrl', label: 'Bod ohybu', sub: 'odsud se ohne další tah' },
       { parts: ['shift', '+', 'L', 'drag'], mods: 'shift', label: 'Od sebe / k sobě', sub: 'posun do hloubky' },
       { parts: ['L'], mods: '', label: 'Sundat drát', sub: 'klik na nadrátovaný výhon' },
     ],

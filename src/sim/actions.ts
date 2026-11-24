@@ -132,20 +132,39 @@ function turnAlongArc(s: State, sh: Shoot, axis: Vec3, angle: number, z: number)
 /** Rozdělí vyzrálý výhon v místě t (0..1) na dva navazující úseky a vrátí ten vnější. Tvar stromu se nezmění;
  *  díky tomu jde větev ohnout v libovolném místě, ne jen v nasazení ročního přírůstku. Když dělit nejde
  *  (měkká svíčka, děložní část, místo uvnitř už ohnutého oblouku nebo moc blízko konci), vrátí null. */
-export function splitShoot(s: State, id: number, t: number): Shoot | null {
+export function splitShoot(s: State, id: number, t: number, carry = false): Shoot | null {
   const i = s.shoots.findIndex((x) => x.id === id);
   const sh = s.shoots[i];
   if (!sh || sh.dead || sh.elong || sh.kind !== 'shoot' || !(t > 0.04 && t < 0.96)) return null;
-  if (sh.arc && t < sh.arc.z - 1e-6) return null;
   const sp = speciesOf(s), per = sp.kind === 'leafy' && sp.phyllotaxis === 'opposite' ? 2 : 1;
+  // Oblouk se stálým zakřivením jde rozdělit na dva oblouky se stejným zakřivením: vnitřní část nese úhel
+  // úměrný své délce v oblouku, vnější začíná natočená o tento úhel a nese zbytek. Tvar se tím nezmění.
+  const cutArc = <T extends { axis: Vec3; angle: number; z: number }>(a: T | null | undefined): [T | null, T | null, number] => {
+    if (!a || !(a.z > 0)) return [a ? { ...a } : null, null, 0];
+    const zi = Math.min(t, a.z), angI = (a.angle * zi) / a.z, rem = Math.max(0, a.z - t);
+    return [{ ...a, axis: [...a.axis] as Vec3, angle: angI, z: Math.min(1, a.z / t) }, rem > 1e-9 ? { ...a, axis: [...a.axis] as Vec3, angle: (a.angle * rem) / a.z, z: rem / (1 - t) } : null, angI];
+  };
+  // Dřív šlo dělit jen za koncem oblouku a drát zůstal jen vnitřní části; tak se počítá i dál, aby se uložené
+  // stromy přehrály stejně. Nově (uvnitř oblouku nebo s carry) nesou drát obě části.
+  const legacy = !carry && !(sh.arc && t < sh.arc.z - 1e-6);
+  const [arcI, arcO, turnI] = cutArc(sh.arc);
+  // drát obepíná celou větev: obě části ho nesou dál, ohyb i dřívější držený tvar se dělí stejně jako oblouk
+  let wireI = sh.wire, wireO: Shoot['wire'] = null;
+  if (sh.wire && !legacy) {
+    const w = sh.wire;
+    const [wi, wo] = w.z > 0 ? cutArc(w) : [w, null];
+    const [fi, fo] = cutArc(w.from ?? null);
+    wireI = { ...w, axis: [...w.axis] as Vec3, angle: wi ? wi.angle : 0, z: wi ? wi.z : 0, from: fi };
+    wireO = { ...w, axis: [...w.axis] as Vec3, angle: wo ? wo.angle : 0, z: wo ? wo.z : 0, from: fo };
+  }
   const nB = Math.round((sh.needleCount * (1 - t)) / per) * per;
   const dB = sh.dormant === undefined ? undefined : Math.round(sh.dormant * (1 - t));
   const out: Shoot = {
     ...sh, id: s.nextId++, parent: sh.id, attachT: 1, isMain: true, split: true,
-    dir: sh.arc ? norm(rotate(sh.dir, sh.arc.axis, sh.arc.angle)) : [...sh.dir] as Vec3,
+    dir: sh.arc ? norm(rotate(sh.dir, sh.arc.axis, turnI)) : [...sh.dir] as Vec3,
     len: sh.len * (1 - t), targetLen: sh.len * (1 - t), needleCount: nB, dormant: dB,
     buds: sh.buds.filter((b) => b.t > t).map((b) => ({ ...b, t: (b.t - t) / (1 - t) })),
-    wire: null, arc: null, stimulus: 0, male: false,
+    wire: wireO, arc: arcO, stimulus: 0, male: false,
   };
   for (const c of s.shoots) {
     if (c.parent !== sh.id) continue;
@@ -156,8 +175,10 @@ export function splitShoot(s: State, id: number, t: number): Shoot | null {
   sh.needleCount -= nB;
   if (dB !== undefined) sh.dormant = (sh.dormant ?? 0) - dB;
   // oblouk i drát vnitřní části se vztahují k její délce
-  if (sh.arc) sh.arc.z = Math.min(1, sh.arc.z / t);
-  if (sh.wire && sh.wire.z > 0) { sh.wire.z = Math.min(1, sh.wire.z / t); if (sh.wire.from) sh.wire.from.z = Math.min(1, sh.wire.from.z / t); }
+  if (legacy) {
+    if (sh.arc) sh.arc.z = Math.min(1, sh.arc.z / t);
+    if (sh.wire && sh.wire.z > 0) { sh.wire.z = Math.min(1, sh.wire.z / t); if (sh.wire.from) sh.wire.from.z = Math.min(1, sh.wire.from.z / t); }
+  } else { sh.arc = arcI; sh.wire = wireI; }
   s.shoots.splice(i + 1, 0, out);
   return out;
 }
@@ -335,7 +356,13 @@ export function applyAction(s: State, a: Action) {
     sh.buds = sh.buds.filter((b) => b.id !== a.bud);
     updateDeath(s);
   } else if (a.type === 'repot') repot(s, a);
-  else if (a.type === 'wire') wire(s, (a.at ? splitShoot(s, a.shoot, a.at)?.id : undefined) ?? a.shoot, a.axis, a.angle, a.z ?? 0);
+  else if (a.type === 'wire') {
+    // at: výhon se rozdělí a ohýbá se jeho vnější část; to: ohýbaný úsek se rozdělí i na konci zóny ohybu, aby
+    // část za rukou (třeba s dřívějším ohybem) zůstala tvarem stejná a jen se pootočila
+    const id = (a.at ? splitShoot(s, a.shoot, a.at, !!a.to)?.id : undefined) ?? a.shoot;
+    if (a.to) splitShoot(s, id, a.to, true);
+    wire(s, id, a.axis, a.angle, a.z ?? 0);
+  }
   else if (a.type === 'unwire') unwire(s, a.shoot);
   else if (a.type === 'cutMany') for (const c of a.cuts) cut(s, c.shoot, c.t);
   else if (a.type === 'moss') s.mossAge = 0;

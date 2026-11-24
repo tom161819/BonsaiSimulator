@@ -663,4 +663,47 @@ test('v11: výhonky z druhého rašení si založí pupeny a na jaře znovu raš
   assert.ok(alive > late.length * 0.9, `přežilo ${alive} z ${late.length}`);
 });
 
+test('rozdělení uvnitř oblouku nadrátované větve nezmění tvar a drát zůstane na obou částech', () => {
+  const tl = new Timeline(4, [{ day: 300, type: 'repot', pot: 'training', potId: 't10', prune: 0 }], 10, 'pine'); tl.seek(at(6, 320));
+  const sh = tl.state.shoots.filter((q) => !q.dead && !q.elong && q.kind === 'shoot' && q.order === 1 && q.len > 6)[0];
+  tl.act({ type: 'wire', shoot: sh.id, axis: norm(cross(sh.dir, [0, 1, 0])), angle: 0.6, z: 1 });
+  const s = tl.state;
+  const fr0 = computeFrames(s);
+  const tip0 = new Map(s.shoots.map((q, i) => [q.id, [fr0.tip[i * 3], fr0.tip[i * 3 + 1], fr0.tip[i * 3 + 2]]]));
+  const a0 = s.shoots.find((q) => q.id === sh.id)!.arc!.angle;
+  const out = splitShoot(s, sh.id, 0.4, true)!;
+  const inner = s.shoots.find((q) => q.id === sh.id)!;
+  assert.ok(inner.arc && out.arc && Math.abs(inner.arc.angle + out.arc.angle - a0) < 1e-9, 'úhel se rozdělí');
+  assert.ok(inner.wire && out.wire, 'drát na obou částech');
+  const fr = computeFrames(s);
+  s.shoots.forEach((q, i) => {
+    const want = tip0.get(q.id === sh.id ? -1 : q.id === out.id ? sh.id : q.id);
+    if (!want) return;
+    assert.ok(Math.hypot(fr.tip[i * 3] - want[0], fr.tip[i * 3 + 1] - want[1], fr.tip[i * 3 + 2] - want[2]) < 1e-3, `výhon ${q.id} se posunul`);
+  });
+});
+
+test('druhý ohyb uprostřed ohnuté větve: část před ním stojí, zakřivení za rukou zůstane', () => {
+  const tl = new Timeline(4, [{ day: 300, type: 'repot', pot: 'training', potId: 't10', prune: 0 }], 10, 'pine'); tl.seek(at(6, 320));
+  const sh = tl.state.shoots.filter((q) => !q.dead && !q.elong && q.kind === 'shoot' && q.order === 1 && q.len > 6)[0];
+  const ax = norm(cross(sh.dir, [0, 1, 0]));
+  tl.act({ type: 'wire', shoot: sh.id, axis: ax, angle: 0.5, z: 1 });
+  const L = tl.state.shoots.find((q) => q.id === sh.id)!.len;
+  const fr0 = computeFrames(tl.state), i0 = fr0.index.get(sh.id)!;
+  const p03 = shootPoint(tl.state.shoots[i0], 0.3);
+  const n0 = tl.state.shoots.length;
+  // ohyb mezi 0,3 a 0,6 délky opačným směrem
+  tl.act({ type: 'wire', shoot: sh.id, at: 0.3, to: (0.6 - 0.3) / 0.7, axis: [-ax[0], -ax[1], -ax[2]], angle: 0.4, z: 1 });
+  const s = tl.state;
+  assert.equal(s.shoots.length, n0 + 2);
+  const a = s.shoots.find((q) => q.id === sh.id)!, m = s.shoots.find((q) => q.parent === a.id && q.split)!, e = s.shoots.find((q) => q.parent === m.id && q.split)!;
+  assert.ok(Math.abs(a.len - L * 0.3) < 1e-9 && Math.abs(m.len - L * 0.3) < 1e-9 && Math.abs(e.len - L * 0.4) < 1e-9, 'délky částí');
+  const fr = computeFrames(s), ia = fr.index.get(a.id)!;
+  assert.ok(Math.hypot(fr.tip[ia * 3] - (fr0.base[i0 * 3] + p03[0]), fr.tip[ia * 3 + 1] - (fr0.base[i0 * 3 + 1] + p03[1]), fr.tip[ia * 3 + 2] - (fr0.base[i0 * 3 + 2] + p03[2])) < 1e-3, 'část před ohybem stojí');
+  assert.ok(e.arc && Math.abs(e.arc.angle - 0.5 * 0.4) < 1e-9, `konec si nese původní zakřivení (${e.arc?.angle})`);
+  assert.ok(m.wire && e.wire && a.wire, 'drát na všech částech');
+  tl.undo();
+  assert.equal(tl.state.shoots.length, n0);
+});
+
 console.log(`\n${n} testů prošlo`);

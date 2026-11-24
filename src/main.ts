@@ -169,11 +169,20 @@ function describeWire(p: Pick): Described | null {
   // značka ukazuje, odkud se větev ohne; zvýrazněná část se pohne
   const pl = p.type === 'shoot' && !sh.elong && sh.parent >= 0 ? bendHint(s, sh, p.t) : null;
   const pick: Pick = { type: 'shoot', shoot: sh.id, t: pl ? pl.at : 0 };
+  if (ctrlHeld && p.type === 'shoot' && !sh.elong && sh.parent >= 0) {
+    const same = pivot && pivot.shoot === sh.id && Math.abs(pivot.t - p.t) < 0.06;
+    return {
+      title: same ? 'Zrušit bod ohybu' : 'Položit bod ohybu', pick: { type: 'shoot', shoot: sh.id, t: p.t }, own: true,
+      detail: same ? 'Další tah zase ohne větev podle posuvníku Délka ohybu.' : 'Příští tah za větev ji ohne odsud k místu, které držíte. Tak jde jednu větev ohnout na víc místech za sebou.',
+      danger: '', action: null,
+    };
+  }
+  const fromPivot = pivot && pivot.shoot === sh.id && pl && pl.at > 0 ? ' od bodu ohybu' : '';
   if (sh.wire) {
     const hold = Math.round(sh.wire.set * 100);
     return {
       title: 'Sundat drát', pick,
-      detail: `Tvar zatím drží z ${hold} %${hold < 100 ? ' – zbytek ohybu se vrátí' : ''}. Tažením můžete větev doohnout.`,
+      detail: `Tvar zatím drží z ${hold} %${hold < 100 ? ' – zbytek ohybu se vrátí' : ''}. Tažením můžete větev doohnout${fromPivot}${pl ? ` (ohne se ${cm(pl.zone)} před rukou)` : ''}; Ctrl + klik položí bod ohybu.`,
       danger: sh.scar ? 'Drát už zarostl do kůry a nechá jizvu.' : '',
       action: { type: 'unwire', shoot: sh.id, label: `Sundán drát (tvar držel z ${hold} %)` },
     };
@@ -183,7 +192,7 @@ function describeWire(p: Pick): Described | null {
   const spring = s.gdd >= P.flushGdd && s.gdd < P.budSetGdd;
   return {
     title: 'Nadrátovat a ohnout', pick,
-    detail: `Chyťte větev a táhněte: místo, které držíte, jde přesně za kurzorem. Ohne se ${pl ? cm(pl.zone) : 'úsek'} před ním, od značky. Shift při tažení = od sebe / k sobě. Bezpečný ohyb do ${deg(pl ? pl.safe : bendLimit(s, sh, 1))}°, drát ø ${String(wireGauge(radiusOf(sh))).replace('.', ',')} mm.`,
+    detail: `Chyťte větev a táhněte: místo, které držíte, jde přesně za kurzorem. Ohne se ${pl ? cm(pl.zone) : 'úsek'} před ním${fromPivot || ', od značky'}. Ctrl + klik položí bod ohybu jinam. Bezpečný ohyb do ${deg(pl ? pl.safe : bendLimit(s, sh, 1))}°, drát ø ${String(wireGauge(radiusOf(sh))).replace('.', ',')} mm.`,
     danger: spring ? 'Strom je v růstu a kůra se snadno odlupuje – větve teď praskají dřív. Lepší je podzim až předjaří.' : '',
     action: null,
   };
@@ -438,6 +447,8 @@ function refresh() {
   if (s.stage === 'dead') banner.textContent = 'Strom odumřel. Vraťte poslední zásah nebo se posuňte v čase zpět.';
   const key = `${tl.actions.length}:${tl.actions.filter((a) => a.day > s.day).length}`;
   if (key !== lastLogKey) { lastLogKey = key; refreshLog(); }
+  // bod ohybu platí jen pro živý výhon, který ve stromě pořád je (po vrácení zásahu nebo posunu v čase nemusí)
+  if (pivot) { const ps = s.shoots.find((x) => x.id === pivot!.shoot); if (!ps || ps.dead || ps.elong || tool !== 'wire') setPivot(null); else view.setPivot(pivot); }
 }
 
 const tip = $('tip');
@@ -486,8 +497,8 @@ let lastMouse: { ox: number; oy: number; cx: number; cy: number } | null = null;
 let cutLine: { x0: number; y0: number; cx0: number; cy0: number; cuts: { shoot: number; t: number }[] } | null = null;
 const lineEl = $('cutLine');
 function rehover() {
-  if (!lastMouse || downAt || repotOpen || tool === 'wire') return;
-  const p = view.pick(lastMouse.ox, lastMouse.oy, tool === 'bud', tool === 'leaf');
+  if (!lastMouse || downAt || repotOpen) return;
+  const p = view.pick(lastMouse.ox, lastMouse.oy, tool === 'bud', tool === 'leaf', tool === 'wire');
   setHover(p ? describe(p) : null, lastMouse.cx, lastMouse.cy);
 }
 for (const ev of ['keydown', 'keyup'] as const) window.addEventListener(ev, (e) => {
@@ -501,6 +512,7 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 interface BendPlan {
   id: number; // výhon, za který se tahá
   at: number; // kde se rozdělí (0 = nedělí se, ohýbá se od jeho nasazení)
+  to: number; // kde se ohýbaná část rozdělí ještě jednou, na konci zóny (0 = nedělí se)
   z: number; // podíl délky ohýbaného úseku, přes který jde oblouk – končí v drženém místě
   base: State; tid: number; // stav po rozdělení a id ohýbaného úseku
   P: Vec3; d0: Vec3; G: Vec3; // začátek ohybu, směr větve v něm a držené místo (svět)
@@ -510,34 +522,56 @@ interface BendPlan {
 const arcZ = () => Number($<HTMLInputElement>('wArc').value) / 100;
 /** Kde se větev ohne, když ji chytím v místě t: [místo rozdělení, držené místo]. */
 function bendSpot(sh: State['shoots'][number], t: number): [number, number] {
+  // bod ohybu položený Ctrl + klikem: ohýbá se od něj k ruce (jen když držím dál od kloubu než on)
+  if (pivot && pivot.shoot === sh.id && t > pivot.t + 0.05) {
+    const tg = Math.min(1, t);
+    return [sh.kind === 'shoot' && pivot.t >= 0.06 && pivot.t <= 0.94 ? pivot.t : 0, tg];
+  }
   // držené místo: úplně u nasazení by nebyla žádná páka
   const tg = Math.min(1, Math.max(t, 0.15, Math.min(0.9, 1.2 / Math.max(sh.len, 0.1))));
   let at = tg * (1 - arcZ());
-  if (sh.kind !== 'shoot' || at < 0.06 || at > 0.94 || (sh.arc && at < sh.arc.z)) at = 0; // už ohnutý oblouk se doohýbá celý
+  if (sh.kind !== 'shoot' || at < 0.06 || at > 0.94) at = 0;
   return [at, tg];
+}
+/** Je potřeba ohýbaný úsek rozdělit i na konci zóny? Ano, když dřívější oblouk pokračuje za ruku – jinak by ho
+ *  nový ohyb narovnal. Vrací místo dělení v souřadnicích ohýbané části (0 = nedělit). */
+function bendTo(sh: State['shoots'][number], at: number, tg: number): number {
+  if (!sh.arc || sh.arc.z <= tg + 0.02 || tg >= 0.97 || sh.kind !== 'shoot') return 0;
+  const to = at > 0 ? (tg - at) / (1 - at) : tg;
+  return to > 0.04 && to < 0.96 ? to : 0;
+}
+let pivot: { shoot: number; t: number } | null = null; // bod ohybu pro příští tah (nástroj Drát, Ctrl + klik)
+function setPivot(p: { shoot: number; t: number } | null) {
+  pivot = p;
+  view.setPivot(p);
 }
 /** Jen pro nápovědu při najetí (bez kopírování stromu): odkud se větev ohne, jak dlouhý úsek a kolik snese. */
 function bendHint(s: State, sh: State['shoots'][number], t: number): { at: number; zone: number; safe: number } {
   const [at, tg] = bendSpot(sh, t);
+  const to = bendTo(sh, at, tg);
   const part = at > 0 ? { ...sh, len: sh.len * (1 - at), arc: null } : sh;
-  const z = at > 0 ? Math.min(1, (tg - at) / (1 - at)) : tg;
-  return { at, zone: z * part.len, safe: bendLimit(s, part, z) };
+  const z = to ? 1 : at > 0 ? Math.min(1, (tg - at) / (1 - at)) : tg;
+  const zp = to ? { ...part, len: part.len * to } : part;
+  return { at, zone: (tg - at) * sh.len, safe: bendLimit(s, zp, z) };
 }
 function planBend(s: State, id: number, t: number): BendPlan | null {
   const sh = s.shoots.find((x) => x.id === id);
   if (!sh || sh.dead || sh.elong || sh.parent < 0) return null;
   // eslint-disable-next-line prefer-const
   let [at, tg] = bendSpot(sh, t);
+  const to = bendTo(sh, at, tg);
   const base = structuredClone(s);
-  const out = at > 0 ? splitShoot(base, id, at) : null;
+  const out = at > 0 ? splitShoot(base, id, at, !!to) : null;
   if (!out) at = 0;
   const tid = out ? out.id : id;
-  const z = out ? Math.min(1, (tg - at) / (1 - at)) : tg;
+  // dřívější oblouk za rukou: ohýbaný úsek končí v ruce a zbytek větve se jen pootočí
+  const cut2 = to ? splitShoot(base, tid, to, true) : null;
+  const z = cut2 ? 1 : out ? Math.min(1, (tg - at) / (1 - at)) : tg;
   const fr = computeFrames(base), j = fr.index.get(tid)!, tgt = base.shoots[j];
   const P: Vec3 = [fr.base[j * 3], fr.base[j * 3 + 1], fr.base[j * 3 + 2]];
   const gp = shootPoint(tgt, z);
   return {
-    id, at, z, base, tid, P, d0: [...tgt.dir] as Vec3, G: [P[0] + gp[0], P[1] + gp[1], P[2] + gp[2]], zone: z * tgt.len,
+    id, at, to: cut2 ? to : 0, z, base, tid, P, d0: [...tgt.dir] as Vec3, G: [P[0] + gp[0], P[1] + gp[1], P[2] + gp[2]], zone: z * tgt.len,
     held: s.rules >= 8 ? heldArc(tgt)?.angle ?? 0 : 0, safe: bendLimit(base, tgt, z),
   };
 }
@@ -692,7 +726,8 @@ const up = (e: PointerEvent) => {
     if (b.angle <= 0.03) refresh(); // nic se neohnulo – vrátit skutečný stav místo náhledu
     if (b.angle > 0.03) {
       const newId = tl.state.nextId; // rozdělený výhon dostane při zásahu právě tohle id
-      tl.act({ type: 'wire', shoot: b.id, at: b.at || undefined, axis: b.axis, angle: b.angle, z: b.z });
+      tl.act({ type: 'wire', shoot: b.id, at: b.at || undefined, to: b.to || undefined, axis: b.axis, angle: b.angle, z: b.z });
+      setPivot(null);
       const broke = tl.state.shoots.find((x) => x.id === (b.at ? newId : b.id))?.dead;
       tl.actions[tl.actions.length - 1].label = broke ? `Větev při ohybu o ${deg(b.angle)}° praskla` : `Nadrátováno, ohyb o ${deg(b.angle)}° na ${cm(b.zone)}`;
       lastLogKey = '';
@@ -705,6 +740,16 @@ const up = (e: PointerEvent) => {
   bend = null;
   if (!wasTap || repotOpen) return;
   const p = view.pick(e.offsetX, e.offsetY, tool === 'bud', tool === 'leaf', tool === 'wire');
+  if (tool === 'wire' && (e.ctrlKey || e.metaKey) && p && p.type === 'shoot') {
+    // bod ohybu: Ctrl + klik ho položí, druhý Ctrl + klik na stejné místo ho zruší
+    const sh = tl.state.shoots.find((x) => x.id === p.shoot);
+    if (sh && !sh.dead && !sh.elong && sh.parent >= 0) {
+      const same = pivot && pivot.shoot === sh.id && Math.abs(pivot.t - p.t) < 0.06;
+      setPivot(same ? null : { shoot: sh.id, t: p.t < 0.06 ? 0 : Math.min(0.94, p.t) });
+      setHover(null);
+    }
+    return;
+  }
   if (!p && tool === 'bud' && view.pickMoss(e.offsetX, e.offsetY)) {
     tl.act({ type: 'moss', label: 'Odstraněn mech' });
     tip.hidden = true; lastLogKey = ''; persist(); refresh();
@@ -744,6 +789,7 @@ $('j-spring').onclick = () => {
 slider.oninput = () => { playing = false; go(Number(slider.value)); };
 // --- nástroje a přesazení
 function setTool(t: Tool) {
+  if (t !== tool) setPivot(null);
   tool = t;
   canvas.style.cursor = tool === 'wire' ? 'grab' : 'crosshair';
   view.setActiveTool(t === 'wire' ? 'wire' : 'cut');
@@ -1108,7 +1154,24 @@ $('repotBtn').onclick = () => {
   view.front();
   setHover(null);
   refresh();
+  // panel přesazení musí být vidět celý: když se pravý sloupec nevejde, odroluje se k jeho začátku
+  fitRight();
+  const right = $('right'), rp = $('repot');
+  if (right.classList.contains('scroll')) right.scrollTo({ top: Math.max(0, rp.offsetTop - right.offsetTop - 8), behavior: 'smooth' });
 };
+/** Pravý sloupec: když se panely nevejdou nad časovou osu, sloupec se dá rolovat kolečkem. */
+function fitRight() {
+  const right = $('right');
+  right.classList.remove('scroll');
+  if (right.scrollHeight > right.clientHeight + 1) right.classList.add('scroll');
+}
+{
+  let queued = false;
+  const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; fitRight(); }); };
+  window.addEventListener('resize', later);
+  if (typeof ResizeObserver !== 'undefined') { const ro = new ResizeObserver(later); for (const el of $('right').children) ro.observe(el); ro.observe($('ui')); }
+  later();
+}
 for (const id of ['rPrune', 'rYaw', 'rSide', 'rFwd', 'rSpread', 'rOffX', 'rOffZ', 'rMound']) rIn(id).oninput = updateRepot;
 $('rCancel').onclick = closeRepot;
 $('rOk').onclick = () => {
@@ -1183,6 +1246,7 @@ $('chooserClose').onclick = () => { $('chooser').hidden = true; };
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.code === 'Space') { e.preventDefault(); $('play').click(); }
+  if (e.key === 'Escape' && pivot) setPivot(null);
   if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); $('undo').click(); }
 });
 

@@ -63,6 +63,11 @@
   #phaseList li:hover p, #phaseList li:focus-visible p { display: block; }
   #left { grid-area: left; align-self: start; display: flex; flex-direction: column; gap: 10px; }
   #right { grid-area: right; align-self: start; display: flex; flex-direction: column; gap: 10px; max-height: 100%; min-height: 0; }
+  /* pravý sloupec se při přesazení nevejde: roluje se kolečkem (deník se pak nezmenšuje, aby šlo dorolovat dolů) */
+  #right.scroll { overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--fg) 30%, transparent) transparent; padding-right: 2px; margin-right: -2px; }
+  #right.scroll > .panel { flex: none; }
+  #right.scroll #diary { max-height: 40vh; }
+  #right::-webkit-scrollbar { width: 6px; } #right::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 30%, transparent); border-radius: 3px; }
   #bottom { grid-area: bottom; display: flex; flex-direction: column; gap: 8px; }
   h1 { font: 600 17px/1.2 var(--display); margin: 0; letter-spacing: -0.01em; }
   h1 i { font: 400 12px var(--body); color: var(--muted); display: block; margin-top: 2px; }
@@ -85,6 +90,11 @@
     border-radius: 7px; padding: 6px 10px; cursor: pointer; min-height: 32px;
   }
   button:hover { border-color: var(--accent); }
+  /* položky rozbalovacích seznamů kreslí systém; bez vlastních barev byly v tmavém vzhledu světlé na bílém */
+  select { background-color: var(--panel-solid); }
+  select option { background-color: var(--panel-solid); color: var(--fg); }
+  select optgroup { background-color: var(--panel-solid); color: var(--muted); font-style: normal; font-weight: 600; }
+  select option:checked { background-color: var(--accent); color: var(--accent-fg); }
   button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button[aria-pressed="true"], button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
   button:disabled { opacity: 0.45; cursor: default; }
@@ -345,7 +355,7 @@
       <div id="wireOpts" hidden>
         <label for="wArc">Délka ohybu <output id="wArcV"></output></label>
         <input type="range" id="wArc" min="10" max="100" step="10" value="100">
-        <p class="hint">Větev se ohne před místem, kde ji držíte. Kratší úsek = ostřejší ohyb blíž ruce. Shift při tažení: od sebe / k sobě.</p>
+        <p class="hint">Větev se ohne před místem, kde ji držíte. Kratší úsek = ostřejší ohyb blíž ruce. Ctrl + klik na větev položí bod ohybu: další tah ohne větev přesně od něj (Esc ho zruší). Shift při tažení: od sebe / k sobě.</p>
         <button id="unwireAll" style="margin-top:8px;width:100%">Sundat všechny dráty</button>
         <button id="unwireBiting" style="margin-top:6px;width:100%">Sundat zarůstající dráty</button>
       </div>
