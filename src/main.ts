@@ -993,6 +993,10 @@ function wireCheck(frac = 1) {
   load: (save: Save) => { lastLogKey = ''; start(save); buildTrack(); },
   pickCheck: (d?: number, f?: number, sh?: boolean) => view.pickCheck(d, f, sh),
   jointGap: () => ({ ...view.jointGap, attach: view.attachGap }),
+  jointInfo: () => [...view.jointInfo.entries()].map(([id, v]) => ({ id, ...v })),
+  focus: (id: number, distR = 9) => view.focusShoot(id, distR),
+  focusJoint: (id: number, distCm = 30) => view.focusJoint(id, distCm),
+  showState: (st: State) => view.setState(st),
   capture: (theta?: number, w?: number, h?: number) => { if (theta !== undefined) view.theta = theta; return view.capture(w, h); },
 };
 

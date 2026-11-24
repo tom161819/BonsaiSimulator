@@ -801,6 +801,8 @@ export class TreeView {
   private jointEnds: Record<number, number[]> = {};
   jointGap = { rel: 0, parent: -1, child: -1, info: '' };
   attachGap = 0;
+  /** Kontrola spojů na ose (pro ladění): id výhonu → úhel spoje, míra zaoblení a tloušťky. */
+  jointInfo = new Map<number, { pid: number; phi: number; k: number; W: number; jr: number; rP: number; rC: number }>();
   private potOverride: string | null = null;
   /** Náhled jiné nádoby v dialogu přesazení (null = skutečná nádoba stromu). */
   private spreadPreview = 0;
@@ -1093,7 +1095,7 @@ export class TreeView {
     const { base, tip } = fr;
     const wb = this.wb, bb = this.bb, nb = this.nb;
     wb.reset(); bb.reset(); nb.reset(); this.mb.reset();
-    this.jointEnds = {}; this.jointGap = { rel: 0, parent: -1, child: -1, info: '' }; this.attachGap = 0;
+    this.jointEnds = {}; this.jointGap = { rel: 0, parent: -1, child: -1, info: '' }; this.attachGap = 0; this.jointInfo.clear();
     this.builtDist = this.dist;
 
     // pokračující výhon určuje poloměr na vrcholu a směr, kterým osa plynule navazuje
@@ -1207,6 +1209,19 @@ export class TreeView {
         if ((1 - c.attachT) * p.len <= 4 * radiusOf(p) && c.attachT > 0.25) { contKid[pi] = i; TE[pi] = c.attachT; }
       }
     }
+    {
+      // Pokračování nasazené kousek pod koncem úseku (typicky boční pupen těsně pod řezem): úsek se kreslí jen
+      // k němu, jinak by konec úseku a začátek pokračování byly dva prstence posunuté proti sobě a na vnější
+      // straně spoje by vznikla rovná ploška. Jen když nad ním už nic živého neroste.
+      const maxAT = new Float64Array(n);
+      for (let i = 0; i < n; i++) { const c = s.shoots[i]; if (c.parent >= 0 && !c.dead) { const pi = fr.index.get(c.parent)!; if (c.attachT > maxAT[pi]) maxAT[pi] = c.attachT; } }
+      for (let pi = 0; pi < n; pi++) {
+        const ci = contKid[pi];
+        if (ci < 0 || TE[pi] !== 1) continue;
+        const aT = s.shoots[ci].attachT;
+        if (aT < 0.9999 && aT > 0.9 && maxAT[pi] <= aT + 1e-9) TE[pi] = aT;
+      }
+    }
     const ONT = new Uint8Array(n);
     const MID = new Uint8Array(n);
     for (let i = 0; i < n; i++) { const c = s.shoots[i]; if (c.parent >= 0 && c.attachT <= 0.98) MID[fr.index.get(c.parent)!] = 1; }
@@ -1218,7 +1233,34 @@ export class TreeView {
     // poloměr, takže konec jednoho úseku a začátek druhého na sebe přesně dosednou (žádné mezery ani zářezy).
     const rEff = (j: number) => radiusOf(s.shoots[j]) * (s.shoots[j].elong && s.shoots[j].targetLen > 0 ? 0.55 + 0.45 * (s.shoots[j].len / s.shoots[j].targetLen) : 1);
     const jointDir = (pi: number, ci: number): Vec3 => { const a = endTan(s.shoots[pi]), b = s.shoots[ci].dir; return nrm(a[0] + b[0], a[1] + b[1], a[2] + b[2]); };
-    const jointR = (pi: number, ci: number) => Math.min(rEff(pi), rEff(ci)) * (whorl[pi] > 0 && rEff(pi) > 0.15 ? 1.1 : 1);
+    // Kmen se ve spoji nezužuje: spoj má tloušťku spodního úseku (ubranou jen o čtvrtinu rozdílu), pokračující
+    // výhon se ke své tloušťce zúží až nad spojem plynulým náběhem – jako skutečná vidlice. (Dřív měl spoj tloušťku
+    // tenčího úseku a spodní kmen se pod ním škrtil; čím víc kmen pod rozvětvením zesílil, tím hlubší byl zářez.)
+    const rTip = (pi: number, ci: number) => { const a = rEff(pi), b = rEff(ci); return b >= a ? a : a - 0.25 * (a - b); };
+    const jointR = (pi: number, ci: number) => rTip(pi, ci) * (whorl[pi] > 0 && rEff(pi) > 0.15 ? 1.1 : 1);
+    // Zaoblení spoje: konec spodního a začátek horního úseku se natočí k ose spoje na délce úměrné tloušťce –
+    // jak dřevo sílí, roh se zakulacuje. Míra k je pro obě strany stejná, takže společný prstenec sedí.
+    type Fillet = { J: Vec3; k: number; wp: number; wc: number; tp: Vec3; tc: Vec3; phi: number; W: number };
+    const filCache = new Map<number, Fillet | null>();
+    const filletOf = (pi: number, ci: number): Fillet | null => {
+      if (filCache.has(ci)) return filCache.get(ci)!;
+      const P = s.shoots[pi], Cs = s.shoots[ci];
+      const a = endTan(P), b = Cs.dir, J = jointDir(pi, ci);
+      const phi = Math.acos(clamp(a[0] * J[0] + a[1] * J[1] + a[2] * J[2], -1, 1));
+      let f: Fillet | null = null;
+      if (phi > 0.03 && !P.dead && !Cs.dead) {
+        const r = jointR(pi, ci), W = r * Math.max(2.6, 3.2 * phi);
+        const wpL = Math.min(W, 0.45 * P.len * TE[pi]), wcL = Math.min(W, 0.45 * Cs.len * TE[ci]);
+        const k = clamp(Math.min(wpL, wcL) / (1.65 * r * phi), 0, 1);
+        if (k > 0.05) {
+          const turn = (v: Vec3, ang: number): Vec3 => { const ax = nrm(v[1] * J[2] - v[2] * J[1], v[2] * J[0] - v[0] * J[2], v[0] * J[1] - v[1] * J[0]); return nrm(...rotate(v, ax, ang)); };
+          f = { J, k, phi, W, wp: wpL / Math.max(1e-6, P.len * TE[pi]), wc: wcL / Math.max(1e-6, Cs.len * TE[ci]), tp: turn(a, k * phi), tc: turn(b, k * phi) };
+        }
+      }
+      filCache.set(ci, f);
+      this.jointInfo.set(Cs.id, { pid: P.id, phi: (phi * 180) / Math.PI, k: f ? f.k : 0, W: f ? f.W : 0, jr: jointR(pi, ci), rP: rEff(pi), rC: rEff(ci) });
+      return f;
+    };
 
     const nrm = (x: number, y: number, z: number): Vec3 => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
 
@@ -1269,7 +1311,7 @@ export class TreeView {
 
       // místní soustava v bodě t výhonu: střed c a osy d (podél), u, w (napříč)
       let d: Vec3 = d0, u: Vec3 = u0, w: Vec3 = w0, cx = bx, cy = by, cz = bz;
-      const at = (t: number) => {
+      const atBase = (t: number) => {
         if (arc) {
           const p = shootPoint(sh, t), a = arc.angle * Math.min(1, t / Math.max(arc.z, 1e-3));
           cx = bx + p[0]; cy = by + p[1]; cz = bz + p[2];
@@ -1293,7 +1335,47 @@ export class TreeView {
       const ck = contKid[i];
       const ckTip = ck >= 0; // pokračování osy (na vrcholu, nebo nástupce níž na pahýlu – pak se úsek kreslí jen k němu)
       const stump = sh.tipCut && !sh.elong && !ckTip && year > sh.bornYear;
-      const rt = sh.dead && !ckTip ? rb * 0.6 : stump ? rb * 0.94 : ckTip ? Math.min(rb, radiusOf(s.shoots[ck]) * (s.shoots[ck].elong && s.shoots[ck].targetLen > 0 ? 0.55 + 0.45 * (s.shoots[ck].len / s.shoots[ck].targetLen) : 1)) : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
+      const rt = sh.dead && !ckTip ? rb * 0.6 : stump ? rb * 0.94 : ckTip ? rTip(i, ck) : mainR[i] > 0 ? Math.min(rb, mainR[i]) : rb * 0.72;
+      // zaoblení spojů na obou koncích (viz filletOf): posun osy a natočení tečny v okně u konce úseku
+      const pIdx0 = sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;
+      const Ld = len * TE[i];
+      type End = { w: number; dx: number; dy: number; dz: number; tgt: Vec3 };
+      let fS: End | null = null, fE: End | null = null;
+      const fJS = pIdx0 >= 0 && contKid[pIdx0] === i ? filletOf(pIdx0, i) : null, fJE = ck >= 0 ? filletOf(i, ck) : null;
+      if ((fJS || fJE) && Ld > 0.05) {
+        const angJ = (v: Vec3, J: Vec3) => Math.acos(clamp(v[0] * J[0] + v[1] * J[1] + v[2] * J[2], -1, 1));
+        if (fJS) {
+          atBase(0); const e: Vec3 = [...d] as Vec3;
+          // když je úsek už sám dost natočený k ose spoje (Hermitova křivka), nic se neubírá
+          const tg = angJ(e, fJS.J) <= (1 - fJS.k) * fJS.phi ? e : fJS.tc;
+          fS = { w: fJS.wc, dx: tg[0] - e[0], dy: tg[1] - e[1], dz: tg[2] - e[2], tgt: fJS.tc };
+        }
+        if (fJE) {
+          atBase(TE[i]); const e: Vec3 = [...d] as Vec3;
+          const tg = angJ(e, fJE.J) <= (1 - fJE.k) * fJE.phi ? e : fJE.tp;
+          fE = { w: fJE.wp, dx: tg[0] - e[0], dy: tg[1] - e[1], dz: tg[2] - e[2], tgt: fJE.tp };
+        }
+      }
+      const at = (tt: number) => {
+        atBase(tt);
+        if (!fS && !fE) return;
+        const t = TE[i] > 0 ? tt / TE[i] : tt;
+        let ox = 0, oy = 0, oz = 0, tx = 0, ty = 0, tz = 0;
+        if (fS && t < fS.w) {
+          const q = t / fS.w, g = q * q * q - 2 * q * q + q, gp = 3 * q * q - 4 * q + 1, m = Ld * fS.w * g;
+          ox += m * fS.dx; oy += m * fS.dy; oz += m * fS.dz; tx += gp * fS.dx; ty += gp * fS.dy; tz += gp * fS.dz;
+        }
+        if (fE && t > 1 - fE.w) {
+          const q = (t - (1 - fE.w)) / fE.w, h = q * q * q - q * q, hp = 3 * q * q - 2 * q, m = Ld * fE.w * h;
+          ox += m * fE.dx; oy += m * fE.dy; oz += m * fE.dz; tx += hp * fE.dx; ty += hp * fE.dy; tz += hp * fE.dz;
+        }
+        if (ox === 0 && oy === 0 && oz === 0 && tx === 0 && ty === 0 && tz === 0) return;
+        cx += ox; cy += oy; cz += oz;
+        d = nrm(d[0] + tx, d[1] + ty, d[2] + tz);
+        const kk = u[0] * d[0] + u[1] * d[1] + u[2] * d[2];
+        u = nrm(u[0] - d[0] * kk, u[1] - d[1] * kk, u[2] - d[2] * kk);
+        w = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]];
+      };
       col[0] = C[i * 3]; col[1] = C[i * 3 + 1]; col[2] = C[i * 3 + 2];
       // sousedé v ose: úsek, na který navazuji, a úsek, který navazuje na mě
       const pIdx = sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;
@@ -1324,8 +1406,12 @@ export class TreeView {
       const tc = collar ? Math.min(0.6, (rp * 1.2 + 2.6 * rb) / len) : 0;
       // ztluštění v přeslenu: kmen je v místě nasazení větví mírně naběhlý
       const swellTip = whorl[i] > 0 && rb > 0.15, swellBase = !!par && sh.isMain && sh.attachT > 0.98 && whorl[fr.index.get(sh.parent)!] > 0 && rb > 0.15;
+      // pokračující výhon začíná v tloušťce spoje a k vlastní tloušťce se zúží plynulým náběhem (bez zlomu)
+      const fb = isCont ? rTip(pIdx, i) : 0;
+      const flareD = fb > rb * 1.02 ? Math.min(0.6 * Ld, Math.max(1.6 * fb, 3 * (fb - rb))) : 0;
       const radiusAt = (t: number) => {
         let r = rt < rb * 0.7 ? rt + (rb - rt) * (1 - Math.pow(t, 2.4)) : rb + (rt - rb) * t;
+        if (flareD > 0) { const x = (t * Ld) / flareD; if (x < 1) r += (fb - rb) * (1 - smooth(x)); }
         if (collar && t < tc) r *= 1 + 0.45 * (1 - t / tc) * (1 - t / tc);
         if (swellTip) { const x = ((1 - t) * len) / (1.4 * rt + 0.05); r *= 1 + 0.13 * Math.exp(-x * x); }
         if (swellBase) { const x = (t * len) / (1.4 * rb + 0.05); r *= 1 + 0.13 * Math.exp(-x * x); }
@@ -1343,6 +1429,11 @@ export class TreeView {
         if (inZone && by < zone) ts.push(0.15, 0.3, 0.5, 0.75);
         if (swellTip) ts.push(1 - Math.min(0.3, (1.5 * rt) / len), 1 - Math.min(0.15, (0.7 * rt) / len));
         if (swellBase) ts.push(Math.min(0.15, (0.7 * rb) / len), Math.min(0.3, (1.5 * rb) / len));
+        // oblouk zaoblení i náběh se kreslí hustěji, aby obrys nebyl složený z rovných plošek
+        const nF = (w: number) => clamp(Math.round((w * Ld) / Math.max(0.12, rb * 0.22)), 4, 16);
+        if (fS) { const m = nF(fS.w); for (let k = 1; k <= m; k++) ts.push((k / m) * fS.w); }
+        if (fE) { const m = nF(fE.w); for (let k = 1; k <= m; k++) ts.push(1 - (k / m) * fE.w); }
+        if (flareD > 0) for (const f of [0.1, 0.22, 0.36, 0.52, 0.7, 1]) ts.push((f * flareD) / Ld);
         ts.sort((a, b) => a - b);
         const turn = arc ? Math.abs(arc.angle) : curved ? Math.acos(clamp(T0[0] * T1[0] + T0[1] * T1[1] + T0[2] * T1[2], -1, 1)) : 0;
         const seg = arc ? clamp(Math.round(turn * 10), 4, 16) : curved ? clamp(Math.ceil(turn * 8) + 2, 3, 8) : 1;
@@ -1361,8 +1452,8 @@ export class TreeView {
             const c = clamp(jd[0] * tan[0] + jd[1] * tan[1] + jd[2] * tan[2], 0.2, 1);
             return (r * (Math.sqrt(1 - c * c) / c + 0.35)) / len;
           };
-          const g0 = pIdx >= 0 && contKid[pIdx] === i ? guard(jointDir(pIdx, i), d0, jointR(pIdx, i)) : 0;
-          const g1 = ckTip ? guard(jointDir(i, ck), endTan(sh), jointR(i, ck)) : 0;
+          const g0 = pIdx >= 0 && contKid[pIdx] === i ? guard(jointDir(pIdx, i), fS ? fS.tgt : d0, jointR(pIdx, i)) : 0;
+          const g1 = ckTip ? guard(jointDir(i, ck), fE ? fE.tgt : endTan(sh), jointR(i, ck)) : 0;
           const kept = ts.filter((t) => t === 0 || t === 1 || (t > g0 && t < 1 - g1));
           ts.length = 0; ts.push(...kept);
           // kmen pokračuje pod povrch substrátu, aby u šikmo posazeného stromu nebyl vidět jeho rovný konec
@@ -1394,7 +1485,7 @@ export class TreeView {
           // protáhne o 1/cos(polovina úhlu) – jinak by se kmen v ostrém ohybu přiškrtil a rohy by trčely.
           let mx = 0, my = 0, mz = 0, mk = 0;
           if (jStart || jEnd) {
-            const a = jStart ? d0 : endTan(sh); // směr tohoto úseku u spoje
+            const a = jStart ? (fS ? fS.tgt : d0) : fE ? fE.tgt : endTan(sh); // směr tohoto úseku u spoje (po zaoblení jen zbytkový úhel)
             // směr protažení z nezkrácené hodnoty (musí být přesně kolmý na rovinu spoje a na obou stranách
             // spoje stejný); omezuje se jen velikost protažení u extrémně ostrých ohybů
             const c = a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
@@ -2100,6 +2191,33 @@ export class TreeView {
     }
     this.setLines(pts, 0xff3b1f);
     this.marker.visible = false;
+  }
+
+  /** Přiblíží pohled ke špičce výhonu (pro kontrolu spojů): vzdálenost v násobcích jeho poloměru. */
+  focusShoot(id: number, distR = 9) {
+    const s = this.state, fr = this.frames, i = fr?.index.get(id);
+    if (!s || !fr || i === undefined) return;
+    this.auto = false;
+    this.target.set(fr.tip[i * 3], fr.tip[i * 3 + 1], fr.tip[i * 3 + 2]);
+    this.dist = Math.max(6, radiusOf(s.shoots[i]) * distR);
+    this.needsRender = true;
+  }
+
+  /** Pohled z boku na spoj výhonu s jeho pokračováním (pro kontrolu spojů): kamera kolmo na rovinu lomu. */
+  focusJoint(id: number, distCm = 30) {
+    const s = this.state, fr = this.frames, i = fr?.index.get(id);
+    if (!s || !fr || i === undefined) return;
+    const p = s.shoots[i];
+    const kid = s.shoots.filter((q) => q.parent === id && !q.dead).sort((a, b) => b.attachT - a.attachT || b.area - a.area)[0];
+    const a = p.arc ? rotate(p.dir, p.arc.axis, p.arc.angle) : p.dir, b = kid ? kid.dir : a;
+    let n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const l = Math.hypot(n[0], n[1], n[2]); n = l > 1e-4 ? n.map((x) => x / l) : [0, 0, 1];
+    if (n[1] < 0) n = n.map((x) => -x);
+    this.auto = false;
+    this.target.set(fr.tip[i * 3], fr.tip[i * 3 + 1] - distCm * 0.12, fr.tip[i * 3 + 2]);
+    this.theta = Math.atan2(n[0], n[2]); this.phi = Math.min(1.5, Math.max(0.12, Math.acos(Math.min(1, n[1]))));
+    this.dist = distCm;
+    this.needsRender = true;
   }
 
   /** Bod ve světě → souřadnice na obrazovce (px v plátně). */
