@@ -452,7 +452,10 @@ export class TreeView {
     if (this.weedLoading) return;
     this.weedLoading = true;
     const meta = weedsJson as { kinds: Record<string, { model: string; variants: { offset: number; verts: number; indices: number }[] }>; textures: Record<string, string> };
-    fetch('tex/weeds.bin').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status))).then((buf) => {
+    fetch('tex/weedmesh.json').then((r) => (r.ok ? r.json() : Promise.reject(r.status))).then((j: { b64: string }) => {
+      const bin = atob(j.b64), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      const buf = u8.buffer;
       const geo: Record<string, THREE.BufferGeometry[]> = {};
       const L = new THREE.TextureLoader();
       for (const [kind, k] of Object.entries(meta.kinds)) {

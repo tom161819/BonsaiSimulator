@@ -5,7 +5,8 @@ Použití:  python3 -I scripts/assets/weeds.py <složka se staženými modely> <
 
 Vstup: <složka>/<model>/<model>.gltf + .bin + textures/<model>_diff_1k.jpg (stažené z api.polyhaven.com).
 Výstup:
-  assets/tex/weeds.bin        – geometrie všech variant za sebou (Float32 pozice v cm, normály, UV; Uint16 indexy)
+  assets/tex/weedmesh.json    – geometrie všech variant za sebou (Float32 pozice v cm, normály, UV; Uint16 indexy),
+                                v base64 (binární soubory hostitel artefaktů nepouští)
   assets/tex/weed_<model>.webp – barva listů 512 px s průhledností odvozenou z jasu (sken je na černém pozadí)
   src/weeds.json              – popis: druh, model, offsety do weeds.bin, počty, rozměry
 """
@@ -73,6 +74,7 @@ for kind, (model, nodes) in PICK.items():
     out = os.path.join(ROOT, 'assets', 'tex', 'weed_' + model + '.webp')
     rgba.save(out, 'WEBP', quality=82, method=6)
     meta['textures'][model] = 'tex/weed_' + model + '.webp'
-open(os.path.join(ROOT, 'assets', 'tex', 'weeds.bin'), 'wb').write(blob)
+import base64
+json.dump({'b64': base64.b64encode(bytes(blob)).decode('ascii')}, open(os.path.join(ROOT, 'assets', 'tex', 'weedmesh.json'), 'w'))
 json.dump(meta, open(os.path.join(ROOT, 'src', 'weeds.json'), 'w'), ensure_ascii=False, indent=1)
-print('weeds.bin', len(blob), 'B')
+print('weedmesh.json', len(blob), 'B binárně')
