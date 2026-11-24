@@ -37,6 +37,31 @@ export function initOnline(backend: Backend | null, deps: OnlineDeps) {
       const who = el('div', 'ucWho');
       who.append(el('b', 'ucName', u ? u.username : 'Nepřihlášený hráč'), el('small', '', u ? u.email : backend ? 'Stromy jsou jen v tomto prohlížeči' : 'Hra běží bez serveru'));
       head.append(ava, who);
+      if (u && backend) {
+        // přezdívka je společná pro hru i aplikaci Bonsai deník; jde změnit
+        const edit = el('button', 'ucEdit', 'Změnit');
+        edit.title = 'Změnit přezdívku';
+        edit.onclick = () => {
+          const form = el('form', 'ucRename');
+          const inp = el('input'); inp.value = u.username; inp.maxLength = 24; inp.minLength = 3; inp.setAttribute('aria-label', 'Nová přezdívka');
+          const ok = el('button', 'primary', 'Uložit'), no = el('button', '', 'Zpět');
+          ok.type = 'submit'; no.type = 'button';
+          const note = el('small', 'hint');
+          no.onclick = () => renderUserCards();
+          form.onsubmit = async (e) => {
+            e.preventDefault();
+            const v = inp.value.trim();
+            if (v.length < 3) { note.textContent = 'Přezdívka musí mít aspoň 3 znaky.'; return; }
+            ok.disabled = true;
+            try { await backend.setUsername(v); deps.flash('Přezdívka je změněná.'); }
+            catch (err) { note.textContent = czError(err); note.classList.add('bad'); ok.disabled = false; }
+          };
+          form.append(inp, ok, no, note);
+          head.replaceWith(form);
+          inp.focus(); inp.select();
+        };
+        head.appendChild(edit);
+      }
       c.appendChild(head);
       if (!backend) {
         c.appendChild(el('p', 'ucText', 'Účty a výstava běží ve verzi hry na webu se serverem. Tady se stromy ukládají jen v tomto prohlížeči.'));

@@ -31,6 +31,8 @@ export interface Backend {
   signOut(): Promise<void>;
   resetPassword(email: string): Promise<void>;
   updatePassword(password: string): Promise<void>;
+  /** přezdívka (společná pro hru i aplikaci) */
+  setUsername(name: string): Promise<void>;
   myTrees(): Promise<CloudTree[]>;
   saveTree(t: NewTree): Promise<CloudTree>;
   renameTree(id: string, name: string): Promise<void>;
@@ -57,7 +59,8 @@ export function czError(e: unknown): string {
   if (/invalid.*email|email.*invalid|unable to validate email/i.test(m)) return 'Neplatná e-mailová adresa.';
   if (/failed to fetch|networkerror|load failed|network request failed/i.test(m)) return 'Server je nedostupný – zkontrolujte připojení.';
   if (/row-level security|violates row-level|permission denied/i.test(m)) return 'K tomu nemáte oprávnění.';
-  if (/check constraint|violates check/i.test(m)) return 'Údaje neprošly kontrolou (příliš dlouhý název nebo velký náhled).';
+  if (/profiles_username_key|duplicate key/i.test(m)) return 'Tato přezdívka už je obsazená.';
+  if (/check constraint|violates check/i.test(m)) return 'Údaje neprošly kontrolou (přezdívka 3–24 znaků, název do 60 znaků, menší náhled).';
   return m || 'Neznámá chyba.';
 }
 
@@ -66,14 +69,26 @@ const num = (x: unknown) => (x === null || x === undefined ? null : Number(x));
 // ------------------------------------------------------------------ Supabase
 
 function supabaseBackend(url: string, key: string): Backend {
-  const sb: SupabaseClient = createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'bonsai-auth' } });
+  // výchozí úložiště přihlášení (sb-<projekt>-auth-token): aplikace Bonsai deník na stejné adrese
+  // (tom161819.github.io) ho sdílí, takže přihlášení v jedné platí i v druhé
+  const sb: SupabaseClient = createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
   let me: OnlineUser | null = null;
   const subs: ((u: OnlineUser | null, recovery: boolean) => void)[] = [];
   const emit = (recovery = false) => { for (const f of subs) f(me, recovery); };
   const fail = (e: { message: string } | null) => { if (e) throw new Error(e.message); };
   const loadMe = async (uid: string, email: string) => {
     const { data } = await sb.from('profiles').select('username').eq('id', uid).maybeSingle();
-    me = { id: uid, email, username: (data?.username as string | undefined) ?? email.split('@')[0] };
+    let username = data?.username as string | undefined;
+    if (!username) {
+      // účet bez profilu (vznikl dřív, než databáze profily znala): založí se podle e-mailu
+      const base = (email.split('@')[0] || 'hráč').replace(/[<>"\\]/g, '').slice(0, 18).padEnd(3, '_');
+      for (let k = 0; k < 5 && !username; k++) {
+        const name = k ? `${base}-${Math.floor(100 + Math.random() * 900)}` : base;
+        const { error } = await sb.from('profiles').insert({ id: uid, username: name });
+        if (!error) username = name;
+      }
+    }
+    me = { id: uid, email, username: username ?? email.split('@')[0] };
   };
   sb.auth.onAuthStateChange((ev, session) => {
     // načtení profilu mimo obsluhu události (doporučení supabase-js: v ní nevolat další dotazy)
@@ -101,22 +116,29 @@ function supabaseBackend(url: string, key: string): Backend {
     async signOut() { const { error } = await sb.auth.signOut(); fail(error); },
     async resetPassword(email) { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: here() }); fail(error); },
     async updatePassword(password) { const { error } = await sb.auth.updateUser({ password }); fail(error); },
+    async setUsername(name) {
+      if (!me) throw new Error('Nejste přihlášeni.');
+      const { error } = await sb.from('profiles').update({ username: name }).eq('id', me.id);
+      fail(error);
+      me = { ...me, username: name };
+      emit();
+    },
     async myTrees() {
       if (!me) return [];
-      const { data, error } = await sb.from('trees').select('*').eq('owner', me.id).order('saved_at', { ascending: false });
+      const { data, error } = await sb.from('game_trees').select('*').eq('owner', me.id).order('saved_at', { ascending: false });
       fail(error);
       return (data ?? []).map(treeRow);
     },
     async saveTree(t) {
-      const { data, error } = await sb.from('trees').insert({ name: t.name, species: t.species, seed: t.seed, rules: t.rules, day: t.day, actions: t.actions, thumb: t.thumb, height: t.height }).select('*').single();
+      const { data, error } = await sb.from('game_trees').insert({ name: t.name, species: t.species, seed: t.seed, rules: t.rules, day: t.day, actions: t.actions, thumb: t.thumb, height: t.height }).select('*').single();
       fail(error);
       return treeRow(data as Record<string, unknown>);
     },
-    async renameTree(id, name) { const { error } = await sb.from('trees').update({ name }).eq('id', id); fail(error); },
-    async deleteTree(id) { const { error } = await sb.from('trees').delete().eq('id', id); fail(error); },
-    async setExhibited(id, on) { const { error } = await sb.from('trees').update({ exhibited_at: on ? new Date().toISOString() : null }).eq('id', id); fail(error); },
+    async renameTree(id, name) { const { error } = await sb.from('game_trees').update({ name }).eq('id', id); fail(error); },
+    async deleteTree(id) { const { error } = await sb.from('game_trees').delete().eq('id', id); fail(error); },
+    async setExhibited(id, on) { const { error } = await sb.from('game_trees').update({ exhibited_at: on ? new Date().toISOString() : null }).eq('id', id); fail(error); },
     async exhibition() {
-      const { data, error } = await sb.rpc('exhibition');
+      const { data, error } = await sb.rpc('game_exhibition');
       fail(error);
       return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
         id: String(r.id), owner: String(r.owner), username: String(r.username), name: String(r.name), species: String(r.species), height: Number(r.height),
@@ -124,33 +146,33 @@ function supabaseBackend(url: string, key: string): Backend {
       }));
     },
     async treeData(id) {
-      const { data, error } = await sb.from('trees').select('thumb, actions, seed, rules, day, species').eq('id', id).maybeSingle();
+      const { data, error } = await sb.from('game_trees').select('thumb, actions, seed, rules, day, species').eq('id', id).maybeSingle();
       fail(error);
       return data ? { thumb: data.thumb as string | null, actions: data.actions as Action[], seed: Number(data.seed), rules: Number(data.rules), day: Number(data.day), species: String(data.species) } : null;
     },
     async myRatings() {
       if (!me) return {};
-      const { data, error } = await sb.from('ratings').select('tree_id, stars').eq('rater', me.id);
+      const { data, error } = await sb.from('game_ratings').select('tree_id, stars').eq('rater', me.id);
       fail(error);
       return Object.fromEntries((data ?? []).map((r) => [String(r.tree_id), Number(r.stars)]));
     },
     async rate(id, stars) {
       if (!me) throw new Error('Nejste přihlášeni.');
-      const { error } = await sb.from('ratings').upsert({ tree_id: id, rater: me.id, stars }, { onConflict: 'tree_id,rater' });
+      const { error } = await sb.from('game_ratings').upsert({ tree_id: id, rater: me.id, stars }, { onConflict: 'tree_id,rater' });
       fail(error);
     },
     async topTrees(n) {
-      const { data, error } = await sb.rpc('top_trees', { lim: n });
+      const { data, error } = await sb.rpc('game_top_trees', { lim: n });
       fail(error);
       return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ id: String(r.id), owner: String(r.owner), username: String(r.username), name: String(r.name), species: String(r.species), votes: Number(r.votes), stars: Number(r.stars), avg: Number(r.avg_stars) }));
     },
     async topUsers(n) {
-      const { data, error } = await sb.rpc('top_users', { lim: n });
+      const { data, error } = await sb.rpc('game_top_users', { lim: n });
       fail(error);
       return ((data ?? []) as Record<string, unknown>[]).map((r) => ({ id: String(r.id), username: String(r.username), stars: Number(r.stars), votes: Number(r.votes), avg: num(r.avg_stars), exhibited: Number(r.exhibited) }));
     },
     async stats(uid) {
-      const { data, error } = await sb.rpc('user_stats', { uid });
+      const { data, error } = await sb.rpc('game_user_stats', { uid });
       fail(error);
       const r = ((data ?? []) as Record<string, unknown>[])[0];
       return r ? { username: String(r.username), stars: Number(r.stars), votes: Number(r.votes), avg: num(r.avg_stars), exhibited: Number(r.exhibited), trees: num(r.trees) } : null;
@@ -202,6 +224,11 @@ function demoBackend(): Backend {
     async signOut() { me = null; emit(); },
     async resetPassword() { await wait(); },
     async updatePassword(p) { const u = users.get(need().id)!; u.password = p; },
+    async setUsername(name) {
+      const u = users.get(need().id)!;
+      if ([...users.values()].some((x) => x !== u && x.username.toLowerCase() === name.toLowerCase())) throw new Error('duplicate key value violates unique constraint "profiles_username_key"');
+      u.username = name; me = { ...me!, username: name }; emit();
+    },
     async myTrees() { await wait(); const u = me; return u ? trees.filter((t) => t.owner === u.id).sort((a, b) => b.savedAt.localeCompare(a.savedAt)) : []; },
     async saveTree(t) { await wait(); const u = need(); const row: Row = { ...t, id: id(), owner: u.id, savedAt: new Date().toISOString(), exhibitedAt: null }; trees.push(row); return row; },
     async renameTree(tid, name) { const t = trees.find((x) => x.id === tid && x.owner === need().id); if (t) t.name = name; },

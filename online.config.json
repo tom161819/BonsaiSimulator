@@ -1,0 +1,5 @@
+{
+  "_poznámka": "Společný projekt Supabase s aplikací Bonsai deník (tom161819/Bonsai-APP). Klíč je veřejný (publishable) a smí být v prohlížeči; data chrání pravidla RLS. Přepíší ho proměnné SUPABASE_URL a SUPABASE_ANON_KEY, BONSAI_OFFLINE=1 sestaví hru bez online části. Nikdy sem nedávejte secret / service_role klíč.",
+  "url": "https://uhyhjpinxsjqfrzgqauu.supabase.co",
+  "anonKey": "sb_publishable_ll9MtWQsaU1UofjxYAeXAA_kMCY-F5N"
+}

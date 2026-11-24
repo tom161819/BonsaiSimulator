@@ -29,7 +29,7 @@ Vývojový server běží na http://localhost:5173. `npm run build` vytvoří st
 
 ## Online: účty, sbírka v cloudu a výstava
 
-Hra je připravená na GitHub Pages se Supabase: přihlášení a registrace, sbírka uložená v účtu, **výstava** stromů s hodnocením 1–10 hvězdičkami a žebříčky stromů a hráčů. Zprovoznění, ochrana dat a vlastní doména: [docs/ONLINE.md](docs/ONLINE.md). Bez serveru se stromy ukládají jen v prohlížeči; vyzkoušet online část bez serveru jde s `?online=demo`.
+Hra je připravená na GitHub Pages se Supabase – ve stejném projektu jako aplikace Bonsai deník, takže jedna registrace platí pro obě: přihlášení a registrace, sbírka uložená v účtu, **výstava** stromů s hodnocením 1–10 hvězdičkami a žebříčky stromů a hráčů. Zprovoznění, ochrana dat a vlastní doména: [docs/ONLINE.md](docs/ONLINE.md). Bez serveru se stromy ukládají jen v prohlížeči; vyzkoušet online část bez serveru jde s `?online=demo`.
 
 ## Ovládání
 

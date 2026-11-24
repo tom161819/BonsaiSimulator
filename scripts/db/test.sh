@@ -11,7 +11,8 @@ cleanup() { run "$BIN/pg_ctl -D $TMP/data -m immediate stop" >/dev/null 2>&1 || 
 trap cleanup EXIT
 run "$BIN/initdb -D $TMP/data -U postgres --auth=trust -E UTF8 --locale=C.UTF-8" >/dev/null
 run "$BIN/pg_ctl -D $TMP/data -o '-k $TMP -p 54329 -c listen_addresses=' -l $TMP/log start -w" >/dev/null
-PSQL="$BIN/psql -h $TMP -p 54329 -U postgres -d postgres -X -q -v ON_ERROR_STOP=1"
+PSQL="PGOPTIONS=-cclient_min_messages=warning $BIN/psql -h $TMP -p 54329 -U postgres -d postgres -X -q -v ON_ERROR_STOP=1"
 run "$PSQL -f $ROOT/scripts/db/auth_stub.sql"
+run "$PSQL -f $ROOT/scripts/db/app_stub.sql"
 for f in "$ROOT"/supabase/migrations/*.sql; do run "$PSQL -f $f"; done
 run "$PSQL -f $ROOT/scripts/db/test_policies.sql"

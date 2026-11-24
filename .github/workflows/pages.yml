@@ -1,9 +1,8 @@
 # Sestaví hru a nasadí ji na GitHub Pages při každém pushi do main (nebo ručně z karty Actions).
 # Jednorázově: Settings → Pages → Build and deployment → Source: GitHub Actions.
-# Online funkce (účty, sbírka v cloudu, výstava): Settings → Secrets and variables → Actions → Variables:
-#   SUPABASE_URL       např. https://abcdefgh.supabase.co
-#   SUPABASE_ANON_KEY  veřejný klíč projektu (anon / publishable) – smí být v prohlížeči, data chrání pravidla RLS
-# Bez nich se hra sestaví také, jen bez online funkcí.
+# Online funkce (účty, sbírka v cloudu, výstava) používají projekt Supabase z online.config.json (společný
+# s aplikací Bonsai deník). Jiný projekt jde nastavit proměnnými v Settings → Secrets and variables → Actions →
+# Variables: SUPABASE_URL a SUPABASE_ANON_KEY (jen veřejný klíč anon / publishable).
 name: Nasazení na GitHub Pages
 
 on:
