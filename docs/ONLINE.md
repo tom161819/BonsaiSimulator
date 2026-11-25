@@ -27,11 +27,42 @@ Hra používá **stejný projekt Supabase jako aplikace Bonsai deník** (`tom161
 
 Jiný projekt Supabase jde nastavit proměnnými `SUPABASE_URL` a `SUPABASE_ANON_KEY` (Settings → Secrets and variables → Actions → Variables) – vždy jen veřejný klíč *anon* / *publishable*, **nikdy secret / service_role**.
 
-## Vlastní doména
+## Vlastní doména bonsaier.com
 
-Funguje bez úprav kódu: v Settings → Pages nastavte *Custom domain* (a u registrátora záznam CNAME na `tom161819.github.io`), v Supabase přidejte novou adresu do *Redirect URLs*. Hra si adresu pro odkazy v e-mailech bere z aktuální stránky.
+Hra běží z GitHub Pages; doména se jen nasměruje na GitHub. Kód se nemění (cesty jsou relativní a adresu pro
+odkazy v e-mailech si hra bere z aktuální stránky).
 
-Aby **přihlášení zůstalo sdílené**, musí být aplikace i hra na stejné adrese (doméně), např. `bonsai.cz` pro aplikaci a `bonsai.cz/hra/` pro hru. Na dvou různých doménách bude účet pořád jeden, jen se v každé službě přihlásíte zvlášť.
+1. **DNS u registrátora domény** (správa DNS záznamů):
+
+   | Typ | Název | Hodnota |
+   | --- | --- | --- |
+   | A | `@` (bonsaier.com) | `185.199.108.153` |
+   | A | `@` | `185.199.109.153` |
+   | A | `@` | `185.199.110.153` |
+   | A | `@` | `185.199.111.153` |
+   | AAAA | `@` | `2606:50c0:8000::153` |
+   | AAAA | `@` | `2606:50c0:8001::153` |
+   | AAAA | `@` | `2606:50c0:8002::153` |
+   | AAAA | `@` | `2606:50c0:8003::153` |
+   | CNAME | `www` | `tom161819.github.io.` |
+
+   Stávající A / AAAA / CNAME záznamy pro `@` a `www` (parkovací stránka registrátora) smažte. Záznamy MX pro e-mail nechte.
+2. **(Doporučeno) Ověření domény na GitHubu** – GitHub → profil → Settings → Pages → *Add a domain* → `bonsaier.com`,
+   GitHub ukáže záznam TXT (`_github-pages-challenge-tom161819`), přidejte ho do DNS a potvrďte *Verify*.
+   Chrání doménu před tím, aby ji někdo jiný připojil ke svému repozitáři.
+3. **GitHub Pages** – repozitář BonsaiSimulator → Settings → Pages → *Custom domain*: `bonsaier.com` → Save.
+   Až GitHub ověří DNS (minuty až hodiny), zaškrtněte **Enforce HTTPS**. `www.bonsaier.com` pak sám přesměruje na `bonsaier.com`.
+4. **Supabase** – Authentication → URL Configuration → *Redirect URLs*: přidejte `https://bonsaier.com/`
+   (případně i jako *Site URL*, pokud má být hlavní adresou), jinak by odkazy z e-mailů vedly jinam.
+
+Původní adresa `tom161819.github.io/BonsaiSimulator/` pak přesměruje na doménu.
+
+**Sdílené přihlášení s aplikací Bonsai deník:** funguje jen na stejné doméně. Možnosti:
+- hra na `bonsaier.com`, aplikace na `bonsaier.com/…` – GitHub Pages umí jednu doménu na jeden repozitář; aplikaci by šlo dát
+  do podsložky hry (jedno nasazení), nebo
+- nastavit `bonsaier.com` na uživatelský web `tom161819.github.io` (vlastní repozitář) – pak všechny projekty běží pod ní
+  jako `bonsaier.com/BonsaiSimulator/` a `bonsaier.com/Bonsai-APP/` a přihlášení se sdílí samo.
+Na subdoménách (`hra.bonsaier.com`, `app.bonsaier.com`) je účet pořád jeden, jen se v každé službě přihlásíte zvlášť.
 
 ## Jak jsou data chráněná
 
