@@ -248,7 +248,13 @@
   .modal { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(10, 16, 13, 0.45); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); padding: 16px; }
   .modal[hidden] { display: none; }
   #authForm { zoom: var(--uis, 1); width: min(380px, 100%); box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 18px; background: var(--panel-solid); box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5); animation: pickIn .14s ease-out; }
-  #authForm h1 { font-size: 20px; margin: 0; }
+  #authForm h1, #xferBox h1 { font-size: 20px; margin: 0; }
+  #xferBox { zoom: var(--uis, 1); width: min(540px, 100%); box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 18px; background: var(--panel-solid); box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5); animation: pickIn .14s ease-out; }
+  #xferBox p { margin: 0; }
+  #xferCode { font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--fg); background: var(--panel-solid); border: 1px solid var(--line); border-radius: 7px; padding: 8px; height: 150px; resize: vertical; word-break: break-all; }
+  #xferCode:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #xferMsg.bad { color: var(--danger); }
+  #xferBox button[hidden] { display: none; }
   #authForm label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
   #authForm label[hidden], #authTabs[hidden] { display: none; }
   #authForm input { font: 500 14px var(--body); color: var(--fg); background: var(--panel-solid); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; }
@@ -676,6 +682,19 @@
       <section class="panel"><h2>Nejlépe hodnocené stromy</h2><ol id="topTrees"></ol></section>
       <section class="panel"><h2>Hráči s nejvíc hvězdičkami</h2><ol id="topUsers"></ol></section>
     </aside>
+  </div>
+</div>
+<div id="xferDlg" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="xferTitle">
+  <div class="panel" id="xferBox">
+    <h1 id="xferTitle">Přenést sbírku</h1>
+    <p id="xferText" class="hint"></p>
+    <textarea id="xferCode" spellcheck="false" aria-labelledby="xferTitle"></textarea>
+    <p id="xferMsg" class="hint" aria-live="polite"></p>
+    <div class="row">
+      <button id="xferCopy" class="primary">Zkopírovat kód</button>
+      <button id="xferImport" class="primary">Importovat do účtu</button>
+      <button id="xferClose">Zavřít</button>
+    </div>
   </div>
 </div>
 <div id="authDlg" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="authTitle">

@@ -13,6 +13,8 @@ export interface OnlineDeps {
   /** stromy uložené jen v prohlížeči (k nahrání do účtu) */
   localCount(): number;
   uploadLocal(): Promise<number>;
+  /** přenos sbírky kódem: export ze stránky bez serveru (např. claude.ai), import do účtu na webu */
+  openTransfer(mode: 'export' | 'import'): void;
   /** po přihlášení / odhlášení: sbírka se překreslí z účtu nebo z prohlížeče */
   userChanged(u: OnlineUser | null): void;
   pause(): void;
@@ -70,7 +72,8 @@ export function initOnline(initial: Backend | null, deps: OnlineDeps) {
       }
       c.appendChild(head);
       if (!backend) {
-        c.appendChild(el('p', 'ucText', 'Účty a výstava běží ve verzi hry na webu se serverem. Tady se stromy ukládají jen v tomto prohlížeči.'));
+        c.appendChild(el('p', 'ucText', 'Účty a výstava běží ve verzi hry na webu (bonsaier.com). Tady se stromy ukládají jen v tomto prohlížeči – kódem je přenesete do svého účtu.'));
+        if (deps.localCount()) { const x = el('button', 'primary', 'Přenést sbírku na web'); x.onclick = () => deps.openTransfer('export'); c.appendChild(x); }
         continue;
       }
       if (!u) {
@@ -103,6 +106,10 @@ export function initOnline(initial: Backend | null, deps: OnlineDeps) {
         };
         c.appendChild(up);
       }
+      const imp = el('button', 'ucUpload', 'Importovat sbírku z kódu');
+      imp.title = 'Vložit kód sbírky vytvořený tlačítkem „Přenést sbírku na web“ (např. ve verzi hry na claude.ai)';
+      imp.onclick = () => deps.openTransfer('import');
+      c.appendChild(imp);
       const row = el('div', 'row');
       const ex = el('button', '', 'Výstava'), out = el('button', '', 'Odhlásit');
       ex.onclick = () => openExpo();

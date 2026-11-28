@@ -1187,6 +1187,7 @@ if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { if (!$('sh
 
 function renderSamples() {
   $('shelfTitle').textContent = 'Vzorová sbírka';
+  onlineUi.renderUserCards();
   $('shelfEmpty').hidden = true;
   $('shelfCount').textContent = 'stromy vypěstované ve hře, od semínka';
   const items: BenchItem[] = [];
@@ -1230,6 +1231,7 @@ interface ShelfEntry { key: string; name: string; thumb: string | null; species:
 let shelfToken = 0;
 async function renderShelf() {
   $('shelfTitle').textContent = 'Moje sbírka';
+  onlineUi.renderUserCards(); // počet stromů v prohlížeči se mohl změnit (tlačítka pro nahrání / přenos)
   const token = ++shelfToken;
   const user = online?.user() ?? null;
   let entries: ShelfEntry[];
@@ -1394,11 +1396,120 @@ const onlineUi = initOnline(online, {
     if (!$('shelf').hidden && $('shelfTitle').textContent === 'Moje sbírka') renderShelf();
   },
   pause: () => { playing = false; },
+  openTransfer: (mode) => openTransfer(mode),
   fitStand,
   thumbCurrent,
   renderThumb,
 });
 $('expoBtn').hidden = !online;
+
+// ---- přenos sbírky kódem: stránka bez serveru (např. hra na claude.ai) → účet na webu. Kód nese jen záznamy stromů
+// (semínko, zásahy, pravidla, druh) – náhledy se při importu vyfotí znovu, takže je kód malý (gzip + base64).
+interface TreeRecord { name: string; species: string; seed: number; rules: number; day: number; height: number; actions: Action[] }
+const XFER_GZ = 'BONSAI-SBIRKA-1:', XFER_RAW = 'BONSAI-SBIRKA-0:';
+const toB64 = (u: Uint8Array) => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
+const fromB64 = (b: string) => Uint8Array.from(atob(b.replace(/\s+/g, '')), (c) => c.charCodeAt(0));
+async function pipe(data: Uint8Array, stream: CompressionStream | DecompressionStream) {
+  const out = new Response(new Blob([data as Uint8Array<ArrayBuffer>]).stream().pipeThrough(stream));
+  return new Uint8Array(await out.arrayBuffer());
+}
+async function encodeShelf(): Promise<{ code: string; n: number }> {
+  const trees: TreeRecord[] = loadShelf().map((k) => ({ name: k.name, species: k.species ?? 'pine', seed: k.seed, rules: k.rules ?? 1, day: k.day, height: k.height, actions: k.actions }));
+  const json = JSON.stringify({ app: 'bonsai-simulator', v: 1, trees });
+  if (typeof CompressionStream !== 'undefined') {
+    try { return { code: XFER_GZ + toB64(await pipe(new TextEncoder().encode(json), new CompressionStream('gzip'))), n: trees.length }; } catch { /* bez komprese */ }
+  }
+  return { code: XFER_RAW + json, n: trees.length };
+}
+/** Záznam stromu z kódu: kód je cizí vstup, projde jen to, co má správný tvar. */
+function validRecord(x: unknown): TreeRecord | null {
+  if (!x || typeof x !== 'object') return null;
+  const r = x as Record<string, unknown>;
+  const num = (v: unknown, lo: number, hi: number) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+  if (!num(r.seed, -1e15, 1e15) || !num(r.day, 0, 200 * 365) || !Array.isArray(r.actions) || r.actions.length > 50000) return null;
+  if (!r.actions.every((a) => a && typeof a === 'object' && typeof (a as Action).type === 'string' && num((a as Action).day, 0, 200 * 365))) return null;
+  const species = typeof r.species === 'string' && r.species in SPECIES ? r.species : 'pine';
+  const rules = num(r.rules, 1, RULES_LATEST) ? Math.round(r.rules as number) : 1;
+  const name = (typeof r.name === 'string' && r.name.trim() ? r.name.trim() : `${(SPECIES[species as keyof typeof SPECIES] ?? SPECIES.pine).name}`).slice(0, 60);
+  return { name, species, seed: r.seed as number, rules, day: Math.round(r.day as number), height: num(r.height, 0, 1e5) ? (r.height as number) : 0, actions: r.actions as Action[] };
+}
+async function decodeShelf(code: string): Promise<TreeRecord[]> {
+  const c = code.trim();
+  let json: string;
+  if (c.startsWith(XFER_GZ)) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('Tento prohlížeč neumí rozbalit kód – zkuste novější prohlížeč.');
+    try { json = new TextDecoder().decode(await pipe(fromB64(c.slice(XFER_GZ.length)), new DecompressionStream('gzip'))); }
+    catch { throw new Error('Kód je neúplný nebo poškozený – zkopírujte ho znovu celý.'); }
+  } else json = c.startsWith(XFER_RAW) ? c.slice(XFER_RAW.length) : c;
+  let data: { trees?: unknown };
+  try { data = JSON.parse(json) as { trees?: unknown }; } catch { throw new Error('To není kód sbírky – zkopírujte ho celý, od „BONSAI-SBIRKA“ až do konce.'); }
+  if (!data || !Array.isArray(data.trees)) throw new Error('To není kód sbírky.');
+  const list = data.trees.map(validRecord).filter((t): t is TreeRecord => !!t);
+  if (!list.length) throw new Error('V kódu nejsou žádné stromy.');
+  return list.slice(0, 200);
+}
+let xferMode: 'export' | 'import' = 'export';
+async function openTransfer(mode: 'export' | 'import') {
+  xferMode = mode;
+  playing = false;
+  const area = $<HTMLTextAreaElement>('xferCode'), msg = $('xferMsg');
+  msg.textContent = ''; msg.className = 'hint';
+  $('xferCopy').hidden = mode !== 'export';
+  $('xferImport').hidden = mode !== 'import';
+  area.readOnly = mode === 'export';
+  $('xferDlg').hidden = false;
+  if (mode === 'export') {
+    $('xferTitle').textContent = 'Přenést sbírku na web';
+    area.value = 'Připravuji…';
+    const { code, n } = await encodeShelf();
+    area.value = code;
+    $('xferText').textContent = `Kód obsahuje ${n} ${n === 1 ? 'strom' : n < 5 ? 'stromy' : 'stromů'} ze sbírky v tomto prohlížeči. Zkopírujte ho, otevřete bonsaier.com, přihlaste se a ve Sbírce zvolte „Importovat sbírku z kódu“. Náhledy se tam vyfotí znovu.`;
+    area.focus(); area.select();
+  } else {
+    $('xferTitle').textContent = 'Importovat sbírku do účtu';
+    $('xferText').textContent = 'Vložte kód sbírky (vytvořený tlačítkem „Přenést sbírku na web“) a potvrďte. Stromy se uloží do vašeho účtu; stromy, které už v účtu jsou, se přeskočí.';
+    area.value = ''; area.placeholder = 'BONSAI-SBIRKA-1:…'; area.focus();
+  }
+}
+$('xferClose').onclick = () => { $('xferDlg').hidden = true; };
+$('xferDlg').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); $('xferDlg').hidden = true; } });
+$('xferCopy').onclick = async () => {
+  const area = $<HTMLTextAreaElement>('xferCode'), msg = $('xferMsg');
+  area.focus(); area.select();
+  let ok = false;
+  try { await navigator.clipboard.writeText(area.value); ok = true; } catch { try { ok = document.execCommand('copy'); } catch { ok = false; } }
+  msg.textContent = ok ? 'Zkopírováno. Teď ho vložte na bonsaier.com (Sbírka → Importovat sbírku z kódu).' : 'Kód je označený – zkopírujte ho klávesami Ctrl+C (na Macu ⌘C).';
+};
+$('xferImport').onclick = async () => {
+  const btn = $<HTMLButtonElement>('xferImport'), msg = $('xferMsg');
+  msg.className = 'hint';
+  if (!online?.user()) { msg.textContent = 'Nejdřív se přihlaste – stromy se ukládají do účtu.'; msg.className = 'hint bad'; return; }
+  btn.disabled = true;
+  try {
+    const list = await decodeShelf($<HTMLTextAreaElement>('xferCode').value);
+    const have = await online.myTrees();
+    const key = (t: { seed: number; day: number; species: string; actions: Action[] }) => `${t.seed}|${t.day}|${t.species}|${t.actions.length}`;
+    const known = new Set(have.map(key));
+    let done = 0, skipped = 0;
+    for (const t of list) {
+      if (known.has(key(t))) { skipped++; continue; }
+      msg.textContent = `Ukládám ${done + skipped + 1}/${list.length}: ${t.name}…`;
+      await new Promise((r) => setTimeout(r, 30));
+      let thumb: string | null = null;
+      try { thumb = markThumb(await shrinkThumb(renderThumb(t))); } catch { thumb = null; }
+      await online.saveTree({ ...t, thumb });
+      known.add(key(t)); done++;
+    }
+    const nT = (k: number) => `${k} ${k === 1 ? 'strom' : k >= 2 && k <= 4 ? 'stromy' : 'stromů'}`;
+    msg.textContent = done
+      ? `Hotovo: do účtu ${done === 1 ? 'uložen' : done <= 4 ? 'uloženy' : 'uloženo'} ${nT(done)}${skipped ? ` (${nT(skipped)} už v účtu ${skipped === 1 ? 'byl' : skipped <= 4 ? 'byly' : 'bylo'})` : ''}.`
+      : `Nic nového – ${skipped === 1 ? 'tento strom už v účtu je' : skipped === 2 ? 'oba stromy už v účtu jsou' : skipped <= 4 ? `všechny ${nT(skipped)} už v účtu jsou` : `všech ${nT(skipped)} už v účtu je`}.`;
+    onlineUi.refreshStats();
+    if (!$('shelf').hidden && $('shelfTitle').textContent === 'Moje sbírka') renderShelf();
+  } catch (e) { msg.textContent = `Import se nepovedl: ${czError(e)}`; msg.className = 'hint bad'; }
+  btn.disabled = false;
+};
+void xferMode;
 // server musí být dosažitelný (stránka vložená např. na claude.ai ho může mít zakázaný); jinak hra běží bez online části
 online?.probe().then((ok) => {
   if (ok || !online) return;
