@@ -23,6 +23,8 @@ export interface UserStats { username: string; stars: number; votes: number; avg
 
 export interface Backend {
   readonly kind: 'supabase' | 'demo';
+  /** je server dosažitelný? (stránka vložená jinam ho může mít zakázaný) */
+  probe(): Promise<boolean>;
   user(): OnlineUser | null;
   /** změna přihlášení; recovery = hráč přišel z odkazu na obnovu hesla */
   onAuth(fn: (u: OnlineUser | null, recovery: boolean) => void): void;
@@ -36,6 +38,8 @@ export interface Backend {
   myTrees(): Promise<CloudTree[]>;
   saveTree(t: NewTree): Promise<CloudTree>;
   renameTree(id: string, name: string): Promise<void>;
+  /** nový náhled vlastního stromu (přefocení starších náhledů) */
+  updateThumb(id: string, thumb: string): Promise<void>;
   deleteTree(id: string): Promise<void>;
   setExhibited(id: string, on: boolean): Promise<void>;
   exhibition(): Promise<Exhibit[]>;
@@ -105,6 +109,12 @@ function supabaseBackend(url: string, key: string): Backend {
   const here = () => location.origin + location.pathname;
   return {
     kind: 'supabase',
+    async probe() {
+      const ac = new AbortController(), t = setTimeout(() => ac.abort(), 7000);
+      try { const r = await fetch(`${url}/auth/v1/health`, { headers: { apikey: key }, signal: ac.signal }); return r.status < 500; }
+      catch { return false; }
+      finally { clearTimeout(t); }
+    },
     user: () => me,
     onAuth: (fn) => { subs.push(fn); },
     async signUp(email, password, username) {
@@ -135,6 +145,7 @@ function supabaseBackend(url: string, key: string): Backend {
       return treeRow(data as Record<string, unknown>);
     },
     async renameTree(id, name) { const { error } = await sb.from('game_trees').update({ name }).eq('id', id); fail(error); },
+    async updateThumb(id, thumb) { const { error } = await sb.from('game_trees').update({ thumb }).eq('id', id); fail(error); },
     async deleteTree(id) { const { error } = await sb.from('game_trees').delete().eq('id', id); fail(error); },
     async setExhibited(id, on) { const { error } = await sb.from('game_trees').update({ exhibited_at: on ? new Date().toISOString() : null }).eq('id', id); fail(error); },
     async exhibition() {
@@ -200,6 +211,7 @@ function demoBackend(): Backend {
   const id = () => `demo-${++n}`;
   const api: Backend & { _seed(list: (NewTree & { username: string })[], votes: number[][]): void } = {
     kind: 'demo',
+    probe: async () => true,
     user: () => me,
     onAuth: (fn) => { subs.push(fn); },
     async signUp(email, password, username) {
@@ -232,6 +244,7 @@ function demoBackend(): Backend {
     async myTrees() { await wait(); const u = me; return u ? trees.filter((t) => t.owner === u.id).sort((a, b) => b.savedAt.localeCompare(a.savedAt)) : []; },
     async saveTree(t) { await wait(); const u = need(); const row: Row = { ...t, id: id(), owner: u.id, savedAt: new Date().toISOString(), exhibitedAt: null }; trees.push(row); return row; },
     async renameTree(tid, name) { const t = trees.find((x) => x.id === tid && x.owner === need().id); if (t) t.name = name; },
+    async updateThumb(tid, thumb) { const t = trees.find((x) => x.id === tid && x.owner === need().id); if (t) t.thumb = thumb; },
     async deleteTree(tid) { const u = need(); const i = trees.findIndex((x) => x.id === tid && x.owner === u.id); if (i >= 0) trees.splice(i, 1); },
     async setExhibited(tid, on) { const t = trees.find((x) => x.id === tid && x.owner === need().id); if (t) t.exhibitedAt = on ? new Date().toISOString() : null; },
     async exhibition() {

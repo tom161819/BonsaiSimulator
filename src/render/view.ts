@@ -320,6 +320,15 @@ function woodTexture(): THREE.CanvasTexture {
   return t;
 }
 
+/** Starší pravidla (do v12) mohla po zkrácení listnáče v době růstu založit pupeny druhého rašení za koncem
+ *  výhonu (poloha > 1) a výhonky z nich visely ve vzduchu. Simulace zůstává beze změny (stejné přehrání
+ *  uložených her); kreslí se kopie, kde takové výhonky a pupeny sedí na špičce. */
+function renderSafe(s: State): State {
+  const off = (sh: Shoot) => sh.attachT > 1 || sh.buds.some((b) => b.t > 1);
+  if (!s.shoots.some(off)) return s;
+  return { ...s, shoots: s.shoots.map((sh) => (off(sh) ? { ...sh, attachT: Math.min(1, sh.attachT), buds: sh.buds.map((b) => (b.t > 1 ? { ...b, t: 1 } : b)) } : sh)) };
+}
+
 /** Studiové pozadí: plynulý přechod, nejsvětlejší kousek nad obzorem za stromem. */
 function studioTexture(dark: boolean): THREE.CanvasTexture {
   const W = 512, H = 256;
@@ -734,11 +743,14 @@ export class TreeView {
   }
   recenter() { this.auto = true; this.needsRender = true; }
 
-  /** Portrét stromu pro sbírku: celý strom i s nádobou na průhledném pozadí, z právě zvoleného směru pohledu. */
+  /** Portrét stromu pro sbírku: celý strom i s nádobou na průhledném pozadí, z právě zvoleného směru pohledu.
+   *  Fotí se jako na výstavě: úzkým objektivem (12°) skoro z úrovně misky, takže miska je vidět jen mírně shora
+   *  (asi 10°) – stejně jako stojan, na kterém ve sbírce stojí. */
   capture(w = 360, h = 440): string {
     const s = this.state;
     if (!s) return '';
-    const keep = { target: this.target.clone(), dist: this.dist, phi: this.phi, auto: this.auto, pr: this.renderer.getPixelRatio() };
+    const keep = { target: this.target.clone(), dist: this.dist, phi: this.phi, auto: this.auto, pr: this.renderer.getPixelRatio(), fov: this.camera.fov };
+    this.camera.fov = 12;
     const hidden = [this.hi, this.marker, this.pivotMark, this.wireLines, this.wireDots, this.table, this.backdrop, this.toolScissors, this.toolWire].filter((o) => o.visible);
     for (const o of hidden) o.visible = false;
     const pot = potById(s.potId);
@@ -752,7 +764,7 @@ export class TreeView {
     const span = H + below + 3, width = Math.max(2 * reach + 8, pot.a + 4, pot.b + 4);
     const tan = Math.tan((this.camera.fov * Math.PI) / 360);
     this.auto = false;
-    this.phi = 1.38;
+    this.phi = Math.PI / 2 - (7 * Math.PI) / 180; // kamera 7° nad vodorovnou; spodek obrázku (miska) asi 12°
     this.dist = Math.max(span / 2 / tan, width / 2 / (tan * (w / h))) * 1.08;
     // dno nádoby sedí na spodním okraji obrázku, aby strom na lavici stál a nevznášel se
     this.target.set(0, -below + this.dist * tan * 0.97, 0);
@@ -763,7 +775,7 @@ export class TreeView {
     this.renderer.render(this.scene, this.camera);
     const url = this.canvas.toDataURL('image/png');
     for (const o of hidden) o.visible = true;
-    this.target.copy(keep.target); this.dist = keep.dist; this.phi = keep.phi; this.auto = keep.auto;
+    this.target.copy(keep.target); this.dist = keep.dist; this.phi = keep.phi; this.auto = keep.auto; this.camera.fov = keep.fov;
     this.renderer.setPixelRatio(keep.pr);
     this.resize();
     return url;
@@ -1027,6 +1039,8 @@ export class TreeView {
   private jointEnds: Record<number, number[]> = {};
   jointGap = { rel: 0, parent: -1, child: -1, info: '' };
   attachGap = 0;
+  /** MĚŘENÍ: boční výhony, jejichž pata neleží na nakreslené ose rodiče (cm a v poloměrech rodiče). */
+  floating: { child: number; parent: number; cm: number; radii: number; t: number }[] = [];
   /** Kontrola spojů na ose (pro ladění): id výhonu → úhel spoje, míra zaoblení a tloušťky. */
   jointInfo = new Map<number, { pid: number; phi: number; k: number; W: number; jr: number; rP: number; rC: number }>();
   private potOverride: string | null = null;
@@ -1276,7 +1290,7 @@ export class TreeView {
   // ------------------------------------------------------------ geometrie stromu
 
   setState(s: State) {
-    this.state = s;
+    this.state = renderSafe(s);
     this.build();
     if (this.wiresOn) this.showWires(true);
     this.placePivot();
@@ -1341,7 +1355,7 @@ export class TreeView {
     const { base, tip } = fr;
     const wb = this.wb, bb = this.bb, nb = this.nb;
     wb.reset(); bb.reset(); nb.reset(); this.mb.reset();
-    this.jointEnds = {}; this.jointGap = { rel: 0, parent: -1, child: -1, info: '' }; this.attachGap = 0; this.jointInfo.clear();
+    this.jointEnds = {}; this.jointGap = { rel: 0, parent: -1, child: -1, info: '' }; this.attachGap = 0; this.floating = []; this.jointInfo.clear();
     this.builtDist = this.dist;
 
     // pokračující výhon určuje poloměr na vrcholu a směr, kterým osa plynule navazuje
@@ -1469,6 +1483,8 @@ export class TreeView {
       }
     }
     const ONT = new Uint8Array(n);
+    const kidsOf = new Map<number, Shoot[]>();
+    for (const c of s.shoots) if (c.parent >= 0) { const l = kidsOf.get(c.parent); if (l) l.push(c); else kidsOf.set(c.parent, [c]); }
     const MID = new Uint8Array(n);
     for (let i = 0; i < n; i++) { const c = s.shoots[i]; if (c.parent >= 0 && c.attachT <= 0.98) MID[fr.index.get(c.parent)!] = 1; }
     const VO = new Float32Array(n).fill(-1);
@@ -1622,6 +1638,14 @@ export class TreeView {
         u = nrm(u[0] - d[0] * kk, u[1] - d[1] * kk, u[2] - d[2] * kk);
         w = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]];
       };
+      // kontrola: pata každého bočního výhonu má ležet na nakreslené ose tohoto výhonu
+      for (const c of kidsOf.get(sh.id) ?? []) {
+        const j = fr.index.get(c.id)!;
+        if (contKid[i] === j || c.dead) continue;
+        at(Math.min(c.attachT, TE[i]));
+        const gx = base[j * 3] - cx, gy = base[j * 3 + 1] - cy, gz = base[j * 3 + 2] - cz, g = Math.hypot(gx, gy, gz);
+        if (g > 0.05 + radiusOf(sh) * 1.5) this.floating.push({ child: c.id, parent: sh.id, cm: +g.toFixed(2), radii: +(g / Math.max(0.02, radiusOf(sh))).toFixed(1), t: +c.attachT.toFixed(3) });
+      }
       col[0] = C[i * 3]; col[1] = C[i * 3 + 1]; col[2] = C[i * 3 + 2];
       // sousedé v ose: úsek, na který navazuji, a úsek, který navazuje na mě
       const pIdx = sh.parent >= 0 ? fr.index.get(sh.parent)! : -1;

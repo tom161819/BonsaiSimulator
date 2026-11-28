@@ -92,9 +92,13 @@ function cut(s: State, id: number, t: number) {
       else if (sp.reflush > 0 && inLeaf && s.gdd < 1150 && (sh.needleCount > 0 || (sh.dormant ?? 0) > 0) && rnd(s.seed, id, s.day + 7) < sp.reflush + 0.3) {
         const len = Math.min(8, Math.max(0.6, removed * sp.reflush * 0.6));
         const nb = len > 2.5 && sh.needleCount >= 2 ? 2 : 1;
+        // v13: pupeny se zakládají v délce před zkrácením (níž se celý výhon přepočítá na novou délku) – dřív
+        // skončily za koncem výhonu a výhony z nich visely ve vzduchu; míří po konci ohnuté větve, ne po její patě
+        const v13 = s.rules >= 13, scaleT = v13 ? t : 1;
+        const endDir: Vec3 = v13 && sh.arc ? norm(rotate(sh.dir, sh.arc.axis, sh.arc.angle * Math.min(1, t / Math.max(sh.arc.z, 1e-3)))) : sh.dir;
         for (let j = 0; j < nb; j++) {
-          const side = tiltDir(sh.dir, sp.branchAngle * 0.8, j * Math.PI + id);
-          sh.buds.push({ id: s.nextId++, kind: 'pinch', t: j === 0 ? 1 : 0.8, dir: j === 0 && nb === 1 ? sh.dir : side, len: len / nb, order: j === 0 ? sh.order : sh.order + 1, isMain: j === 0, flushDay: s.day + 18 + j * 3 });
+          const side = tiltDir(endDir, sp.branchAngle * 0.8, j * Math.PI + id);
+          sh.buds.push({ id: s.nextId++, kind: 'pinch', t: (j === 0 ? 1 : 0.8) * scaleT, dir: j === 0 && nb === 1 ? endDir : side, len: len / nb, order: j === 0 ? sh.order : sh.order + 1, isMain: j === 0, flushDay: s.day + 18 + j * 3 });
         }
         s.pendingFlush = (s.pendingFlush ?? 0) + nb;
       }

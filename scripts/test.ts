@@ -767,4 +767,27 @@ test('misky: každý tvar ve více objemech, staré misky z katalogu beze změny
   assert.ok(t.state.potCap > small.state.potCap * 2, 'miska 4 l pojme víc kořenů než 1,5 l');
 });
 
+test('v13: po zkrácení javoru v době růstu vyrůstají výhonky u řezu, ne ve vzduchu za koncem větve', () => {
+  const Y = YEAR;
+  const run = (rules: number) => {
+    const base: Action[] = [{ day: 300, type: 'repot', pot: 'training', potId: 't5', prune: 0 }];
+    const probe = new Timeline(4, base, rules, 'maple');
+    probe.seek(at(3, 130));
+    // několik olistěných výhonů zkrácených na třetinu (u části z nich se založí pupeny druhého rašení)
+    const ids = probe.state.shoots.filter((x) => !x.dead && x.parent >= 0 && x.len > 5 && x.needleCount > 0).slice(0, 8).map((x) => x.id);
+    const cuts: Action[] = ids.map((id) => ({ day: at(3, 131), type: 'cut', shoot: id, t: 0.33 }));
+    const t = new Timeline(4, [...base, ...cuts], rules, 'maple');
+    t.seek(at(3, 132));
+    const pinch = t.state.shoots.flatMap((x) => x.buds.filter((b) => b.kind === 'pinch').map((b) => b.t));
+    t.seek(at(3, 132) + Y);
+    const maxAttach = Math.max(...t.state.shoots.map((x) => x.attachT));
+    return { pinch, maxAttach };
+  };
+  const old = run(12), now = run(13);
+  assert.ok(old.pinch.length > 0 && now.pinch.length > 0, 'řez založil pupeny druhého rašení');
+  assert.ok(Math.max(...old.pinch) > 1.5, 've v12 skončily pupeny za koncem výhonu (chyba, kterou v13 opravuje)');
+  assert.ok(Math.max(...now.pinch) <= 1 + 1e-9, `v13: pupeny na výhonu (max ${Math.max(...now.pinch)})`);
+  assert.ok(now.maxAttach <= 1 + 1e-9, `v13: žádný výhon za koncem rodiče (max ${now.maxAttach})`);
+});
+
 console.log(`\n${n} testů prošlo`);
